@@ -1,0 +1,41 @@
+# SwiftFormat configuration for NotchHub
+# Lint:   swift package --disable-sandbox --allow-writing-to-package-directory swiftformat Sources Tests --lint
+# Format: swift package --disable-sandbox --allow-writing-to-package-directory swiftformat Sources Tests
+#
+# Conservative, explicit rule allowlist: only safe whitespace/import/redundancy
+# rules so formatting stays consistent without fighting the existing code style.
+# (SwiftFormat otherwise enables many opinionated rules by default.)
+
+--swiftversion 5.9
+--exclude .build,Sources/NotchHub/.claude-flow,Sources/NotchHub/Services/.claude-flow
+
+# Layout
+--indent 4
+--maxwidth 120
+--commas inline
+--trimwhitespace always
+--semicolons never
+--importgrouping testable-bottom
+
+# Explicit rule set — anything not listed here is disabled.
+--rules \
+  blankLinesAtEndOfScope,\
+  blankLinesBetweenScopes,\
+  consecutiveBlankLines,\
+  consecutiveSpaces,\
+  duplicateImports,\
+  emptyBraces,\
+  indent,\
+  linebreakAtEndOfFile,\
+  linebreaks,\
+  redundantParens,\
+  redundantReturn,\
+  sortImports,\
+  spaceAroundBraces,\
+  spaceAroundBrackets,\
+  spaceAroundComments,\
+  spaceAroundOperators,\
+  spaceInsideBraces,\
+  spaceInsideBrackets,\
+  spaceInsideParens,\
+  trailingSpace

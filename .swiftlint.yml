@@ -1,0 +1,62 @@
+# SwiftLint configuration for NotchHub
+# Enforces the CLAUDE.md quality bar. Run: swift package plugin swiftlint
+
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+  - Sources/NotchHub/ruvector.db
+  - Sources/NotchHub/.claude-flow
+  - Sources/NotchHub/Services/.claude-flow
+
+# Opt-in rules that align with the CLAUDE.md standards.
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - first_where
+  - force_unwrapping            # CLAUDE.md: no unsafe unwraps at boundaries
+  - implicitly_unwrapped_optional
+  - overridden_super_call
+  - prohibited_super_call
+  - redundant_nil_coalescing
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+  - vertical_whitespace_closing_braces
+
+disabled_rules:
+  - todo                        # allow TODO/FIXME markers during development
+
+# CLAUDE.md frontend rule: body properties stay small and modular.
+type_body_length:
+  warning: 300
+  error: 450
+
+function_body_length:
+  warning: 60
+  error: 120
+
+file_length:
+  warning: 500                  # CLAUDE.md: keep files under 500 lines
+  error: 700
+
+line_length:
+  warning: 120
+  error: 160
+  ignores_comments: true
+
+identifier_name:
+  min_length:
+    warning: 2
+  excluded:
+    - id
+    - x
+    - y
+
+# Force-unwrapping and IUOs are warnings (not errors) so the existing code still
+# lints; tighten to error as the codebase is cleaned up.
+force_unwrapping:
+  severity: warning
+
+reporter: "xcode"

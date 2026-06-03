@@ -1,0 +1,28 @@
+# Swift Package Manager / build artifacts
+.build/
+.swiftpm/
+Package.pins
+
+# Built app bundle (do not commit binaries)
+*.app/
+
+# Xcode
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Secrets / local config (never commit)
+.env
+.env.*
+*.pem
+*.key
+*.p12
+config.json
+
+# Local tooling / agent scratch (not app source)
+.claude-flow/
+*.db
+ChatGPT Image*.png
