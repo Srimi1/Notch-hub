@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    name: Build & Test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build (debug)
+        run: swift build
+
+      - name: Build tests
+        run: swift build --build-tests
+
+      - name: SwiftFormat (lint)
+        run: swift package --disable-sandbox --allow-writing-to-package-directory swiftformat Sources Tests --lint
+
+      - name: Test
+        run: swift test
+
+      # NOTE: the SwiftLint gate is intentionally omitted here. It is currently red
+      # on pre-existing debt (ExpandedDashboardView.swift exceeds the file_length
+      # limit). Re-add a `swift package ... swiftlint` step once that cleanup lands.

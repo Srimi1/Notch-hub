@@ -26,3 +26,7 @@ config.json
 .claude-flow/
 *.db
 ChatGPT Image*.png
+
+# Internal dev/planning docs (kept local, not published)
+CLAUDE.md
+PROGRESS.md
