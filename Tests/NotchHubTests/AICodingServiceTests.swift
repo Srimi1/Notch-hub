@@ -61,11 +61,13 @@ struct AICodingServiceTests {
         // Newest first.
         #expect(logs?.first?.project == "beta")
         #expect(logs?.first?.agent == "Kimi")
+        #expect(logs?.first?.rawSource == "kimi") // raw token preserved for the hook
         #expect(logs?.first?.event == "approval")
         #expect(logs?.first?.message == "Needs your approval") // payload message preferred
 
         // Oldest carries the generic message for its type.
         #expect(logs?.last?.agent == "Claude Code")
+        #expect(logs?.last?.rawSource == "claude") // display name mapped, raw token kept
         #expect(logs?.last?.message == "Task completed")
     }
 

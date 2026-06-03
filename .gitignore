@@ -30,3 +30,6 @@ ChatGPT Image*.png
 # Internal dev/planning docs (kept local, not published)
 CLAUDE.md
 PROGRESS.md
+
+# Local audit output (not published)
+audit-report.md

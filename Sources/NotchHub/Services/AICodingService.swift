@@ -17,13 +17,14 @@ final class AICodingService: ObservableObject {
     struct LogEntry: Identifiable, Equatable {
         let id = UUID()
         let timestamp: Date
-        let agent: String
+        let agent: String // display name, e.g. "Claude Code"
+        let rawSource: String // raw hook token, e.g. "claude" — what the hook keys on
         let project: String
         let event: String
         let message: String
 
         static func == (lhs: LogEntry, rhs: LogEntry) -> Bool {
-            lhs.timestamp == rhs.timestamp && lhs.agent == rhs.agent && lhs.project == rhs.project && lhs.event == rhs.event
+            lhs.timestamp == rhs.timestamp && lhs.rawSource == rhs.rawSource && lhs.project == rhs.project && lhs.event == rhs.event
         }
     }
 
@@ -58,6 +59,10 @@ final class AICodingService: ObservableObject {
 
     private var notifiedKeys: Set<String> = []
     private var timer: Timer?
+
+    /// Freshest event seen from a successful read. Kept so time-based decay still
+    /// runs when a later read transiently fails (a stale banner must not stick).
+    private var lastNewest: LogEntry?
 
     /// Live agent activity is read from the SQLite store written by the
     /// `hermes-notify` hook system. NotchHub only *reads* it (integration
@@ -116,9 +121,12 @@ final class AICodingService: ObservableObject {
 
         let responseURL = URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent(".cache/hermes-notify/approval_response.json")
+        // Write the RAW source token (e.g. "claude"), not the display name
+        // ("Claude Code"): the waiting hook correlates on `events.source`, so a
+        // display label here would fail to match and leave the agent blocked.
         let response: [String: Any] = [
             "timestamp": Date().timeIntervalSince1970,
-            "agent": currentPrompt.agent,
+            "agent": currentPrompt.rawSource,
             "project": currentPrompt.project,
             "approved": approved,
             "user_action": approved ? "allow" : "deny"
@@ -323,13 +331,20 @@ final class AICodingService: ObservableObject {
     /// the derived UI state. Runs on the main RunLoop timer, so `@Published`
     /// assignment is already main-thread.
     private func checkState() {
-        // `nil` → DB absent/unreadable: keep the last known state (no fabrication).
-        guard let topLogs = loadRecentEvents(from: stateDBURL.path).map({ Array($0.prefix(5)) }) else { return }
-
-        if recentLogs != topLogs {
-            recentLogs = topLogs
+        // On a successful read, refresh the log list and the cached newest event.
+        // `nil` means the store was absent or this tick's read failed (e.g. a
+        // transient WAL lock) — we don't fabricate new data, but we STILL fall
+        // through to applyState below so time-based decay keeps running against
+        // the last good event. Otherwise a momentary read failure would pin a
+        // stale "Running" / "Needs Attention" banner (incl. an approval prompt)
+        // on screen indefinitely.
+        if let topLogs = loadRecentEvents(from: stateDBURL.path).map({ Array($0.prefix(5)) }) {
+            if recentLogs != topLogs {
+                recentLogs = topLogs
+            }
+            lastNewest = topLogs.first
         }
-        applyState(newest: topLogs.first)
+        applyState(newest: lastNewest)
     }
 
     /// Map the newest event to the published agent state. `nil` means the store
@@ -413,6 +428,7 @@ final class AICodingService: ObservableObject {
             rows.append(LogEntry(
                 timestamp: Date(timeIntervalSince1970: sentAt),
                 agent: formatAgentName(source),
+                rawSource: source,
                 project: project,
                 event: type,
                 message: formatEventMessage(event: type, payload: payload)
