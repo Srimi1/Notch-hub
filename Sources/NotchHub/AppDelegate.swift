@@ -28,10 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         setUpStatusItem()
-
-        let controller = NotchWindowController(preferences: preferences)
-        controller.show()
-        notchController = controller
+        installOverlayIfPossible()
 
         NotificationCenter.default.addObserver(
             self,
@@ -41,7 +38,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         )
     }
 
+    /// Creates the overlay once a display exists.
+    ///
+    /// Launch at Login can start NotchHub before any display is awake. Rather
+    /// than trap on an empty screen list, the app runs headless — menu bar
+    /// only — and installs the overlay when a screen appears.
+    private func installOverlayIfPossible() {
+        guard notchController == nil else { return }
+        guard let controller = NotchWindowController(preferences: preferences) else {
+            NSLog("NotchHub: no display available yet; deferring the overlay.")
+            return
+        }
+        controller.show()
+        notchController = controller
+    }
+
     @objc private func screenParametersChanged() {
+        installOverlayIfPossible()
         notchController?.repositionForActiveScreen()
     }
 

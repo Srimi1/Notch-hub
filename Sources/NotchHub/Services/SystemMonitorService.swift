@@ -49,12 +49,36 @@ final class SystemMonitorService: ObservableObject {
 
     // MARK: - CPU
 
+    /// Ticks elapsed between two samples of a Mach CPU counter.
+    ///
+    /// `cpu_ticks` entries are `natural_t` (UInt32) and wrap roughly every
+    /// 20–60 days of uptime depending on core count. Plain `-` would trap on
+    /// that wrap and kill the app; wrapping subtraction yields the correct
+    /// delta, because far fewer than 2^32 ticks elapse between two samples
+    /// taken two seconds apart.
+    static func tickDelta(_ current: natural_t, _ previous: natural_t) -> Double {
+        Double(current &- previous)
+    }
+
+    /// Runs `body` with a host port and releases the send right afterwards.
+    ///
+    /// `mach_host_self()` returns a *new* send right on every call — unlike
+    /// `mach_task_self()` — so a long-running sampler that never deallocates
+    /// leaks kernel resources for the life of the process.
+    private static func withHostPort<T>(_ body: (mach_port_t) -> T) -> T {
+        let host = mach_host_self()
+        defer { mach_port_deallocate(mach_task_self_, host) }
+        return body(host)
+    }
+
     private func readCPU() -> Double? {
         var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info>.stride / MemoryLayout<integer_t>.stride)
         var info = host_cpu_load_info()
-        let result = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &count)
+        let result = Self.withHostPort { host in
+            withUnsafeMutablePointer(to: &info) {
+                $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                    host_statistics(host, HOST_CPU_LOAD_INFO, $0, &count)
+                }
             }
         }
         guard result == KERN_SUCCESS else { return nil }
@@ -62,10 +86,10 @@ final class SystemMonitorService: ObservableObject {
         defer { previousCPUTicks = info }
         guard let prev = previousCPUTicks else { return nil }
 
-        let user = Double(info.cpu_ticks.0 - prev.cpu_ticks.0)
-        let system = Double(info.cpu_ticks.1 - prev.cpu_ticks.1)
-        let idle = Double(info.cpu_ticks.2 - prev.cpu_ticks.2)
-        let nice = Double(info.cpu_ticks.3 - prev.cpu_ticks.3)
+        let user = Self.tickDelta(info.cpu_ticks.0, prev.cpu_ticks.0)
+        let system = Self.tickDelta(info.cpu_ticks.1, prev.cpu_ticks.1)
+        let idle = Self.tickDelta(info.cpu_ticks.2, prev.cpu_ticks.2)
+        let nice = Self.tickDelta(info.cpu_ticks.3, prev.cpu_ticks.3)
         let total = user + system + idle + nice
         guard total > 0 else { return nil }
         return (user + system + nice) / total
@@ -84,9 +108,11 @@ final class SystemMonitorService: ObservableObject {
     static func vmSnapshot() -> vm_statistics64? {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.stride / MemoryLayout<integer_t>.stride)
-        let result = withUnsafeMutablePointer(to: &stats) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+        let result = withHostPort { host in
+            withUnsafeMutablePointer(to: &stats) {
+                $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                    host_statistics64(host, HOST_VM_INFO64, $0, &count)
+                }
             }
         }
         return result == KERN_SUCCESS ? stats : nil

@@ -25,9 +25,17 @@ final class NotchWindowController {
     /// settings window bound to the same `CreditTrackerService`/`CreditPreferences`.
     var services: ServiceHub { viewModel.services }
 
-    init(preferences: ModulePreferences) {
+    /// Fails when no display is attached yet.
+    ///
+    /// `NSScreen.notchScreen` already falls back to `main` and then to the
+    /// first screen, so it returns nil *precisely* when `NSScreen.screens` is
+    /// empty — the previous `?? NSScreen.screens[0]` fallback subscripted that
+    /// same empty array and trapped. A headless launch is reachable in practice
+    /// because NotchHub offers Launch at Login, which can fire before the
+    /// displays wake.
+    init?(preferences: ModulePreferences) {
+        guard let screen = NSScreen.notchScreen else { return nil }
         self.viewModel = NotchViewModel(preferences: preferences)
-        let screen = NSScreen.notchScreen ?? NSScreen.screens[0]
         self.geometry = NotchGeometry(screen: screen)
 
         let collapsed = Self.topCentered(size: geometry.notchSize, on: geometry.screen)
@@ -45,6 +53,7 @@ final class NotchWindowController {
             frame: NSRect(origin: .zero, size: panel.frame.size)
         )
         hoverView.autoresizingMask = [.width, .height]
+        hoverView.hasPhysicalNotch = geometry.hasPhysicalNotch
         hoverView.onHoverChange = { [weak self] hovering in
             self?.viewModel.setHover(hovering)
         }
@@ -102,6 +111,9 @@ final class NotchWindowController {
         guard let screen = NSScreen.notchScreen else { return }
         geometry = NotchGeometry(screen: screen)
         viewModel.notchSize = geometry.notchSize
+        // Moving between a notched laptop display and an external monitor
+        // changes how the overlay must be drawn, not just where it sits.
+        hoverView?.hasPhysicalNotch = geometry.hasPhysicalNotch
         animateFrame(expanded: viewModel.isExpanded)
     }
 
