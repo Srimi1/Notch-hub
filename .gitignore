@@ -38,3 +38,6 @@ docs/PROJECT_STATUS_REPORT.md
 
 # Local audit output (not published)
 audit-report.md
+
+# Release notes are drafted locally until published
+docs/RELEASE_NOTES_*.md
