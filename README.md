@@ -4,11 +4,9 @@ A macOS notch-overlay app (MacNotch alternative). Its context-aware **Next Up** 
 
 ## Install
 
-NotchHub requires macOS 14 or later on Apple Silicon.
+**NotchHub is distributed as source.** There is deliberately no pre-built download.
 
-### Recommended: build from source
-
-This is the supported path. It takes about a minute and gives you full provenance.
+Requires **macOS 14 or later** on **Apple Silicon** (the build is `arm64`; Intel Macs are not supported).
 
 ```bash
 git clone https://github.com/Srimi1/Notch-hub.git
@@ -18,20 +16,15 @@ cp -R NotchHub.app /Applications/
 open /Applications/NotchHub.app
 ```
 
-### Pre-built DMG (unsigned — read this first)
+That takes about a minute and gives you full provenance — you compiled the binary you're running.
 
-A pre-built Apple Silicon DMG is attached to [the v0.1.0 pre-release](https://github.com/Srimi1/Notch-hub/releases). It is published as a **pre-release** on purpose: it is **ad-hoc signed and not Apple-notarized**, because this project has no Apple Developer Program identity yet. macOS Gatekeeper is *expected* to refuse it (`spctl` reports `rejected`), and overriding Gatekeeper means vouching for the binary yourself.
+### Why there is no download
 
-If you choose to use it:
+A binary built here can only be **ad-hoc signed**, because the project has no Apple Developer Program identity. macOS Gatekeeper refuses ad-hoc-signed apps that arrive by download (`spctl` reports `rejected`), so a DMG would ask every user to override Gatekeeper and vouch for a binary they cannot verify. Shipping source avoids asking anyone to do that.
 
-1. Verify the SHA-256 checksum printed on the release page:
-   `shasum -a 256 ~/Downloads/NotchHub-0.1.0-arm64.dmg`
-2. Open the DMG and drag **NotchHub** to the **Applications** shortcut.
-3. Launch it once, then open **System Settings → Privacy & Security**, scroll down, click **Open Anyway**, and confirm.
+An app you build yourself is never quarantined, so this path has none of those problems.
 
-Read [Apple's guidance on opening apps from unidentified developers](https://support.apple.com/102445) before overriding Gatekeeper. If you would rather not, build from source instead — the result is identical.
-
-The build scripts already support a signed, notarized release (`NOTCHHUB_SIGNING_IDENTITY` + `NOTCHHUB_NOTARY_PROFILE`); see [SECURITY.md](SECURITY.md#sandboxing-and-distribution).
+The build scripts already support a properly signed, notarized release — set `NOTCHHUB_SIGNING_IDENTITY` and `NOTCHHUB_NOTARY_PROFILE` and `./scripts/build-dmg.sh release` will sign with the hardened runtime, notarize, staple, and verify. A binary release will be published once a Developer ID identity is available. See [SECURITY.md](SECURITY.md#sandboxing-and-distribution).
 
 ## How it works
 
@@ -57,7 +50,7 @@ Requires macOS + the Swift toolchain (Xcode or Command Line Tools).
 ./scripts/build-app.sh
 open NotchHub.app
 
-# Build and verify a drag-to-Applications DMG
+# Build and verify a drag-to-Applications DMG (for your own use)
 ./scripts/build-dmg.sh release
 
 # Or install to /Applications, then launch from Spotlight

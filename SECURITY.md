@@ -110,13 +110,18 @@ NotchHub is **not App Sandboxed**. It needs Apple Events (media control), an
 unsandboxed helper invocation (`purge`), and read access to a path outside a
 container, none of which survive the sandbox in the current design.
 
-Release builds published here are **ad-hoc signed and not notarized**. macOS
-Gatekeeper is expected to refuse them on a machine other than the one that built
-them — that is not a bug, and overriding Gatekeeper is a decision only you can
-make. Building from source (`./scripts/build-app.sh`) gives you full provenance
-and is the recommended path.
+**NotchHub ships as source. No pre-built binary is distributed.**
 
-`scripts/build-app.sh` and `scripts/build-dmg.sh` support a Developer ID +
-hardened runtime + notarization flow via `NOTCHHUB_SIGNING_IDENTITY` and
-`NOTCHHUB_NOTARY_PROFILE`. A properly notarized release will be published once
-an Apple Developer Program identity is available for this project.
+A binary built without an Apple Developer Program identity can only be **ad-hoc
+signed**, and macOS Gatekeeper refuses ad-hoc-signed apps that arrive by
+download. Publishing one would mean asking every user to override Gatekeeper for
+a binary they cannot independently verify, so we don't publish one. Build from
+source with `./scripts/build-app.sh` — an app you compile yourself is never
+quarantined, and you get full provenance.
+
+`scripts/build-app.sh` and `scripts/build-dmg.sh` already implement the
+Developer ID + hardened runtime + notarization flow via
+`NOTCHHUB_SIGNING_IDENTITY` and `NOTCHHUB_NOTARY_PROFILE`, including stapling
+and a Gatekeeper assessment. A signed, notarized binary release will be
+published once an Apple Developer Program identity is available for this
+project.
