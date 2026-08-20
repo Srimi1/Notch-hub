@@ -19,15 +19,55 @@ DerivedData/
 # Secrets / local config (never commit)
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 *.p12
+*.secret
+*.token
 config.json
+credentials.json
+service-account.json
+secrets.json
+local_config.json
+
+# SSH, cloud and package-registry credentials
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+.ssh/
+.aws/
+.gcloud/
+.npmrc
+.pypirc
+.netrc
+
+# Signing and notarization material (Developer ID builds)
+*.p8
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+*.entitlements.local
+
+# Backups and dumps (can contain real data)
+*.backup
+*.bak
+*.sql
+*.dump
 
 # Local tooling / agent scratch (not app source)
 .claude-flow/
 .commandcode/
+.claude/settings.local.json
+memory/
+*.memory
+private_prompts/
 *.db
+*.sqlite
+*.log
+.cache/
 ChatGPT Image*.png
 
 # Internal dev/planning docs (kept local, not published)
