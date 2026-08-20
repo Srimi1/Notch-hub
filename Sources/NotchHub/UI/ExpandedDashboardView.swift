@@ -189,6 +189,11 @@ private struct MediaModuleView: View {
                 }
             }
             .foregroundStyle(.white)
+        } else if let reason = media.unavailableReason {
+            // Denied Automation is not the same as an idle player. Saying
+            // "play something" while music is audibly playing is a lie the
+            // user has no way to diagnose — macOS never re-prompts.
+            EmptyHint(symbol: "hand.raised.fill", text: reason)
         } else {
             EmptyHint(symbol: "play.slash", text: "Play something in Music or Spotify.")
         }
@@ -354,18 +359,29 @@ private struct MemoryCleanerModuleView: View {
                     .foregroundStyle(.green)
             }
             .buttonStyle(.plain)
-            .help("Passwordless cleaning is on — tap to revoke (asks for admin once).")
+            .help(
+                "Passwordless cleaning is on. Tap to remove /etc/sudoers.d/notchhub "
+                    + "(asks for admin once)."
+            )
         } else {
+            // The label used to read "Skip password", which never mentioned
+            // that agreeing writes a root-owned sudoers rule. The button now
+            // names what it installs, and the tooltip spells out the file and
+            // how to remove it.
             Button { privilege.enableAlwaysAllow() } label: {
                 HStack(spacing: 3) {
                     Image(systemName: "key")
-                    Text("Skip password")
+                    Text("Allow without password…")
                 }
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.white.opacity(0.55))
             }
             .buttonStyle(.plain)
-            .help("Authenticate once so future cleans don't ask for a password.")
+            .help(
+                "Installs a sudoers rule at /etc/sudoers.d/notchhub allowing "
+                    + "/usr/sbin/purge to run without a password. Asks for admin once. "
+                    + "Remove it here, or with: sudo rm /etc/sudoers.d/notchhub"
+            )
         }
     }
 

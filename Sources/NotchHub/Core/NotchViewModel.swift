@@ -21,7 +21,7 @@ final class NotchViewModel: ObservableObject {
     /// Live data layer. Ambient services tick from launch; interactive
     /// (permission-gated) services start the first time the notch expands so a
     /// new user isn't hit with a wall of prompts before seeing the UI.
-    let services = ServiceHub()
+    let services: ServiceHub
     private var startedInteractive = false
 
     /// When true, the collapsed pill grows symmetric "wings" beside the notch
@@ -63,6 +63,9 @@ final class NotchViewModel: ObservableObject {
 
     init(preferences: ModulePreferences) {
         self.preferences = preferences
+        // The hub needs the same preferences object so hiding a module really
+        // stops the service behind it, rather than only hiding its tab.
+        self.services = ServiceHub(modulePreferences: preferences)
         // Restore the last-viewed module, but only if it's still visible —
         // otherwise fall back to the first visible module (or dashboard).
         let restored = preferences.lastActiveModule

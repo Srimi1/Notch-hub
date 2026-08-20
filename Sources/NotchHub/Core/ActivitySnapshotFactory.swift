@@ -37,16 +37,30 @@ enum ActivitySnapshotFactory {
             }
     }
 
+    /// A reminder overdue by more than a day is backlog, not "next up".
+    ///
+    /// Without a floor here, the oldest forgotten task in someone's Reminders
+    /// list wins the notch forever: it is `.urgent`, it has the earliest
+    /// relevance date, and `ActivityCoordinator` breaks equal-priority ties on
+    /// the *earliest* date. A task from 2019 would outrank a meeting starting
+    /// in three minutes, and nearly everybody has one.
+    static let maximumOverdue: TimeInterval = 24 * 60 * 60
+
+    /// How recently a reminder must have been missed to still count as the
+    /// thing to do *right now*, rather than merely late.
+    static let freshlyOverdue: TimeInterval = 15 * 60
+
     static func reminders(
         _ reminders: [ReminderRecord],
         now: Date,
         leadMinutes: Int
     ) -> [ActivitySnapshot] {
         let leadDate = now.addingTimeInterval(TimeInterval(leadMinutes * 60))
+        let earliest = now.addingTimeInterval(-maximumOverdue)
         return reminders
             .filter { reminder in
                 guard let dueDate = reminder.dueDate else { return false }
-                return dueDate <= leadDate
+                return dueDate <= leadDate && dueDate >= earliest
             }
             .prefix(3)
             .map { reminder in
@@ -56,7 +70,10 @@ enum ActivitySnapshotFactory {
                 let priority: ActivityPriority
                 if delta <= 0 {
                     detail = "Overdue by \(shortDuration(abs(delta)))"
-                    priority = .urgent
+                    // Only a fresh miss outranks an imminent meeting. Something
+                    // late since this morning is real, but it is not more
+                    // urgent than a call that starts in two minutes.
+                    priority = abs(delta) <= freshlyOverdue ? .urgent : .timeSensitive
                 } else {
                     detail = "Due in \(shortDuration(delta))"
                     priority = delta <= 300 ? .urgent : .timeSensitive
@@ -177,13 +194,23 @@ enum ActivitySnapshotFactory {
         )
     }
 
-    private static func shortDuration(_ seconds: TimeInterval) -> String {
+    /// Human-scale duration. Rolls over into days so a long interval reads as
+    /// "2d 3h" rather than "51h" — and never as the "56184h" a stale reminder
+    /// used to produce.
+    static func shortDuration(_ seconds: TimeInterval) -> String {
         let totalMinutes = max(0, Int(seconds.rounded(.up)) / 60)
         if totalMinutes < 1 { return "under a minute" }
         if totalMinutes < 60 { return "\(totalMinutes)m" }
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-        return minutes == 0 ? "\(hours)h" : "\(hours)h \(minutes)m"
+
+        let totalHours = totalMinutes / 60
+        if totalHours < 24 {
+            let minutes = totalMinutes % 60
+            return minutes == 0 ? "\(totalHours)h" : "\(totalHours)h \(minutes)m"
+        }
+
+        let days = totalHours / 24
+        let hours = totalHours % 24
+        return hours == 0 ? "\(days)d" : "\(days)d \(hours)h"
     }
 
     private static func clockDuration(_ seconds: TimeInterval) -> String {

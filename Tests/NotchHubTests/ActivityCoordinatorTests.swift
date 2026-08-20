@@ -131,6 +131,86 @@ struct ActivityCoordinatorTests {
 // URL-safety coverage lives in `UntrustedInputTests.swift` alongside the rest of
 // the hostile-input guards.
 
+/// The headline feature used to be permanently hijacked by whatever reminder
+/// you had forgotten longest. Everything here is about keeping "Next Up"
+/// pointed at what actually happens next.
+@Suite("Next Up is not hijacked by stale reminders")
+struct ReminderRankingTests {
+
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func reminder(_ id: String, dueIn seconds: TimeInterval) -> ReminderRecord {
+        ReminderRecord(id: id, title: "Task \(id)", dueDate: now.addingTimeInterval(seconds))
+    }
+
+    /// A task forgotten years ago is backlog. It must not appear at all.
+    @Test
+    func ancientOverdueRemindersAreDroppedEntirely() {
+        let ancient = reminder("ancient", dueIn: -365 * 24 * 60 * 60)
+        let yesterday = reminder("yesterday", dueIn: -48 * 60 * 60)
+        let recent = reminder("recent", dueIn: -30 * 60)
+
+        let snapshots = ActivitySnapshotFactory.reminders(
+            [ancient, yesterday, recent], now: now, leadMinutes: 30
+        )
+
+        #expect(snapshots.map(\.id) == ["reminder.recent"])
+    }
+
+    /// The tie-break that caused the hijack: equal priority resolves on the
+    /// *earliest* relevance date, so an overdue reminder beat everything.
+    /// Something late since this morning must no longer outrank a meeting
+    /// starting in three minutes.
+    @Test
+    @MainActor
+    func anImminentMeetingOutranksAReminderThatIsMerelyLate() {
+        let lateReminder = reminder("late", dueIn: -3 * 60 * 60)
+        let reminderSnapshots = ActivitySnapshotFactory.reminders(
+            [lateReminder], now: now, leadMinutes: 30
+        )
+        let event = CalendarService.Event(
+            id: "standup",
+            title: "Standup",
+            start: now.addingTimeInterval(180),
+            end: now.addingTimeInterval(1_800),
+            isAllDay: false,
+            calendarColorHex: nil,
+            location: nil,
+            url: nil
+        )
+        let eventSnapshots = ActivitySnapshotFactory.calendar(
+            events: [event], now: now, leadMinutes: 15
+        )
+
+        #expect(reminderSnapshots.first?.priority == .timeSensitive)
+        #expect(eventSnapshots.first?.priority == .urgent)
+        #expect(
+            (eventSnapshots.first?.priority.rawValue ?? 0)
+                > (reminderSnapshots.first?.priority.rawValue ?? 0),
+            "A meeting in three minutes must outrank a task late since this morning."
+        )
+    }
+
+    /// A miss from moments ago genuinely is the thing to do right now.
+    @Test
+    func aFreshlyMissedReminderIsStillUrgent() {
+        let snapshots = ActivitySnapshotFactory.reminders(
+            [reminder("fresh", dueIn: -5 * 60)], now: now, leadMinutes: 30
+        )
+        #expect(snapshots.first?.priority == .urgent)
+        #expect(snapshots.first?.detail == "Overdue by 5m")
+    }
+
+    /// The notch used to literally read "Overdue by 56184h".
+    @Test
+    func longDurationsReadInDaysNotHundredsOfHours() {
+        #expect(ActivitySnapshotFactory.shortDuration(90 * 60) == "1h 30m")
+        #expect(ActivitySnapshotFactory.shortDuration(24 * 60 * 60) == "1d")
+        #expect(ActivitySnapshotFactory.shortDuration(51 * 60 * 60) == "2d 3h")
+        #expect(ActivitySnapshotFactory.shortDuration(30) == "under a minute")
+    }
+}
+
 @Suite("Activity Providers")
 struct ActivitySnapshotFactoryTests {
     @Test

@@ -54,6 +54,7 @@ final class ServiceHub: ObservableObject {
     let credit: CreditTrackerService
 
     private var started = false
+    private var startedInteractive = false
     private var cancellables = Set<AnyCancellable>()
     /// Owns the activation observer so it is unregistered when the hub goes
     /// away. Deregistering from `ServiceHub.deinit` directly would mean touching
@@ -61,7 +62,12 @@ final class ServiceHub: ObservableObject {
     /// Swift 6; a plain box has no such isolation to violate.
     private let activationObserver = NotificationObserverToken()
 
-    init() {
+    /// Dashboard layout preferences, used here as a *lifecycle* gate rather
+    /// than a display one. `nil` means "run everything", for tests and previews.
+    private let modulePreferences: ModulePreferences?
+
+    init(modulePreferences: ModulePreferences? = nil) {
+        self.modulePreferences = modulePreferences
         memoryCleaner = MemoryCleanerService(privilege: purgePrivilege)
         credit = CreditTrackerService(prefs: creditPrefs)
         activityCoordinator = ActivityCoordinator(preferences: activityPreferences)
@@ -91,6 +97,49 @@ final class ServiceHub: ObservableObject {
             self?.activityCoordinator.refreshForPreferences()
             self?.refreshActivities()
         }
+
+        modulePreferences?.$visibleModules
+            .removeDuplicates()
+            .sink { [weak self] modules in
+                Task { @MainActor [weak self] in
+                    self?.applyModuleVisibility(Set(modules))
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Starts or stops gated services to match the visible-module set.
+    ///
+    /// The gated ones are those that read something a user may not want read:
+    /// pasteboard contents, Apple Events to the media players, calendar and
+    /// reminder contents, and local coding-agent activity.
+    ///
+    /// Hiding a module used to only hide its tab: unchecking Clipboard still
+    /// read the pasteboard every second, and unchecking Media still sent Apple
+    /// Events to Music and Spotify for the whole session. A privacy-relevant
+    /// switch has to actually switch something off.
+    private func applyModuleVisibility(_ visible: Set<FeatureModule>) {
+        guard started else { return }
+
+        setRunning(clipboard.start, clipboard.stop, visible.contains(.clipboard))
+        setRunning(aiCoding.start, aiCoding.stop, visible.contains(.aiCoding))
+        setRunning(reminders.start, reminders.stop, visible.contains(.todo))
+
+        // Media and Calendar are permission-gated, so they only ever run once
+        // the user has opened the panel at least once.
+        if startedInteractive {
+            setRunning(media.start, media.stop, visible.contains(.media))
+            setRunning(calendar.start, calendar.stop, visible.contains(.calendar))
+        }
+        refreshActivities()
+    }
+
+    private func setRunning(_ start: () -> Void, _ stop: () -> Void, _ shouldRun: Bool) {
+        if shouldRun { start() } else { stop() }
+    }
+
+    private func isVisible(_ module: FeatureModule) -> Bool {
+        modulePreferences?.isVisible(module) ?? true
     }
 
     /// Lightweight services tick immediately; permission-gated ones
@@ -102,20 +151,22 @@ final class ServiceHub: ObservableObject {
         time.start()
         system.start()
         battery.start()
-        clipboard.start()
         focus.start()
-        aiCoding.start()
         timers.start()
-        reminders.start()
         credit.start()
+        // Gated on their module being visible — see `applyModuleVisibility`.
+        if isVisible(.clipboard) { clipboard.start() }
+        if isVisible(.aiCoding) { aiCoding.start() }
+        if isVisible(.todo) { reminders.start() }
         purgePrivilege.refresh()
         observeActivation()
         refreshActivities()
     }
 
     func startInteractive() {
-        media.start()
-        calendar.start()
+        startedInteractive = true
+        if isVisible(.media) { media.start() }
+        if isVisible(.calendar) { calendar.start() }
         reminders.refreshAuthorization()
     }
 

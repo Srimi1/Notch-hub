@@ -117,23 +117,32 @@ final class CalendarService: ObservableObject {
         }
 
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        // `EKEvent.startDate`/`endDate` are `null_unspecified` in EventKit's
+        // headers, so Swift imports them as implicitly-unwrapped optionals.
+        // Subscribed .ics feeds, CalDAV accounts, and detached recurrence
+        // occurrences can carry a nil date, which would nil-trap the whole app
+        // on a refresh tick. Bind them before use rather than trusting the IUO.
         let mapped = store.events(matching: predicate)
-            .sorted { $0.startDate < $1.startDate }
-            .prefix(8)
-            .map { ek in
-                Event(
-                    id: ek.eventIdentifier ?? "\(ek.startDate.timeIntervalSince1970).\(ek.title ?? "")",
-                    title: DisplaySanitizer.text(ek.title, limit: 120).isEmpty
-                        ? "Untitled event"
-                        : DisplaySanitizer.text(ek.title, limit: 120),
-                    start: ek.startDate,
-                    end: ek.endDate,
+            .compactMap { ek -> Event? in
+                guard let startDate = ek.startDate as Date?,
+                      let endDate = ek.endDate as Date?
+                else {
+                    return nil
+                }
+                let title = DisplaySanitizer.text(ek.title, limit: 120)
+                return Event(
+                    id: ek.eventIdentifier ?? "\(startDate.timeIntervalSince1970).\(title)",
+                    title: title.isEmpty ? "Untitled event" : title,
+                    start: startDate,
+                    end: endDate,
                     isAllDay: ek.isAllDay,
                     calendarColorHex: ek.calendar?.color?.hexString,
                     location: DisplaySanitizer.text(ek.structuredLocation?.title ?? ek.location, limit: 300),
                     url: ek.url
                 )
             }
+            .sorted { $0.start < $1.start }
+            .prefix(8)
         let result = Array(mapped)
         events = result
         lastError = nil

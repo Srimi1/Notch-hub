@@ -26,6 +26,31 @@ An app you build yourself is never quarantined, so this path has none of those p
 
 The build scripts already support a properly signed, notarized release — set `NOTCHHUB_SIGNING_IDENTITY` and `NOTCHHUB_NOTARY_PROFILE` and `./scripts/build-dmg.sh release` will sign with the hardened runtime, notarize, staple, and verify. A binary release will be published once a Developer ID identity is available. See [SECURITY.md](SECURITY.md#sandboxing-and-distribution).
 
+## Uninstall
+
+Dragging the app to the Trash does **not** remove everything — NotchHub can leave a root-owned `sudoers` rule behind if you enabled passwordless RAM cleaning. To remove it completely:
+
+```bash
+# 1. Quit NotchHub, then remove the app
+rm -rf /Applications/NotchHub.app
+
+# 2. Remove the passwordless sudo rule, if you enabled it
+#    (you can also revoke this from inside the app's RAM Cleaner)
+sudo rm -f /etc/sudoers.d/notchhub
+
+# 3. Remove stored preferences (module layout, timers, Next Up settings)
+defaults delete com.notchhub.app
+
+# 4. Remove any stored AI provider API keys from the Keychain
+security delete-generic-password -s com.notchhub.apikeys 2>/dev/null
+#    repeat once per provider you configured (grok, anthropic, openai)
+
+# 5. If you enabled Launch at Login, macOS clears it when the app is gone;
+#    check System Settings ▸ General ▸ Login Items if it lingers.
+```
+
+NotchHub writes nothing else. Calendar, Reminders, Automation and Accessibility permissions are revoked in **System Settings ▸ Privacy & Security**.
+
 ## How it works
 
 ```mermaid
