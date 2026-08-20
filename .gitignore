@@ -5,6 +5,8 @@ Package.pins
 
 # Built app bundle (do not commit binaries)
 *.app/
+*.dmg
+dist/
 
 # Xcode
 DerivedData/
@@ -24,12 +26,15 @@ config.json
 
 # Local tooling / agent scratch (not app source)
 .claude-flow/
+.commandcode/
 *.db
 ChatGPT Image*.png
 
 # Internal dev/planning docs (kept local, not published)
 CLAUDE.md
+AGENTS.md
 PROGRESS.md
+docs/PROJECT_STATUS_REPORT.md
 
 # Local audit output (not published)
 audit-report.md

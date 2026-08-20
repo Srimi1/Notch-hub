@@ -6,6 +6,7 @@ import SwiftUI
 /// and hover handling. Owns the expand/collapse window-frame animation: the
 /// window is only ever as large as its visible content, which keeps mouse
 /// handling simple (no large transparent dead-zone swallowing clicks).
+@MainActor
 final class NotchWindowController {
 
     private var panel: NotchPanel
@@ -15,9 +16,14 @@ final class NotchWindowController {
     private weak var hoverView: HoverView?
     private weak var hostingView: NSHostingView<NotchContainerView>?
 
-    /// Size of the expanded dashboard. Wide enough to fit three module toggles
-    /// on each side of the notch gap; width is clamped to the screen later.
-    private let expandedSize = CGSize(width: 980, height: 112)
+    static let expandedSize = CGSize(
+        width: NotchTheme.expandedWidth,
+        height: NotchTheme.expandedHeight
+    )
+
+    /// The live service layer, exposed so `AppDelegate` can open the API-keys
+    /// settings window bound to the same `CreditTrackerService`/`CreditPreferences`.
+    var services: ServiceHub { viewModel.services }
 
     init(preferences: ModulePreferences) {
         self.viewModel = NotchViewModel(preferences: preferences)
@@ -79,11 +85,16 @@ final class NotchWindowController {
 
     func show() {
         panel.setFrame(collapsedFrame(), display: true)
-        panel.orderFrontRegardless()
+        panel.claimInteractionLayer()
+        panel.yieldToPeerOverlays()
     }
 
     func toggle() {
         viewModel.toggle()
+    }
+
+    func collapse() {
+        viewModel.collapse()
     }
 
     /// Recompute geometry for the current active screen (display changes).
@@ -98,13 +109,17 @@ final class NotchWindowController {
 
     private func animateFrame(expanded: Bool) {
         let target = expanded ? expandedFrame() : collapsedFrame()
+        if expanded { panel.claimInteractionLayer() }
         hoverView?.bottomRadius = expanded ? 24 : 10
         resizeContent(to: target.size)
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.34
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            ctx.allowsImplicitAnimation = true
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.01 : 0.28
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.allowsImplicitAnimation = true
             panel.animator().setFrame(target, display: true)
+        } completionHandler: { [weak self] in
+            guard !expanded else { return }
+            Task { @MainActor [weak self] in self?.panel.yieldToPeerOverlays() }
         }
     }
 
@@ -127,11 +142,17 @@ final class NotchWindowController {
     }
 
     private func expandedFrame() -> NSRect {
-        let maxWidth = geometry.screen.frame.width - 40
-        let width = min(expandedSize.width, maxWidth)
+        let size = Self.expandedSize(forScreenWidth: geometry.screen.frame.width)
         return Self.topCentered(
-            size: CGSize(width: width, height: expandedSize.height),
+            size: size,
             on: geometry.screen
+        )
+    }
+
+    static func expandedSize(forScreenWidth screenWidth: CGFloat) -> CGSize {
+        CGSize(
+            width: min(expandedSize.width, max(0, screenWidth - 40)),
+            height: expandedSize.height
         )
     }
 

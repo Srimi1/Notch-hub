@@ -11,12 +11,13 @@ struct NotchContainerView: View {
         ZStack {
             if viewModel.isExpanded {
                 ExpandedDashboardView(viewModel: viewModel)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, NotchTheme.horizontalPadding)
+                    .padding(.vertical, NotchTheme.verticalPadding)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
             } else if viewModel.showCollapsedWings {
                 CollapsedStripView(
-                    services: viewModel.services,
+                    time: viewModel.services.time,
+                    coordinator: viewModel.services.activityCoordinator,
                     wingWidth: viewModel.collapsedWingWidth
                 )
                 .transition(.opacity)
@@ -32,30 +33,20 @@ struct NotchContainerView: View {
 /// activity (now playing › focus › low battery).
 private struct CollapsedStripView: View {
 
-    @ObservedObject var services: ServiceHub
+    @ObservedObject var time: TimeService
+    @Bindable var coordinator: ActivityCoordinator
     let wingWidth: CGFloat
 
     var body: some View {
         HStack(spacing: 0) {
-            ClockWingView(time: services.time)
+            ClockWingView(time: time)
                 .frame(width: wingWidth, alignment: .leading)
             Spacer(minLength: 0) // central camera housing — kept clear
-            rightWing
+            ActivityWingView(activity: coordinator.currentActivity)
                 .frame(width: wingWidth, alignment: .trailing)
         }
         .padding(.horizontal, 12)
         .foregroundStyle(.white)
-    }
-
-    @ViewBuilder
-    private var rightWing: some View {
-        if services.media.nowPlaying != nil {
-            MediaWingView(media: services.media)
-        } else if services.focus.isOn {
-            FocusWingView()
-        } else {
-            BatteryWingView(battery: services.battery)
-        }
     }
 }
 
@@ -74,43 +65,35 @@ private struct ClockWingView: View {
     }
 }
 
-private struct MediaWingView: View {
-    @ObservedObject var media: MediaService
+private struct ActivityWingView: View {
+    let activity: ActivitySnapshot?
+
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: media.isPlaying ? "waveform" : "pause.fill")
+        HStack(spacing: 5) {
+            Image(systemName: activity?.symbol ?? "circle")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.green)
-            Text(media.nowPlaying?.title ?? "")
+                .foregroundStyle(activity?.kind.tint ?? .white)
+            Text(wingText)
                 .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
     }
-}
 
-private struct FocusWingView: View {
-    var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "moon.fill")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.purple)
-            Text("Focus")
-                .font(.system(size: 11, weight: .semibold))
-        }
+    private var wingText: String {
+        activity?.compactLabel ?? ""
     }
 }
 
-private struct BatteryWingView: View {
-    @ObservedObject var battery: BatteryService
-    var body: some View {
-        HStack(spacing: 5) {
-            Image(systemName: battery.symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(battery.percent <= 20 ? .red : .white)
-            Text("\(battery.percent)%")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .monospacedDigit()
+extension ActivityKind {
+    var tint: Color {
+        switch self {
+        case .calendar: .blue
+        case .timer: .orange
+        case .reminder: .green
+        case .battery: .yellow
+        case .media: .mint
+        case .focus: .purple
         }
     }
 }

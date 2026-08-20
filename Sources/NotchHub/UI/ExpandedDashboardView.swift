@@ -9,18 +9,43 @@ struct ExpandedDashboardView: View {
     private var services: ServiceHub { viewModel.services }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        if viewModel.presentedActivity != nil {
+            ActivityDetailView(
+                viewModel: viewModel,
+                coordinator: services.activityCoordinator
+            )
+        } else {
+            moduleDashboard
+        }
+    }
+
+    private var moduleDashboard: some View {
+        VStack(alignment: .leading, spacing: 8) {
             toggleBand
 
             HStack(alignment: .top, spacing: 12) {
                 moduleHeader
-                    .frame(width: 160, height: 46)
-                Divider().overlay(Color.white.opacity(0.12))
+                    .frame(
+                        width: NotchTheme.moduleHeaderWidth,
+                        height: NotchTheme.contentHeight,
+                        alignment: .topLeading
+                    )
+                Divider().overlay(NotchTheme.divider)
                 moduleBody
-                    .frame(height: 46)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: NotchTheme.contentHeight,
+                        maxHeight: NotchTheme.contentHeight,
+                        alignment: .leading
+                    )
                     .clipped()
             }
-            .frame(maxWidth: .infinity, minHeight: 46, maxHeight: 46)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: NotchTheme.contentHeight,
+                maxHeight: NotchTheme.contentHeight,
+                alignment: .leading
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -38,30 +63,26 @@ struct ExpandedDashboardView: View {
             toggleGroup(Array(visibleModules.suffix(from: mid)))
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .frame(height: max(viewModel.notchSize.height, 30))
+        .frame(height: max(viewModel.notchSize.height, NotchTheme.navigationHeight))
     }
 
     private func toggleGroup(_ modules: [FeatureModule]) -> some View {
-        HStack(spacing: 7) {
+        HStack(spacing: NotchTheme.chipSpacing) {
             ForEach(modules) { module in
-                Button {
+                ModuleChip(
+                    module: module,
+                    isSelected: module == viewModel.activeModule,
+                    shortcut: keyboardShortcut(for: module)
+                ) {
                     viewModel.select(module)
-                } label: {
-                    Label(module.title, systemImage: module.symbol)
-                        .font(.system(size: 10, weight: .semibold))
-                        .lineLimit(1)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(
-                            Capsule()
-                                .fill(module == viewModel.activeModule ? Color.white.opacity(0.2) : Color.white.opacity(0.07))
-                        )
                 }
-                .buttonStyle(.plain)
-                .help(module.title)
             }
         }
+    }
+
+    private func keyboardShortcut(for module: FeatureModule) -> KeyEquivalent? {
+        guard let index = visibleModules.firstIndex(of: module) else { return nil }
+        return ModuleKeyboardShortcut.key(at: index)
     }
 
     private var visibleModules: [FeatureModule] {
@@ -71,10 +92,10 @@ struct ExpandedDashboardView: View {
     private var moduleHeader: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: viewModel.activeModule.symbol)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(width: 28, height: 28)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.1)))
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: NotchTheme.cardRadius).fill(Color.white.opacity(0.1)))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(viewModel.activeModule.title)
@@ -82,11 +103,12 @@ struct ExpandedDashboardView: View {
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Text(viewModel.activeModule.summary)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.62))
-                    .lineLimit(1)
+                    .font(.system(size: 11))
+                    .foregroundStyle(NotchTheme.secondaryText)
+                    .lineLimit(2)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -98,8 +120,12 @@ struct ExpandedDashboardView: View {
             MediaModuleView(media: services.media)
         case .calendar:
             CalendarModuleView(calendar: services.calendar)
+        case .pomodoro:
+            TimerModuleView(timers: services.timers)
+        case .todo:
+            ReminderModuleView(reminders: services.reminders)
         case .aiCoding:
-            AICodingModuleView(aiCoding: services.aiCoding)
+            CreditTrackerModuleView(aiCoding: services.aiCoding, credit: services.credit)
         case .clipboard:
             ClipboardModuleView(clipboard: services.clipboard)
         case .focus:
@@ -111,289 +137,6 @@ struct ExpandedDashboardView: View {
         default:
             FeatureChecklistView(module: viewModel.activeModule)
         }
-    }
-}
-
-// MARK: - AI Coding (gorgeous agent activity logs + approval interface)
-
-private struct AICodingModuleView: View {
-    @ObservedObject var aiCoding: AICodingService
-
-    var body: some View {
-        if let approval = aiCoding.pendingApproval {
-            approvalView(approval)
-        } else {
-            statusAndHistoryView
-        }
-    }
-
-    private func approvalView(_ log: AICodingService.LogEntry) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 6, height: 6)
-                        .shadow(color: .orange.opacity(0.5), radius: 2)
-                    Text("PENDING APPROVAL")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.orange)
-                }
-                Text("\(log.agent) needs attention in \(log.project)")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                if let approvalError = aiCoding.approvalError {
-                    Text(approvalError)
-                        .font(.system(size: 8, weight: .medium))
-                        .foregroundStyle(.red)
-                        .lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(spacing: 6) {
-                Button {
-                    aiCoding.handleApproval(approved: false)
-                } label: {
-                    Text("Deny")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .frame(height: 24)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.12)))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    aiCoding.handleApproval(approved: true)
-                } label: {
-                    Text("Allow")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 12)
-                        .frame(height: 24)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.green))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.trailing, 4)
-    }
-
-    private var statusAndHistoryView: some View {
-        HStack(spacing: 12) {
-            // Live Status Tile
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 6, height: 6)
-                        .shadow(color: statusColor.opacity(0.5), radius: 2)
-                    Text(aiCoding.status.rawValue.uppercased())
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(statusColor)
-                }
-                if aiCoding.status == .idle {
-                    Text("All agents inactive")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .lineLimit(1)
-                } else {
-                    Text("\(aiCoding.activeAgent) · \(aiCoding.activeProject)")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                }
-            }
-            .frame(width: 130, alignment: .leading)
-
-            Divider().overlay(Color.white.opacity(0.08))
-
-            // Limits & Logs unified carousel
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    // Ollama status
-                    MiniLimitTile(
-                        title: "Ollama",
-                        valueStr: aiCoding.isOllamaRunning ? (aiCoding.ollamaModels.first ?? "Running") : "Offline",
-                        icon: "cpu",
-                        iconColor: .green,
-                        statusDot: aiCoding.isOllamaRunning ? .green : .gray
-                    )
-
-                    // Cloud API Spend
-                    MiniLimitTile(
-                        title: aiCoding.cloudProvider,
-                        valueStr: cloudValue,
-                        icon: "cloud.fill",
-                        iconColor: .cyan,
-                        ratio: cloudRatio
-                    )
-
-                    // Claude Code
-                    MiniLimitTile(
-                        title: "Claude Code",
-                        valueStr: claudeValue,
-                        icon: "terminal.fill",
-                        iconColor: .purple,
-                        ratio: claudeRatio
-                    )
-
-                    // Antigravity
-                    MiniLimitTile(
-                        title: "Antigravity",
-                        valueStr: antigravityValue,
-                        icon: "sparkles",
-                        iconColor: .orange,
-                        ratio: antigravityRatio
-                    )
-
-                    if !aiCoding.recentLogs.isEmpty {
-                        Divider()
-                            .overlay(Color.white.opacity(0.12))
-                            .frame(maxHeight: 28)
-
-                        ForEach(aiCoding.recentLogs) { log in
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 4) {
-                                    Text(log.agent)
-                                        .font(.system(size: 9, weight: .bold))
-                                        .foregroundStyle(.white)
-                                    Spacer()
-                                    Text(RelativeTime.ago(log.timestamp))
-                                        .font(.system(size: 8))
-                                        .foregroundStyle(.white.opacity(0.4))
-                                }
-                                Text(log.project)
-                                    .font(.system(size: 8, weight: .semibold))
-                                    .foregroundStyle(.purple.opacity(0.8))
-                                    .lineLimit(1)
-                                Text(log.message)
-                                    .font(.system(size: 8))
-                                    .foregroundStyle(.white.opacity(0.55))
-                                    .lineLimit(1)
-                            }
-                            .padding(4)
-                            .frame(width: 110, height: 38, alignment: .topLeading)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.04)))
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var statusColor: Color {
-        switch aiCoding.status {
-        case .idle: return .gray
-        case .running: return .green
-        case .needsAttention: return .orange
-        case .completed: return .purple
-        }
-    }
-
-    // Budget tiles show real numbers when `ai_limits.json` is present, otherwise
-    // an honest "No data" with no progress bar.
-    private var cloudValue: String {
-        guard let used = aiCoding.cloudBudgetUsed, let limit = aiCoding.cloudBudgetLimit else { return "No data" }
-        return "$\(String(format: "%.2f", used)) / $\(String(format: "%.2f", limit))"
-    }
-
-    private var cloudRatio: Double? {
-        guard let used = aiCoding.cloudBudgetUsed, let limit = aiCoding.cloudBudgetLimit, limit > 0 else { return nil }
-        return used / limit
-    }
-
-    private var claudeValue: String {
-        guard let used = aiCoding.claudeCodeUsed, let limit = aiCoding.claudeCodeLimit else { return "No data" }
-        return "\(used) / \(limit) reqs"
-    }
-
-    private var claudeRatio: Double? {
-        guard let used = aiCoding.claudeCodeUsed, let limit = aiCoding.claudeCodeLimit, limit > 0 else { return nil }
-        return Double(used) / Double(limit)
-    }
-
-    private var antigravityValue: String {
-        guard let used = aiCoding.antigravityUsed, let limit = aiCoding.antigravityLimit else { return "No data" }
-        return "\(used / 1000)k / \(limit / 1000)k tok"
-    }
-
-    private var antigravityRatio: Double? {
-        guard let used = aiCoding.antigravityUsed, let limit = aiCoding.antigravityLimit, limit > 0 else { return nil }
-        return Double(used) / Double(limit)
-    }
-}
-
-// MARK: - Mini Limit Tile
-
-private struct MiniLimitTile: View {
-    let title: String
-    let valueStr: String
-    let icon: String
-    let iconColor: Color
-    var ratio: Double? = nil
-    var statusDot: Color? = nil
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 8))
-                    .foregroundStyle(iconColor)
-                Text(title)
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.8))
-                Spacer()
-                if let statusDot = statusDot {
-                    Circle()
-                        .fill(statusDot)
-                        .frame(width: 5, height: 5)
-                        .shadow(color: statusDot.opacity(0.5), radius: 1)
-                }
-            }
-
-            Text(valueStr)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-
-            if let ratio = ratio {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(Color.white.opacity(0.12))
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(progressBarColor(ratio))
-                            .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(ratio))))
-                    }
-                }
-                .frame(height: 2)
-            } else {
-                Spacer(minLength: 0)
-            }
-        }
-        .padding(5)
-        .frame(width: 116, height: 38, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.04)))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(glowColor(ratio), lineWidth: ratio != nil && ratio! >= 0.8 ? 1 : 0)
-        )
-    }
-
-    private func progressBarColor(_ r: Double) -> Color {
-        if r >= 1.0 { return .red }
-        if r >= 0.8 { return .orange }
-        return .blue
-    }
-
-    private func glowColor(_ r: Double?) -> Color {
-        guard let r = r else { return .clear }
-        if r >= 1.0 { return .red.opacity(0.4) }
-        if r >= 0.8 { return .orange.opacity(0.3) }
-        return .clear
     }
 }
 
@@ -475,7 +218,10 @@ private struct CalendarModuleView: View {
     var body: some View {
         switch calendar.access {
         case .denied:
-            EmptyHint(symbol: "calendar.badge.exclamationmark", text: "Enable Calendar access in System Settings ▸ Privacy.")
+            EmptyHint(
+                symbol: "calendar.badge.exclamationmark",
+                text: calendar.lastError ?? "Enable Calendar access in System Settings ▸ Privacy."
+            )
         case .unknown:
             EmptyHint(symbol: "calendar", text: "Requesting calendar access…")
         case .granted where calendar.events.isEmpty:
@@ -865,7 +611,16 @@ private struct EmptyHint: View {
 
 // MARK: - Time helpers
 
-private enum RelativeTime {
+enum RelativeTime {
+    static func timer(_ interval: TimeInterval) -> String {
+        let value = max(0, Int(interval.rounded(.up)))
+        let hours = value / 3600
+        let minutes = (value % 3600) / 60
+        let seconds = value % 60
+        if hours > 0 { return String(format: "%d:%02d:%02d", hours, minutes, seconds) }
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+
     static func clock(_ date: Date) -> String {
         let f = DateFormatter(); f.dateFormat = "h:mm a"
         return f.string(from: date)

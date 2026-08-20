@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum FeatureModule: String, CaseIterable, Identifiable {
+enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
     case dashboard
     case media
     case calendar
@@ -92,17 +92,17 @@ enum FeatureModule: String, CaseIterable, Identifiable {
     var summary: String {
         switch self {
         case .dashboard:
-            "Four widget slots, profiles, weather, launcher, quotes, toggles, shortcuts, events, and mirror."
+            "Time, battery, CPU, and memory at a glance."
         case .media:
-            "Now Playing cards, artwork, gradients, transport controls, browser/system audio, and visualizers."
+            "Music and Spotify playback controls."
         case .calendar:
-            "Upcoming events, reminders, countdowns, meeting awareness, and Focus-aware context."
+            "Upcoming events, countdowns, and join actions."
         case .todo:
-            "Add, complete, delete, and restore tasks, with Reminders sync planned."
+            "Due Apple Reminders with quick completion."
         case .notes:
             "A quick scratchpad for capture, plus note creation and opening from the notch."
         case .pomodoro:
-            "Custom work and break cycles with progress and phase-change notifications."
+            "Persistent timers with quick focus presets."
         case .dayProgress:
             "A timeline for calendar events, reminders, tasks, and an optional bedtime marker."
         case .screenTime:
@@ -110,7 +110,7 @@ enum FeatureModule: String, CaseIterable, Identifiable {
         case .notifications:
             "Centered alert inbox, unread glance, clearing, and reply actions."
         case .aiCoding:
-            "Claude Code and Cursor Agent sessions with status, messages, and Allow/Deny controls."
+            "Agent status and API balance or spend signals."
         case .codeHosting:
             "GitHub PRs, GitLab MRs, and Bitbucket PRs waiting on review or opened by you."
         case .translation:
@@ -122,11 +122,11 @@ enum FeatureModule: String, CaseIterable, Identifiable {
         case .shelf:
             "A carousel stash: drop files in, then drag them out when ready."
         case .clipboard:
-            "Recent copied text, images, and files (incl. video) with one-click restore to the clipboard."
+            "Recent clipboard items with one-click restore."
         case .focus:
-            "Toggle macOS Do Not Disturb and see whether a Focus is currently active."
+            "Do Not Disturb status and controls."
         case .ramCleaner:
-            "Free up inactive memory in one tap and see how much was reclaimed."
+            "Memory pressure and on-demand cleanup."
         case .windowSnap:
             "Top-edge snap tiles for halves, thirds, quarters, maximize, and custom layouts."
         case .bluetooth:
@@ -165,7 +165,7 @@ enum FeatureModule: String, CaseIterable, Identifiable {
         case .notifications:
             ["Unread glance", "Clear", "Reply", "App icons"]
         case .aiCoding:
-            ["Claude Code", "Cursor Agent", "Live status", "Recent messages", "Allow/Deny"]
+            ["Grok balance", "Anthropic spend", "OpenAI spend", "Gemini", "Agent status", "Allow/Deny"]
         case .codeHosting:
             ["GitHub", "GitLab", "Bitbucket", "Review queue", "Opened by me"]
         case .translation:

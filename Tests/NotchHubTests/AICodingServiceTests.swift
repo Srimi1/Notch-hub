@@ -9,11 +9,18 @@ import Testing
 @Suite("AICoding")
 struct AICodingServiceTests {
 
+    private struct FixtureEvent {
+        let source: String
+        let project: String
+        let type: String
+        let payload: String?
+        let sentAt: Double
+        let status: String
+    }
+
     /// Build a throwaway hermes-notify-shaped SQLite db from the given events and
-    /// return its path. Each tuple is (source, project, type, payload, sentAt, status).
-    private func makeFixtureDB(
-        _ events: [(source: String, project: String, type: String, payload: String?, sentAt: Double, status: String)]
-    ) -> String {
+    /// return its path.
+    private func makeFixtureDB(_ events: [FixtureEvent]) -> String {
         let path = NSTemporaryDirectory() + "notchhub-test-\(UUID().uuidString).db"
 
         var db: OpaquePointer?
@@ -41,17 +48,30 @@ struct AICodingServiceTests {
         return path
     }
 
+    private func removeFixture(at path: String) {
+        do {
+            try FileManager.default.removeItem(atPath: path)
+        } catch {
+            Issue.record("Could not remove SQLite fixture at \(path): \(error.localizedDescription)")
+        }
+    }
+
     /// Events come back newest-first, agent/event are mapped, and the hook's own
     /// `message` from the payload is preferred over the generic fallback.
     @Test
     func parsesEventsNewestFirstAndHonorsPayloadMessage() {
         let now = 1_780_000_000.0
         let path = makeFixtureDB([
-            (source: "claude", project: "alpha", type: "complete", payload: nil, sentAt: now - 100, status: "sent"),
-            (source: "kimi", project: "beta", type: "approval",
-             payload: "{\"message\":\"Needs your approval\"}", sentAt: now, status: "sent"),
+            .init(
+                source: "claude", project: "alpha", type: "complete", payload: nil,
+                sentAt: now - 100, status: "sent"
+            ),
+            .init(
+                source: "kimi", project: "beta", type: "approval",
+                payload: "{\"message\":\"Needs your approval\"}", sentAt: now, status: "sent"
+            ),
         ])
-        defer { try? FileManager.default.removeItem(atPath: path) }
+        defer { removeFixture(at: path) }
 
         let logs = AICodingService().loadRecentEvents(from: path)
 
@@ -76,10 +96,12 @@ struct AICodingServiceTests {
     @Test
     func includesSuppressedEvents() {
         let path = makeFixtureDB([
-            (source: "claude", project: "gamma", type: "complete",
-             payload: nil, sentAt: 1_780_000_000, status: "suppressed_type"),
+            .init(
+                source: "claude", project: "gamma", type: "complete",
+                payload: nil, sentAt: 1_780_000_000, status: "suppressed_type"
+            ),
         ])
-        defer { try? FileManager.default.removeItem(atPath: path) }
+        defer { removeFixture(at: path) }
 
         let logs = AICodingService().loadRecentEvents(from: path)
         #expect(logs?.count == 1)
@@ -90,17 +112,15 @@ struct AICodingServiceTests {
     /// and newlines become spaces, the invisible Unicode tag block (U+E0000–
     /// U+E007F, used for ASCII smuggling) is dropped, and length is capped.
     @Test
-    func sanitizesPoisonedPayloadMessage() {
+    func sanitizesPoisonedPayloadMessage() throws {
         // "Hello" + ESC + "[31m" + tag-block char (ASCII smuggling) + newline + tab + "world"
         let smuggled = "Hello\u{1B}[31m\u{E0001}\n\tworld"
-        let payload = String(
-            data: try! JSONSerialization.data(withJSONObject: ["message": smuggled]),
-            encoding: .utf8
-        )
+        let payloadData = try JSONSerialization.data(withJSONObject: ["message": smuggled])
+        let payload = try #require(String(data: payloadData, encoding: .utf8))
         let path = makeFixtureDB([
-            (source: "kimi", project: "x", type: "approval", payload: payload, sentAt: 1, status: "sent"),
+            .init(source: "kimi", project: "x", type: "approval", payload: payload, sentAt: 1, status: "sent"),
         ])
-        defer { try? FileManager.default.removeItem(atPath: path) }
+        defer { removeFixture(at: path) }
 
         let msg = AICodingService().loadRecentEvents(from: path)?.first?.message ?? ""
 
@@ -113,16 +133,14 @@ struct AICodingServiceTests {
 
     /// A very long agent message can't flood the notch / a notification body.
     @Test
-    func capsOverlongPayloadMessage() {
+    func capsOverlongPayloadMessage() throws {
         let huge = String(repeating: "A", count: 5000)
-        let payload = String(
-            data: try! JSONSerialization.data(withJSONObject: ["message": huge]),
-            encoding: .utf8
-        )
+        let payloadData = try JSONSerialization.data(withJSONObject: ["message": huge])
+        let payload = try #require(String(data: payloadData, encoding: .utf8))
         let path = makeFixtureDB([
-            (source: "claude", project: "x", type: "attention", payload: payload, sentAt: 1, status: "sent"),
+            .init(source: "claude", project: "x", type: "attention", payload: payload, sentAt: 1, status: "sent"),
         ])
-        defer { try? FileManager.default.removeItem(atPath: path) }
+        defer { removeFixture(at: path) }
 
         let msg = AICodingService().loadRecentEvents(from: path)?.first?.message ?? ""
         #expect(msg.count == 200)
@@ -139,7 +157,7 @@ struct AICodingServiceTests {
     @Test
     func emptyDatabaseYieldsEmptyArray() {
         let path = makeFixtureDB([])
-        defer { try? FileManager.default.removeItem(atPath: path) }
+        defer { removeFixture(at: path) }
 
         let logs = AICodingService().loadRecentEvents(from: path)
         #expect(logs != nil)

@@ -30,6 +30,10 @@
     <string>NotchHub shows upcoming calendar events in the notch.</string>
     <key>NSCalendarsFullAccessUsageDescription</key>
     <string>NotchHub reads your calendar to show upcoming events in the notch.</string>
+    <key>NSRemindersUsageDescription</key>
+    <string>NotchHub shows due reminders and lets you complete them from the notch.</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>NotchHub reads and completes reminders only when you choose an action.</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>NotchHub controls Music and Spotify playback when you use media controls.</string>
 </dict>

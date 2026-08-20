@@ -2,10 +2,9 @@ import AppKit
 
 /// A borderless, transparent, always-on-top panel that hosts the notch UI.
 ///
-/// Sits at `.statusBar` window level so it draws above the menu bar (and the
-/// physical notch region), is non-activating so interacting with it never
-/// steals focus from the frontmost app, and joins all Spaces so the notch is
-/// always visible.
+/// Uses status-window level while visible, but cooperates with peer notch/menu
+/// utilities: it moves to the front only while expanded and returns to the back
+/// of its level when collapsed.
 final class NotchPanel: NSPanel {
 
     init(contentRect: NSRect) {
@@ -30,4 +29,12 @@ final class NotchPanel: NSPanel {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    func claimInteractionLayer() {
+        orderFrontRegardless()
+    }
+
+    func yieldToPeerOverlays() {
+        orderBack(nil)
+    }
 }

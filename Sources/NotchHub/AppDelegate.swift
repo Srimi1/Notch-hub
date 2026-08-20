@@ -1,13 +1,17 @@
 import AppKit
 import ServiceManagement
+import SwiftUI
 
 /// Owns the app lifecycle: spins up the notch overlay window and a menu-bar
 /// status item, and re-positions the overlay when the display configuration
 /// changes (external monitor connected, resolution change, sleep/wake).
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var notchController: NotchWindowController?
     private var statusItem: NSStatusItem?
+    private var settingsWindow: NSWindow?
+    private let instanceCoordinator = AppInstanceCoordinator()
     private let preferences = ModulePreferences()
 
     /// Modules offered as visibility toggles in the status menu — the ones backed
@@ -18,6 +22,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let loginItemTag = 100
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard instanceCoordinator.shouldContinueLaunching() else {
+            NSApplication.shared.terminate(nil)
+            return
+        }
+
         setUpStatusItem()
 
         let controller = NotchWindowController(preferences: preferences)
@@ -40,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setUpStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "◖◗"
+        configureStatusButton(item.button)
 
         let menu = NSMenu()
         menu.delegate = self
@@ -54,6 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSMenuItem(title: "Toggle Notch", action: #selector(toggleNotch), keyEquivalent: "t")
         )
         menu.addItem(makeModulesItem())
+        menu.addItem(
+            NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        )
 
         let loginItem = NSMenuItem(
             title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: ""
@@ -77,7 +89,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let modulesMenu = NSMenu()
         for module in toggleableModules {
             let entry = NSMenuItem(
-                title: module.title, action: #selector(toggleModule(_:)), keyEquivalent: ""
+                title: module.title,
+                action: #selector(toggleModule(_:)),
+                keyEquivalent: ""
             )
             entry.representedObject = module.rawValue
             entry.target = self
@@ -85,6 +99,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         modulesItem.submenu = modulesMenu
         return modulesItem
+    }
+
+    private func configureStatusButton(_ button: NSStatusBarButton?) {
+        guard let button else { return }
+        if let image = NSImage(
+            systemSymbolName: "rectangle.topthird.inset.filled",
+            accessibilityDescription: "NotchHub"
+        ) {
+            image.isTemplate = true
+            button.image = image
+            button.imagePosition = .imageOnly
+        } else {
+            button.title = "NH"
+        }
+        button.toolTip = "NotchHub"
+        button.setAccessibilityLabel("NotchHub")
     }
 
     // MARK: - NSMenuDelegate
@@ -109,6 +139,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggleNotch() {
         notchController?.toggle()
+    }
+
+    @objc private func openSettings() {
+        guard let services = notchController?.services else { return }
+        notchController?.collapse()
+        if settingsWindow == nil {
+            let view = SettingsRootView(services: services)
+            let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+            window.title = "NotchHub Settings"
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.isReleasedWhenClosed = false
+            window.minSize = NSSize(width: 620, height: 560)
+            window.setContentSize(NSSize(width: 680, height: 680))
+            window.center()
+            settingsWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
     @objc private func toggleModule(_ sender: NSMenuItem) {

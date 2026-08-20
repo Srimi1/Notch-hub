@@ -1,13 +1,17 @@
+import AppKit
 import Combine
 import SwiftUI
 
 /// Reactive state for the notch overlay. `isExpanded` drives both the SwiftUI
 /// content (via this `ObservableObject`) and the window-frame animation (the
 /// window controller subscribes to the published value).
+@MainActor
 final class NotchViewModel: ObservableObject {
 
     @Published private(set) var isExpanded = false
     @Published var activeModule: FeatureModule = .dashboard
+    @Published private(set) var presentedActivityID: String?
+    @Published private(set) var actionError: String?
 
     /// Persisted dashboard layout (which modules are shown, last active module).
     /// Shared with `AppDelegate`'s status-bar menu so menu toggles and the
@@ -26,7 +30,7 @@ final class NotchViewModel: ObservableObject {
     /// added on both sides so the black notch body stays aligned with the
     /// physical camera housing.
     @Published private(set) var showCollapsedWings = false
-    let collapsedWingWidth: CGFloat = 92
+    let collapsedWingWidth: CGFloat = 112
 
     /// Physical notch size on the active screen, published by the window
     /// controller. The expanded dashboard uses the width to leave a gap in the
@@ -40,13 +44,20 @@ final class NotchViewModel: ObservableObject {
 
     /// Tracks live hover so we know whether to collapse once a pin is released.
     private var isHovering = false
+    /// The menu-bar "Toggle Notch" action is intentional, not hover-driven. Keep
+    /// that expanded state pinned until the user toggles it again.
+    private var isManuallyPinned = false
     /// While a RAM clean is in flight (and briefly after, to show the result),
     /// the notch stays expanded even if the mouse leaves — otherwise the panel
     /// collapses the moment you move to the auth dialog and you never see the
     /// "Freed …" result.
     private var cleanPinned = false
 
-    private let spring = Animation.spring(response: 0.35, dampingFraction: 0.82)
+    private var transitionAnimation: Animation {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? .linear(duration: 0.01)
+            : .spring(response: 0.35, dampingFraction: 0.82)
+    }
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -59,10 +70,10 @@ final class NotchViewModel: ObservableObject {
             ? restored
             : (preferences.visibleModules.first ?? .dashboard)
 
-        services.startAmbient()
         observeLiveActivity()
         observeCleaner()
         forwardPreferenceChanges()
+        services.startAmbient()
     }
 
     /// Re-emit preference changes (e.g. a module toggled from the status menu)
@@ -85,32 +96,30 @@ final class NotchViewModel: ObservableObject {
                 self.cleanPinned = active
                 if active {
                     self.pendingCollapse?.cancel()
-                    if !self.isExpanded { withAnimation(self.spring) { self.isExpanded = true } }
-                } else if !self.isHovering {
+                    if !self.isExpanded { withAnimation(self.transitionAnimation) { self.isExpanded = true } }
+                } else if !self.isHovering, !self.isManuallyPinned {
                     // Result has been shown; collapse now (unless still hovering).
-                    withAnimation(self.spring) { self.isExpanded = false }
+                    withAnimation(self.transitionAnimation) { self.isExpanded = false }
                 }
             }
             .store(in: &cancellables)
     }
 
-    /// Drive `showCollapsedWings` from any live activity worth surfacing.
+    /// Drive `showCollapsedWings` from the shared activity coordinator.
     private func observeLiveActivity() {
-        let media = services.media.$nowPlaying.map { $0 != nil }
-        let focus = services.focus.$isOn
-        let lowBattery = services.battery.$level
-            .combineLatest(services.battery.$hasBattery, services.battery.$isCharging)
-            .map { level, has, charging in has && !charging && level <= 0.20 }
-
-        media.combineLatest(focus, lowBattery)
-            .map { mediaActive, focusOn, lowBattery in
-                mediaActive || focusOn || lowBattery
+        services.activityCoordinator.activityDidChange
+            .map { [weak self] in
+                Self.shouldShowCollapsedWings(self?.services.activityCoordinator.currentActivity)
             }
-            .removeDuplicates()
+            .compactMap { $0 }
             .receive(on: RunLoop.main)
             .sink { [weak self] active in
                 guard let self else { return }
-                withAnimation(self.spring) { self.showCollapsedWings = active }
+                withAnimation(self.transitionAnimation) { self.showCollapsedWings = active }
+                if let presentedActivityID = self.presentedActivityID,
+                   !self.services.activityCoordinator.queue.contains(where: { $0.id == presentedActivityID }) {
+                    self.presentCurrentActivity()
+                }
             }
             .store(in: &cancellables)
     }
@@ -122,11 +131,12 @@ final class NotchViewModel: ObservableObject {
         if hovering {
             guard !isExpanded else { return }
             beginInteractiveIfNeeded()
-            withAnimation(spring) { isExpanded = true }
+            presentCurrentActivity()
+            withAnimation(transitionAnimation) { isExpanded = true }
         } else {
             let work = DispatchWorkItem { [weak self] in
-                guard let self, !self.cleanPinned else { return } // stay open through a clean
-                withAnimation(self.spring) { self.isExpanded = false }
+                guard let self, !self.cleanPinned, !self.isManuallyPinned else { return }
+                withAnimation(self.transitionAnimation) { self.isExpanded = false }
             }
             pendingCollapse = work
             DispatchQueue.main.asyncAfter(deadline: .now() + collapseDelay, execute: work)
@@ -136,7 +146,18 @@ final class NotchViewModel: ObservableObject {
     func toggle() {
         pendingCollapse?.cancel()
         beginInteractiveIfNeeded()
-        withAnimation(spring) { isExpanded.toggle() }
+        if !isExpanded { presentCurrentActivity() }
+        isManuallyPinned = !isExpanded
+        withAnimation(transitionAnimation) { isExpanded.toggle() }
+    }
+
+    func collapse() {
+        guard !cleanPinned else { return }
+        pendingCollapse?.cancel()
+        isManuallyPinned = false
+        presentedActivityID = nil
+        actionError = nil
+        withAnimation(transitionAnimation) { isExpanded = false }
     }
 
     private func beginInteractiveIfNeeded() {
@@ -146,7 +167,124 @@ final class NotchViewModel: ObservableObject {
     }
 
     func select(_ module: FeatureModule) {
+        presentedActivityID = nil
+        actionError = nil
         activeModule = module
         preferences.lastActiveModule = module
+    }
+
+    var presentedActivity: ActivitySnapshot? {
+        guard let presentedActivityID else { return nil }
+        if let queued = services.activityCoordinator.queue.first(where: { $0.id == presentedActivityID }) {
+            return queued
+        }
+        let current = services.activityCoordinator.currentActivity
+        return Self.shouldPresentActivity(current) ? current : nil
+    }
+
+    func present(_ activity: ActivitySnapshot) {
+        presentedActivityID = Self.shouldPresentActivity(activity) ? activity.id : nil
+        actionError = nil
+    }
+
+    func dismissActivity() {
+        presentedActivityID = nil
+        actionError = nil
+    }
+
+    func selectVisibleModule(at index: Int) {
+        guard preferences.visibleModules.indices.contains(index) else { return }
+        select(preferences.visibleModules[index])
+    }
+
+    func performPrimaryActivityAction() {
+        guard let action = presentedActivity?.actions.first else { return }
+        perform(action)
+    }
+
+    func perform(_ action: ActivityAction) {
+        actionError = nil
+        switch action {
+        case let .joinMeeting(url):
+            guard let safeURL = SafeExternalURL.meetingURL(url) else {
+                reportActionError("NotchHub blocked an unsafe meeting link.")
+                return
+            }
+            open(safeURL, failureMessage: "The meeting link could not be opened.")
+        case let .openLocation(location):
+            guard let url = SafeExternalURL.mapsURL(for: location) else {
+                reportActionError("That event location is invalid.")
+                return
+            }
+            open(url, failureMessage: "Maps could not open that location.")
+        case .openCalendar:
+            openCalendar()
+        case let .completeReminder(id):
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if await self.services.reminders.complete(id: id) {
+                    self.presentCurrentActivity()
+                } else {
+                    self.reportActionError(
+                        self.services.reminders.lastError ?? "The reminder could not be completed."
+                    )
+                }
+            }
+        case .requestRemindersAccess:
+            Task { @MainActor [weak self] in await self?.services.reminders.requestAccess() }
+        case let .pauseTimer(id):
+            services.timers.pause(id: id)
+        case let .resumeTimer(id):
+            services.timers.resume(id: id)
+        case let .cancelTimer(id):
+            services.timers.cancel(id: id)
+        case let .dismissTimer(id):
+            services.timers.dismiss(id: id)
+        case .toggleMedia:
+            services.media.playPause()
+        case let .navigate(module):
+            select(module)
+        }
+    }
+
+    private func presentCurrentActivity() {
+        let current = services.activityCoordinator.currentActivity
+        presentedActivityID = Self.shouldPresentActivity(current) ? current?.id : nil
+        actionError = nil
+    }
+
+    static func shouldShowCollapsedWings(_ activity: ActivitySnapshot?) -> Bool {
+        guard let activity else { return false }
+        return activity.priority != .ambient
+    }
+
+    static func shouldPresentActivity(_ activity: ActivitySnapshot?) -> Bool {
+        guard let activity else { return false }
+        return activity.priority != .ambient
+    }
+
+    private func open(_ url: URL, failureMessage: String) {
+        guard NSWorkspace.shared.open(url) else {
+            reportActionError(failureMessage)
+            return
+        }
+    }
+
+    private func openCalendar() {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.iCal") else {
+            reportActionError("Calendar is not available on this Mac.")
+            return
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { [weak self] _, error in
+            if let error {
+                Task { @MainActor [weak self] in self?.reportActionError(error.localizedDescription) }
+            }
+        }
+    }
+
+    private func reportActionError(_ message: String) {
+        actionError = message
+        NSLog("NotchHub activity action: %@", message)
     }
 }
