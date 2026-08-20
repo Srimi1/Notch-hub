@@ -71,10 +71,12 @@ xattr -cr "$TMP_APP"
 
 sign_bundle() {
   local -r target="$1"
+  xattr -cr "$target" 2>/dev/null || true
 
   if [[ -z "$SIGNING_IDENTITY" ]]; then
     echo "▸ Ad-hoc code-signing (NOT distributable — Gatekeeper will block it)…"
     codesign --force --deep --sign - "$target"
+    xattr -cr "$target" 2>/dev/null || true
     codesign --verify --deep --strict "$target"
     return 0
   fi
@@ -91,10 +93,9 @@ sign_bundle() {
     args+=(--entitlements "$entitlements_path")
   fi
   codesign "${args[@]}" "$target"
+  xattr -cr "$target" 2>/dev/null || true
   codesign --verify --deep --strict --verbose=2 "$target"
 }
-
-sign_bundle "$TMP_APP"
 
 # Keep the canonical bundle directory stable so iCloud/Finder does not preserve
 # successive builds as "NotchHub 2.app", "NotchHub 3.app", and so on.
@@ -102,8 +103,8 @@ validate_publish_target
 mkdir -p "$APP"
 rm -rf "$APP/Contents"
 ditto "$TMP_APP/Contents" "$APP/Contents"
-xattr -cr "$APP"
-codesign --verify --deep --strict "$APP"
+xattr -cr "$APP" 2>/dev/null || true
+sign_bundle "$APP"
 cleanup_legacy_apps
 
 echo "✓ Built $APP"

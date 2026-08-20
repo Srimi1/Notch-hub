@@ -23,8 +23,9 @@ final class TimeService: ObservableObject {
 
     var clock: String { timeFormatter.string(from: now) }
     var meridiem: String {
-        let f = DateFormatter(); f.dateFormat = "a"
-        return f.string(from: now)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "a"
+        return formatter.string(from: now)
     }
 
     var dateLabel: String { dateFormatter.string(from: now) }

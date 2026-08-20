@@ -41,7 +41,10 @@ struct AICodingServiceTests {
                 .map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" } ?? "NULL"
             let sql = """
             INSERT INTO events (source, project, type, content_hash, payload, sent_at, status)
-            VALUES ('\(event.source)','\(event.project)','\(event.type)','hash',\(payloadSQL),\(event.sentAt),'\(event.status)');
+            VALUES (
+                '\(event.source)','\(event.project)','\(event.type)','hash',\(payloadSQL),
+                \(event.sentAt),'\(event.status)'
+            );
             """
             #expect(sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK)
         }
@@ -69,7 +72,7 @@ struct AICodingServiceTests {
             .init(
                 source: "kimi", project: "beta", type: "approval",
                 payload: "{\"message\":\"Needs your approval\"}", sentAt: now, status: "sent"
-            ),
+            )
         ])
         defer { removeFixture(at: path) }
 
@@ -99,7 +102,7 @@ struct AICodingServiceTests {
             .init(
                 source: "claude", project: "gamma", type: "complete",
                 payload: nil, sentAt: 1_780_000_000, status: "suppressed_type"
-            ),
+            )
         ])
         defer { removeFixture(at: path) }
 
@@ -118,7 +121,10 @@ struct AICodingServiceTests {
         let payloadData = try JSONSerialization.data(withJSONObject: ["message": smuggled])
         let payload = try #require(String(data: payloadData, encoding: .utf8))
         let path = makeFixtureDB([
-            .init(source: "kimi", project: "x", type: "approval", payload: payload, sentAt: 1, status: "sent"),
+            .init(
+                source: "kimi", project: "x", type: "approval",
+                payload: payload, sentAt: 1, status: "sent"
+            )
         ])
         defer { removeFixture(at: path) }
 
@@ -138,7 +144,10 @@ struct AICodingServiceTests {
         let payloadData = try JSONSerialization.data(withJSONObject: ["message": huge])
         let payload = try #require(String(data: payloadData, encoding: .utf8))
         let path = makeFixtureDB([
-            .init(source: "claude", project: "x", type: "attention", payload: payload, sentAt: 1, status: "sent"),
+            .init(
+                source: "claude", project: "x", type: "attention",
+                payload: payload, sentAt: 1, status: "sent"
+            )
         ])
         defer { removeFixture(at: path) }
 

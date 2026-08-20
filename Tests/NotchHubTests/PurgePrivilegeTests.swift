@@ -51,7 +51,7 @@ struct PurgePrivilegeTests {
         "a\"b", // double quote
         "a,b", // sudoers list separator
         "../etc/passwd", // path traversal / slash
-        "a|b", // pipe
+        "a|b" // pipe
     ])
     func rejectsUnsafeUsernames(_ name: String) {
         #expect(!PurgePrivilege.isSafeUsername(name))

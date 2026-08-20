@@ -191,10 +191,10 @@ private enum CalendarServiceError: LocalizedError {
         /// Hex like "#FF8800" for piping a calendar's tint into SwiftUI.
         var hexString: String? {
             guard let rgb = usingColorSpace(.sRGB) else { return nil }
-            let r = Int((rgb.redComponent * 255).rounded())
-            let g = Int((rgb.greenComponent * 255).rounded())
-            let b = Int((rgb.blueComponent * 255).rounded())
-            return String(format: "#%02X%02X%02X", r, g, b)
+            let red = Int((rgb.redComponent * 255).rounded())
+            let green = Int((rgb.greenComponent * 255).rounded())
+            let blue = Int((rgb.blueComponent * 255).rounded())
+            return String(format: "#%02X%02X%02X", red, green, blue)
         }
     }
 #endif

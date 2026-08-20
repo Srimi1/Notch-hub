@@ -27,21 +27,24 @@ final class AICodingService: ObservableObject {
         let message: String
 
         static func == (lhs: LogEntry, rhs: LogEntry) -> Bool {
-            lhs.timestamp == rhs.timestamp && lhs.rawSource == rhs.rawSource && lhs.project == rhs.project && lhs.event == rhs.event
+            lhs.timestamp == rhs.timestamp
+                && lhs.rawSource == rhs.rawSource
+                && lhs.project == rhs.project
+                && lhs.event == rhs.event
         }
     }
 
     @Published private(set) var status: AgentState = .idle
     @Published private(set) var activeAgent: String = "None"
     @Published private(set) var activeProject: String = "None"
-    @Published private(set) var lastEventTime: Date? = nil
+    @Published private(set) var lastEventTime: Date?
     @Published private(set) var recentLogs: [LogEntry] = []
 
     // Interactive approval prompt (when agent is waiting for permission)
-    @Published private(set) var pendingApproval: LogEntry? = nil
+    @Published private(set) var pendingApproval: LogEntry?
     /// Set when an allow/deny decision couldn't be persisted, so the UI can tell
     /// the user it didn't go through (the prompt stays visible to retry).
-    @Published private(set) var approvalError: String? = nil
+    @Published private(set) var approvalError: String?
 
     private var timer: Timer?
 

@@ -120,32 +120,34 @@ final class SystemMonitorService: ObservableObject {
 
     /// Bytes in use = active + wired + compressed.
     static func usedMemoryBytes() -> UInt64? {
-        guard let s = vmSnapshot() else { return nil }
+        guard let snapshot = vmSnapshot() else { return nil }
         let pageSize = UInt64(vm_kernel_page_size)
-        return (UInt64(s.active_count) + UInt64(s.wire_count) + UInt64(s.compressor_page_count)) * pageSize
+        return (UInt64(snapshot.active_count) + UInt64(snapshot.wire_count)
+            + UInt64(snapshot.compressor_page_count)) * pageSize
     }
 
     /// App memory = active + wired — the working set of running apps (the part
     /// `purge` deliberately leaves untouched).
     static func appBytes() -> UInt64? {
-        guard let s = vmSnapshot() else { return nil }
+        guard let snapshot = vmSnapshot() else { return nil }
         let pageSize = UInt64(vm_kernel_page_size)
-        return (UInt64(s.active_count) + UInt64(s.wire_count)) * pageSize
+        return (UInt64(snapshot.active_count) + UInt64(snapshot.wire_count)) * pageSize
     }
 
     /// Cached / reclaimable file-backed memory = inactive + speculative +
     /// purgeable — the pages `purge` actually flushes back to free.
     static func cachedBytes() -> UInt64? {
-        guard let s = vmSnapshot() else { return nil }
+        guard let snapshot = vmSnapshot() else { return nil }
         let pageSize = UInt64(vm_kernel_page_size)
-        return (UInt64(s.inactive_count) + UInt64(s.speculative_count) + UInt64(s.purgeable_count)) * pageSize
+        return (UInt64(snapshot.inactive_count) + UInt64(snapshot.speculative_count)
+            + UInt64(snapshot.purgeable_count)) * pageSize
     }
 
     /// Footprint of the memory compressor — pages occupied by compressed data.
     /// This counts as "used" memory in Activity Monitor.
     static func compressedBytes() -> UInt64? {
-        guard let s = vmSnapshot() else { return nil }
-        return UInt64(s.compressor_page_count) * UInt64(vm_kernel_page_size)
+        guard let snapshot = vmSnapshot() else { return nil }
+        return UInt64(snapshot.compressor_page_count) * UInt64(vm_kernel_page_size)
     }
 
     /// Swap currently in use, via BSD `sysctl vm.swapusage` → xsw_usage.xsu_used.

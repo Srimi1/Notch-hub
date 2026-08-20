@@ -27,8 +27,8 @@ final class ClipboardService: ObservableObject {
         /// One-line label for the entry.
         var preview: String {
             switch kind {
-            case .text(let t):
-                let line = t.replacingOccurrences(of: "\n", with: " ")
+            case .text(let text):
+                let line = text.replacingOccurrences(of: "\n", with: " ")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 return line.isEmpty ? "Empty text" : line
             case .image:

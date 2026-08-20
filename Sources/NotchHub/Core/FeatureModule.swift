@@ -118,7 +118,8 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
         case .liveActivities:
             "Collapsed strip rotation for media, timers, calendar, Bluetooth, app updates, HUDs, and notices."
         case .dropActions:
-            "Drop files for Shelf, AirDrop, cloud, zip, unzip, image convert, move, copy, open with, Music, trash, and eject."
+            "Drop files for Shelf, AirDrop, cloud, zip, unzip, image convert, move, copy, open with, "
+                + "Music, trash, and eject."
         case .shelf:
             "A carousel stash: drop files in, then drag them out when ready."
         case .clipboard:
@@ -173,7 +174,10 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
         case .liveActivities:
             ["Media", "Timers", "Calendar", "Bluetooth", "HUD", "Notices"]
         case .dropActions:
-            ["Shelf", "AirDrop", "Cloud", "Zip", "Unzip", "Convert", "Move", "Copy", "Open With", "Music", "Trash", "Eject"]
+            [
+                "Shelf", "AirDrop", "Cloud", "Zip", "Unzip", "Convert",
+                "Move", "Copy", "Open With", "Music", "Trash", "Eject",
+            ]
         case .shelf:
             ["Drop in", "Drag out", "Carousel", "Drop Actions tile"]
         case .clipboard:
