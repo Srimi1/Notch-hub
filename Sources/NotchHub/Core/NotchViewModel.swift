@@ -54,6 +54,9 @@ final class NotchViewModel: ObservableObject {
     /// How long a copy popup lingers before sliding away on its own.
     private let hudDismissDelay: TimeInterval = 4.0
     private var pendingHudDismiss: DispatchWorkItem?
+    /// Dismisses the popup the instant its content is pasted — but only when
+    /// Accessibility was already granted for the Focus toggle. Never prompts.
+    private let pasteMonitor = PasteEventMonitor()
 
     /// Tracks live hover so we know whether to collapse once a pin is released.
     private var isHovering = false
@@ -87,6 +90,9 @@ final class NotchViewModel: ObservableObject {
         services.clipboard.onCopy = { [weak self] clip in
             self?.showCopyHUD(clip)
         }
+        pasteMonitor.onPaste = { [weak self] in
+            self?.dismissHUD()
+        }
     }
 
     // MARK: - HUD tier
@@ -105,9 +111,11 @@ final class NotchViewModel: ObservableObject {
         pendingHudDismiss?.cancel()
         withAnimation(transitionAnimation) { hudContent = .clip(clip) }
         armHudDismiss()
+        pasteMonitor.start()
     }
 
     func dismissHUD() {
+        pasteMonitor.stop()
         pendingHudDismiss?.cancel()
         pendingHudDismiss = nil
         guard hudContent != nil else { return }

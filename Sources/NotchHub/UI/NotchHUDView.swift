@@ -36,6 +36,7 @@ private struct CopyHUDRow: View {
         HStack(spacing: 12) {
             icon
                 .frame(width: 44, height: 44)
+                .draggableFile(clip)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(details.title)
@@ -88,6 +89,19 @@ private struct CopyHUDRow: View {
             Image(systemName: clip.symbol)
                 .font(.system(size: 24, weight: .medium))
                 .foregroundStyle(.white.opacity(0.8))
+        }
+    }
+}
+
+private extension View {
+    /// File clips can be dragged straight out of the popup — into Finder, a
+    /// mail draft, an upload dialog. Other clip kinds drag nothing.
+    @ViewBuilder
+    func draggableFile(_ clip: ClipboardService.Clip) -> some View {
+        if case .file(let url) = clip.kind {
+            onDrag { NSItemProvider(contentsOf: url) ?? NSItemProvider() }
+        } else {
+            self
         }
     }
 }
