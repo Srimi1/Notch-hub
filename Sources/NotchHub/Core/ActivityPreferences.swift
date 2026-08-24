@@ -72,18 +72,6 @@ final class ActivityPreferences {
         }
     }
 
-    func setCalendarLeadMinutes(_ value: Int) {
-        calendarLeadMinutes = Self.bounded(value, range: 5 ... 60)
-    }
-
-    func setReminderLeadMinutes(_ value: Int) {
-        reminderLeadMinutes = Self.bounded(value, range: 5 ... 240)
-    }
-
-    func setBatteryWarningPercent(_ value: Int) {
-        batteryWarningPercent = Self.bounded(value, range: 5 ... 50)
-    }
-
     private func persistEnabledKinds() {
         let values = enabledKinds.map(\.rawValue).sorted()
         defaults.set(values, forKey: Key.enabledKinds)

@@ -18,7 +18,7 @@ final class ModulePreferences: ObservableObject {
     /// Dashboard layout for a fresh install (matches the modules backed by real
     /// services today).
     static let defaultVisibleModules: [FeatureModule] =
-        [.dashboard, .media, .calendar, .todo, .pomodoro, .aiCoding, .clipboard, .focus, .ramCleaner]
+        [.dashboard, .media, .calendar, .todo, .pomodoro, .clipboard, .focus]
 
     /// Modules shown in the toggle band, kept in canonical (enum-declaration) order.
     @Published var visibleModules: [FeatureModule] {
@@ -59,12 +59,20 @@ final class ModulePreferences: ObservableObject {
     // MARK: - Loading
 
     private static func loadVisibleModules(from defaults: UserDefaults) -> [FeatureModule] {
+        // A missing key and a stored empty array are different facts: "never
+        // chosen" versus "hid everything on purpose". Treating both as "no
+        // preference" put every module back on the next launch, so hiding them
+        // all was not actually persistable.
         guard let raw = defaults.array(forKey: Key.visibleModules) as? [String] else {
             return defaultVisibleModules
         }
         // Drop any IDs that no longer map to a known module (survives enum renames).
         let restored = raw.compactMap(FeatureModule.init(rawValue:))
-        return restored.isEmpty ? defaultVisibleModules : restored
+        // A stored empty list is honored. A non-empty list that decodes to
+        // nothing is an obsolete layout — every module in it is gone — so fall
+        // back rather than leaving the user with an empty notch they never
+        // asked for. Same rule `ActivityPreferences` uses for enabled kinds.
+        return raw.isEmpty || !restored.isEmpty ? restored : defaultVisibleModules
     }
 
     private static func loadLastActiveModule(from defaults: UserDefaults) -> FeatureModule {

@@ -8,6 +8,11 @@ struct ExpandedDashboardView: View {
     @ObservedObject var viewModel: NotchViewModel
     private var services: ServiceHub { viewModel.services }
 
+    /// Lets the selected-chip capsule travel between chips instead of blinking
+    /// out of one and into the next.
+    @Namespace private var chipSelection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         if viewModel.presentedActivity != nil {
             ActivityDetailView(
@@ -23,31 +28,49 @@ struct ExpandedDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             toggleBand
 
-            HStack(alignment: .top, spacing: 12) {
-                moduleHeader
-                    .frame(
-                        width: NotchTheme.moduleHeaderWidth,
-                        height: NotchTheme.contentHeight,
-                        alignment: .topLeading
-                    )
-                Divider().overlay(NotchTheme.divider)
-                moduleBody
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: NotchTheme.contentHeight,
-                        maxHeight: NotchTheme.contentHeight,
-                        alignment: .leading
-                    )
-                    .clipped()
+            if visibleModules.isEmpty {
+                // Hiding every module is a supported choice, so say what
+                // happened rather than rendering a module the user just hid.
+                EmptyHint(
+                    symbol: "square.grid.2x2",
+                    text: "Every module is hidden. Turn one back on in Settings ▸ Modules."
+                )
+                .frame(maxWidth: .infinity, minHeight: NotchTheme.contentHeight, alignment: .leading)
+            } else {
+                moduleRow
             }
-            .frame(
-                maxWidth: .infinity,
-                minHeight: NotchTheme.contentHeight,
-                maxHeight: NotchTheme.contentHeight,
-                alignment: .leading
-            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var moduleRow: some View {
+        HStack(alignment: .top, spacing: 12) {
+            moduleHeader
+                .frame(
+                    width: NotchTheme.moduleHeaderWidth,
+                    height: NotchTheme.contentHeight,
+                    alignment: .topLeading
+                )
+            Divider().overlay(NotchTheme.divider)
+            moduleBody
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: NotchTheme.contentHeight,
+                    maxHeight: NotchTheme.contentHeight,
+                    alignment: .leading
+                )
+                .clipped()
+                // Keyed on the module so switching cross-fades the whole body
+                // rather than mutating one view's contents in place.
+                .id(viewModel.activeModule)
+                .transition(.opacity)
+        }
+        .frame(
+            maxWidth: .infinity,
+            minHeight: NotchTheme.contentHeight,
+            maxHeight: NotchTheme.contentHeight,
+            alignment: .leading
+        )
     }
 
     /// Module toggles split into two groups that flank the physical notch, with
@@ -72,12 +95,19 @@ struct ExpandedDashboardView: View {
                 ModuleChip(
                     module: module,
                     isSelected: module == viewModel.activeModule,
-                    shortcut: keyboardShortcut(for: module)
+                    shortcut: keyboardShortcut(for: module),
+                    selectionNamespace: chipSelection
                 ) {
-                    viewModel.select(module)
+                    withAnimation(moduleAnimation) { viewModel.select(module) }
                 }
             }
         }
+    }
+
+    /// Matches the notch's own expand/collapse feel, and collapses to a near
+    /// instant cut under Reduce Motion — the same rule `NotchViewModel` uses.
+    private var moduleAnimation: Animation {
+        reduceMotion ? .linear(duration: 0.01) : .spring(response: 0.3, dampingFraction: 0.85)
     }
 
     private func keyboardShortcut(for module: FeatureModule) -> KeyEquivalent? {
@@ -102,6 +132,7 @@ struct ExpandedDashboardView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
+                    .contentTransition(.opacity)
                 Text(viewModel.activeModule.summary)
                     .font(.system(size: 11))
                     .foregroundStyle(NotchTheme.secondaryText)
@@ -124,42 +155,11 @@ struct ExpandedDashboardView: View {
             TimerModuleView(timers: services.timers)
         case .todo:
             ReminderModuleView(reminders: services.reminders)
-        case .aiCoding:
-            CreditTrackerModuleView(aiCoding: services.aiCoding, credit: services.credit)
         case .clipboard:
             ClipboardModuleView(clipboard: services.clipboard)
         case .focus:
             FocusModuleView(focus: services.focus)
-        case .ramCleaner:
-            MemoryCleanerModuleView(cleaner: services.memoryCleaner,
-                                    system: services.system,
-                                    privilege: services.purgePrivilege)
-        default:
-            FeatureChecklistView(module: viewModel.activeModule)
         }
-    }
-}
-
-// MARK: - Dashboard (glanceable real tiles)
-
-private struct DashboardModuleView: View {
-    @ObservedObject var services: ServiceHub
-
-    var body: some View {
-        HStack(spacing: 8) {
-            StatTile(symbol: "clock", title: services.time.clock, subtitle: services.time.dateLabel)
-            if services.battery.hasBattery {
-                StatTile(symbol: services.battery.symbol, title: "\(services.battery.percent)%", subtitle: batterySub)
-            }
-            StatTile(symbol: "cpu", title: "\(Int(services.system.cpuUsage * 100))%", subtitle: "CPU")
-            StatTile(symbol: "memorychip", title: "\(Int(services.system.memoryUsage * 100))%", subtitle: "RAM")
-        }
-    }
-
-    private var batterySub: String {
-        if services.battery.isCharging { return "Charging" }
-        if let m = services.battery.minutesRemaining { return "\(m / 60)h \(m % 60)m" }
-        return "Battery"
     }
 }
 
@@ -228,7 +228,13 @@ private struct CalendarModuleView: View {
                 text: calendar.lastError ?? "Enable Calendar access in System Settings ▸ Privacy."
             )
         case .unknown:
-            EmptyHint(symbol: "calendar", text: "Requesting calendar access…")
+            // Nothing requests access on its own any more, so this state has to
+            // offer the action rather than narrate a request that is not happening.
+            HStack(spacing: 10) {
+                EmptyHint(symbol: "calendar", text: "Allow access to show upcoming events.")
+                Button("Enable Calendar") { calendar.requestAccess() }
+                    .buttonStyle(.borderedProminent)
+            }
         case .granted where calendar.events.isEmpty:
             EmptyHint(symbol: "calendar", text: "Nothing on the calendar for the next two days.")
         case .granted:
@@ -302,184 +308,6 @@ private struct FocusModuleView: View {
             return "Enable NotchHub in System Settings ▸ Privacy ▸ Accessibility to toggle Focus."
         }
         return "Silences notifications across your Mac."
-    }
-}
-
-// MARK: - RAM Cleaner (official purge + live memory breakdown)
-
-private struct MemoryCleanerModuleView: View {
-    @ObservedObject var cleaner: MemoryCleanerService
-    @ObservedObject var system: SystemMonitorService
-    @ObservedObject var privilege: PurgePrivilege
-
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(statusTitle)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    if cleaner.state != .cleaning { permissionControl }
-                }
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.12))
-                        Capsule()
-                            .fill(barColor)
-                            .frame(width: max(4, geo.size.width * cleaner.pressure))
-                    }
-                }
-                .frame(height: 5)
-                Text(subtitle)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            cleanButton
-        }
-        .onAppear {
-            cleaner.refresh()
-            privilege.refresh()
-        }
-        .onChange(of: system.memoryUsage) { cleaner.refresh() }
-    }
-
-    /// One-time "Always Allow" affordance: enable passwordless cleaning, or show
-    /// it's on (tap to revoke). Sits on the title row so the 46pt card height is
-    /// unchanged.
-    @ViewBuilder private var permissionControl: some View {
-        if privilege.isPasswordless {
-            Button { privilege.disableAlwaysAllow() } label: {
-                Image(systemName: "key.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.green)
-            }
-            .buttonStyle(.plain)
-            .help(
-                "Passwordless cleaning is on. Tap to remove /etc/sudoers.d/notchhub "
-                    + "(asks for admin once)."
-            )
-        } else {
-            // The label used to read "Skip password", which never mentioned
-            // that agreeing writes a root-owned sudoers rule. The button now
-            // names what it installs, and the tooltip spells out the file and
-            // how to remove it.
-            Button { privilege.enableAlwaysAllow() } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "key")
-                    Text("Allow without password…")
-                }
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.white.opacity(0.55))
-            }
-            .buttonStyle(.plain)
-            .help(
-                "Installs a sudoers rule at /etc/sudoers.d/notchhub allowing "
-                    + "/usr/sbin/purge to run without a password. Asks for admin once. "
-                    + "Remove it here, or with: sudo rm /etc/sudoers.d/notchhub"
-            )
-        }
-    }
-
-    private var barColor: Color {
-        if cleaner.pressure > 0.85 { return .red }
-        if cleaner.pressure > 0.7 { return .orange }
-        return .green
-    }
-
-    private var cleanButton: some View {
-        Button {
-            cleaner.clean()
-        } label: {
-            HStack(spacing: 6) {
-                if cleaner.state == .cleaning {
-                    ProgressView().controlSize(.small).tint(.white)
-                } else if let icon = buttonIcon {
-                    Image(systemName: icon)
-                }
-                Text(buttonText)
-            }
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(buttonForeground)
-            .padding(.horizontal, 12)
-            .frame(height: 32)
-            .background(Capsule().fill(buttonFill))
-        }
-        .buttonStyle(.plain)
-        .disabled(cleaner.state == .cleaning)
-    }
-
-    /// "Freed 2.8 GB" / "Freed 320 MB" / "Already optimized".
-    private var freedLabel: String {
-        guard let mb = cleaner.lastFreedMB else { return "Already optimized" }
-        return mb >= 1024 ? String(format: "Freed %.1f GB", mb / 1024)
-            : "Freed \(Int(mb.rounded())) MB"
-    }
-
-    private var statusTitle: String {
-        switch cleaner.state {
-        case .idle: return "Memory"
-        case .cleaning: return "Freeing inactive memory…"
-        case .done: return freedLabel
-        case .cancelled: return "Cancelled"
-        case .needsPermission: return "Needs permission"
-        case .failed: return "Couldn't free memory"
-        }
-    }
-
-    /// The breakdown line; when a clean just finished, show the real
-    /// Activity-Monitor "Memory Used" reduction instead.
-    private var subtitle: String {
-        switch cleaner.state {
-        case .needsPermission:
-            return "Authenticate (Touch ID or password) to flush cached memory."
-        case .done where cleaner.lastUsedBeforeGB - cleaner.lastUsedAfterGB >= 0.05:
-            return String(format: "Memory used %.1f → %.1f GB",
-                          cleaner.lastUsedBeforeGB, cleaner.lastUsedAfterGB)
-        default:
-            return String(format: "App %.1f · Cached %.1f · Compressed %.1f · Swap %.1f GB",
-                          cleaner.appGB, cleaner.cachedGB, cleaner.compressedGB, cleaner.swapUsedGB)
-        }
-    }
-
-    private var buttonText: String {
-        switch cleaner.state {
-        case .idle: return "Free Up RAM"
-        case .cleaning: return "Cleaning"
-        case .done: return freedLabel
-        case .cancelled: return "Cancelled"
-        case .needsPermission: return "Needs permission"
-        case .failed: return "Try again"
-        }
-    }
-
-    private var buttonIcon: String? {
-        switch cleaner.state {
-        case .idle: return "memorychip"
-        case .done: return "checkmark"
-        case .needsPermission: return "lock.fill"
-        case .cancelled, .failed: return "arrow.clockwise"
-        case .cleaning: return nil
-        }
-    }
-
-    private var buttonForeground: Color {
-        switch cleaner.state {
-        case .idle, .done: return .black
-        default: return .white
-        }
-    }
-
-    private var buttonFill: Color {
-        switch cleaner.state {
-        case .idle, .done: return .green
-        case .needsPermission: return Color.orange.opacity(0.9)
-        default: return Color.white.opacity(0.12)
-        }
     }
 }
 
@@ -564,50 +392,6 @@ private struct ClipTile: View {
     }
 }
 
-// MARK: - Remaining modules (descriptive until implemented)
-
-private struct FeatureChecklistView: View {
-    let module: FeatureModule
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(module.items.prefix(8), id: \.self) { item in
-                    StatTile(symbol: "checkmark.circle", title: item, subtitle: "Planned")
-                        .frame(width: 116)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Shared tiles
-
-private struct StatTile: View {
-    let symbol: String
-    let title: String
-    let subtitle: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Image(systemName: symbol)
-                .font(.system(size: 14, weight: .semibold))
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Text(subtitle)
-                .font(.system(size: 10))
-                .foregroundStyle(.white.opacity(0.55))
-                .lineLimit(1)
-        }
-        .foregroundStyle(.white)
-        .frame(maxWidth: .infinity, minHeight: 38, maxHeight: 38, alignment: .topLeading)
-        .padding(5)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.07)))
-    }
-}
-
 private struct EmptyHint: View {
     let symbol: String
     let text: String
@@ -622,44 +406,5 @@ private struct EmptyHint: View {
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-    }
-}
-
-// MARK: - Time helpers
-
-enum RelativeTime {
-    static func timer(_ interval: TimeInterval) -> String {
-        let value = max(0, Int(interval.rounded(.up)))
-        let hours = value / 3600
-        let minutes = (value % 3600) / 60
-        let seconds = value % 60
-        if hours > 0 { return String(format: "%d:%02d:%02d", hours, minutes, seconds) }
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
-
-    static func clock(_ date: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "h:mm a"
-        return f.string(from: date)
-    }
-
-    /// "now", "in 12m", "in 3h" — compact countdown for chips.
-    static func short(to date: Date) -> String {
-        let delta = date.timeIntervalSinceNow
-        if delta <= 0 { return "now" }
-        let minutes = Int(delta / 60)
-        if minutes < 60 { return "in \(max(minutes, 1))m" }
-        let hours = minutes / 60
-        return "in \(hours)h"
-    }
-
-    /// "now", "2m ago", "3h ago" — compact elapsed time for past events.
-    static func ago(_ date: Date) -> String {
-        let delta = -date.timeIntervalSinceNow
-        if delta < 60 { return "now" }
-        let minutes = Int(delta / 60)
-        if minutes < 60 { return "\(minutes)m ago" }
-        let hours = minutes / 60
-        if hours < 24 { return "\(hours)h ago" }
-        return "\(hours / 24)d ago"
     }
 }

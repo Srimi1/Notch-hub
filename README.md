@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/macOS-14.0%2B-blue?logo=apple" alt="macOS 14+" />
   <img src="https://img.shields.io/badge/Architecture-Apple%20Silicon%20(arm64)-informational" alt="Apple Silicon" />
   <img src="https://img.shields.io/badge/Swift-5.9%20%7C%206.0-orange?logo=swift" alt="Swift" />
-  <img src="https://img.shields.io/badge/Tests-86%20Passed-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-102%20Passed-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/License-Apache%202.0-lightgrey" alt="License" />
 </p>
 
@@ -30,8 +30,11 @@ Built natively in Swift using AppKit for windowing and SwiftUI for rendering, No
 
 - ⚡ **Zero Friction Overlay:** Floats at status level (`NSPanel.Floating`) without ever stealing active keyboard focus or disrupting your workflow.
 - 🎯 **Context-Aware Next Up Strip:** Intelligently arbitrates and surfaces imminent calendar meetings, running pomodoro/countdown timers, overdue reminders, media playback, focus modes, and critical battery warnings.
-- 🛠️ **Modular Dashboard:** One-click access to Mach-level system vitals, 1-tap RAM cleaning, in-memory clipboard history, AI coding agent monitor (`hermes-notify`), and live LLM spend & credit tracking (xAI, Anthropic, OpenAI).
-- 🛡️ **Hardened Privacy & Security:** API keys stored exclusively in macOS Login Keychain. All calendar strings and external URLs pass through Unicode sanitizers and hostile URL/SSRF blockers.
+- 🛠️ **Modular Dashboard:** Seven modules, every one backed by a live service — Mach-level system vitals, media transport, calendar, reminders, timers, in-memory clipboard history, and Focus.
+- 📋 **Copy Popup:** Copy anything and a Dynamic-Island-style box grows out of the notch — real file icon, name, and size. It slides away on its own, dismisses instantly on ⌘V when Accessibility is already granted, and file clips can be dragged straight out of it.
+- 🔋 **Live Battery Glyph:** A drawn battery whose fill tracks the real charge and whose colour follows the system's own language — green on power, red when low, yellow in Low Power Mode. Reacts the instant the cable goes in.
+- 🔒 **Asks Once:** Signed with a stable identity, so macOS privacy grants survive rebuilds. Nothing prompts on launch — every permission dialog traces to a button you pressed.
+- 🛡️ **Nothing To Leak:** No network requests, no stored credentials, and no privileged code path. All calendar strings and external URLs pass through Unicode sanitizers and hostile URL/SSRF blockers.
 
 ---
 
@@ -45,7 +48,6 @@ flowchart TB
         MachBSD["Mach / BSD VM (CPU & Memory Counters)"]
         Pasteboard["NSPasteboard (Clipboard History)"]
         AppleEvents["Apple Events (Music / Spotify / Focus)"]
-        Hermes["hermes-notify SQLite DB"]
     end
 
     subgraph Core ["Core Service & State Graph"]
@@ -102,17 +104,13 @@ mindmap
       Low Battery Warnings
       Focus Mode Indicators
     Dashboard Modules
-      System Monitor CPU / RAM / Disk
-      RAM Cleaner /usr/sbin/purge
+      System Monitor CPU / RAM
       Clipboard History
-      AI Coding Monitor hermes-notify
-      Credit Tracker xAI / Anthropic / OpenAI
       Pomodoro & Timers
       Media Controls
       Calendar & Reminders
       Focus Mode Toggles
     Security & Utilities
-      Keychain Storage
       Unicode & URL Sanitizer
       Single Instance Guard
       Multi-Display Adaptation
@@ -123,10 +121,7 @@ mindmap
 | Module | Concrete View & Service | Description & Capabilities |
 | :--- | :--- | :--- |
 | **Next Up Strip** | [`ActivityCoordinator`](Sources/NotchHub/Core/ActivityCoordinator.swift) | Real-time wings on either side of the notch displaying active countdowns, imminent meeting join buttons, media titles, and battery warnings. |
-| **Dashboard** | `DashboardModuleView` → [`SystemMonitorService`](Sources/NotchHub/Services/SystemMonitorService.swift) | Live Mach CPU load, wired/active/compressed RAM usage breakdown, battery percentage, and disk storage metrics. |
-| **Clean RAM** | `MemoryCleanerModuleView` → [`PurgePrivilege`](Sources/NotchHub/Services/PurgePrivilege.swift) | Immediate memory freeing via Mach VM caches. Supports an optional, strictly validated passwordless `/usr/sbin/purge` sudoers configuration. |
-| **AI Coding** | `CreditTrackerModuleView` → [`AICodingService`](Sources/NotchHub/Services/AICodingService.swift) | Passive read-only monitoring of local agent sessions (`hermes-notify`), displaying agent status (Idle, Running, Needs Attention, Done) and Allow/Deny action buttons. |
-| **Credit Tracker** | `CreditTrackerModuleView` → [`CreditTrackerService`](Sources/NotchHub/Services/CreditTrackerService.swift) | Queries live balance & spend from xAI, Anthropic, and OpenAI over TLS 1.3. Displays honest stale-time indicators and prevents token leakage across redirects. |
+| **Dashboard** | `DashboardModuleView` → [`SystemMonitorService`](Sources/NotchHub/Services/SystemMonitorService.swift) | Live Mach CPU load, memory-used percentage, clock, and a drawn [`BatteryGlyphView`](Sources/NotchHub/UI/BatteryGlyphView.swift) whose fill and colour track the real charge. |
 | **Calendar** | `CalendarModuleView` → [`CalendarService`](Sources/NotchHub/Services/CalendarService.swift) | Surfaces events across connected calendars, provides 1-click launch for verified Zoom/Teams/Meet URLs, and displays location map previews. |
 | **Todo & Reminders** | `ReminderModuleView` → [`ReminderService`](Sources/NotchHub/Services/ReminderService.swift) | Fetches reminders from EventKit with generation-token serialization and tombstone tracking to ensure completions never get undone by out-of-order responses. |
 | **Pomodoro & Timers** | `TimerModuleView` → [`ActivityTimerService`](Sources/NotchHub/Services/ActivityTimerService.swift) | Up to 8 concurrent persistent countdown and focus timers that survive app restarts and Mac sleep/wake cycles. |
@@ -159,33 +154,27 @@ flowchart LR
     subgraph Untrusted ["Untrusted Boundary"]
         EK["Calendar & Reminder Text"]
         URLs["Meeting & Map URLs"]
-        API["Remote API Responses"]
     end
 
     subgraph Defense ["Security Filters"]
         Sanitize["DisplaySanitizer<br/>(Strips Bidi, Tags, ZWSP, Combining Stacks)"]
         SafeURL["SafeExternalURL<br/>(Blocks loopback, private IPs, hex/octal IPs)"]
-        HTTPClient["APIClient Actor<br/>(TLS 1.3, Capped 2 MiB stream, No-redirect replay)"]
     end
 
     subgraph Output ["Safe Execution"]
         SafeText["Notch Overlay Text"]
         OpenURL["NSWorkspace.open"]
-        Keychain[("macOS Keychain Store")]
     end
 
     EK --> Sanitize --> SafeText
     URLs --> SafeURL --> OpenURL
-    API --> HTTPClient --> Keychain
 ```
 
-1. **Credential Safety:** API keys are never stored in `UserDefaults`, plists, or repository files. All tokens reside in the encrypted macOS Login Keychain (`com.notchhub.apikeys`).
+1. **No Network, No Credentials:** NotchHub makes no outbound network requests and stores no secrets. The only URLs it opens are meeting and map links you activate yourself, and they go through the validator below.
 2. **Untrusted Input Sanitization ([`UntrustedInput.swift`](Sources/NotchHub/Core/UntrustedInput.swift)):**
    - Strips Unicode bidirectional overrides (`U+202A`–`U+2069`), default-ignorable characters, and runaway combining marks before rendering text in the overlay.
    - External URLs are strictly validated: non-HTTPS links and private/loopback IP addresses (including octal/hex variants) are rejected to prevent SSRF or arbitrary local handler execution.
-3. **Network Boundary Protection ([`APIClient.swift`](Sources/NotchHub/Services/APIClient.swift)):**
-   - Refuses cross-origin redirects to prevent `URLSession` from leaking Authorization headers to third-party endpoints.
-   - Enforces a strict 2 MiB maximum response streaming cap and TLS 1.3 minimum.
+3. **No Privilege Escalation:** NotchHub never asks for an administrator password and installs nothing outside its own bundle. Earlier versions offered an opt-in passwordless `sudo` rule for the RAM cleaner; both the cleaner and the rule are gone — see *Upgrading from v0.1.x* if you enabled it.
 
 ---
 
@@ -203,13 +192,22 @@ flowchart LR
 git clone https://github.com/Srimi1/Notch-hub.git
 cd Notch-hub
 
-# 2. Build the release .app (ad-hoc signed)
+# 2. Build the release .app (signed with your Apple Development cert if you have one)
 ./scripts/build-app.sh release
 
 # 3. Copy to Applications and launch
 cp -R NotchHub.app /Applications/
 open /Applications/NotchHub.app
 ```
+
+> **Signing and permissions**
+> `build-app.sh` signs with the first Apple Development or Developer ID
+> certificate in your keychain, falling back to ad-hoc if you have none. This
+> matters more than it sounds: an ad-hoc signature is regenerated on every
+> build, so macOS treats each rebuild as a brand-new app and throws away your
+> Calendar and Reminders grants — which is what makes an app seem to ask for
+> permission endlessly. A stable identity makes each grant a one-time answer.
+> Override with `export NOTCHHUB_SIGNING_IDENTITY="…"`.
 
 > **Why distributed as source?**  
 > NotchHub is distributed as source for full auditability and provenance. When built locally on your machine, macOS will run the resulting binary without Gatekeeper quarantine blocks.
@@ -223,6 +221,27 @@ open /Applications/NotchHub.app
 
 ---
 
+## Upgrading from v0.1.x
+
+The RAM cleaner, the AI coding monitor, and the AI credit tracker were removed.
+NotchHub clears the API keys the credit tracker stored the first time the new
+version launches, so there is nothing to do there.
+
+The one thing it **cannot** remove for you is the optional passwordless `sudo`
+rule the RAM cleaner offered, because deleting a root-owned file needs an
+administrator password — and a release whose point is removing the privileged
+code path should not ask you for one. If you enabled it, remove it yourself:
+
+```bash
+# Check whether the old rule is still installed (prints the path if it is)
+sudo --non-interactive --list /usr/sbin/purge
+
+# Remove it
+sudo rm -f /etc/sudoers.d/notchhub
+```
+
+---
+
 ## Uninstall
 
 To cleanly and completely uninstall NotchHub:
@@ -231,13 +250,13 @@ To cleanly and completely uninstall NotchHub:
 # 1. Quit NotchHub and delete application
 rm -rf /Applications/NotchHub.app
 
-# 2. Remove passwordless purge sudoers rule (if enabled)
-sudo rm -f /etc/sudoers.d/notchhub
-
-# 3. Remove application preferences
+# 2. Remove application preferences
 defaults delete com.notchhub.app
 
-# 4. Remove stored API keys from Keychain
+# 3. Remove the passwordless purge rule left by v0.1.x (if you enabled it)
+sudo rm -f /etc/sudoers.d/notchhub
+
+# 4. Remove any API keys left by the v0.1.x credit tracker
 security delete-generic-password -s com.notchhub.apikeys 2>/dev/null
 ```
 
@@ -251,7 +270,7 @@ NotchHub uses SwiftPM, SwiftTesting (`import Testing`), SwiftLint, and SwiftForm
 # Run debug build
 swift build
 
-# Run unit tests (86 tests across 21 suites)
+# Run unit tests (102 tests across 24 suites)
 swift test
 
 # Run full repository quality gate (build, test compile, format, lint, concurrency)

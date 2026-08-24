@@ -5,17 +5,25 @@
 #
 # Signing
 # -------
-# By default the bundle is **ad-hoc signed**: fine for running locally or
-# building from source, but Gatekeeper will refuse it on another Mac.
+# Signing identity, in order of preference:
 #
-# For a distributable build, export a Developer ID identity before running:
+#   1. NOTCHHUB_SIGNING_IDENTITY, if exported — use exactly that.
+#   2. Auto-detected: the first "Apple Development" or "Developer ID
+#      Application" identity in the login keychain. A stable identity is what
+#      makes macOS privacy grants (Calendar, Reminders, Apple Events) survive
+#      rebuilds — an ad-hoc signature changes every build, so TCC treats each
+#      build as a brand-new app and prompts again.
+#   3. Ad-hoc, when no identity exists. Runs locally; grants reset per rebuild;
+#      Gatekeeper refuses it on other Macs.
+#
+# Identity-signed builds use the hardened runtime, a secure timestamp, and
+# Resources/NotchHub.entitlements (Apple Events — required or Media/Focus
+# break silently under the hardened runtime). Note: Apple Development
+# certificates expire yearly; on expiry auto-detection finds nothing and the
+# script falls back to ad-hoc with a warning rather than failing.
 #
 #   export NOTCHHUB_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
-#   export NOTCHHUB_ENTITLEMENTS="Resources/NotchHub.entitlements"   # optional
-#   ./scripts/build-app.sh release
-#
-# That signs with the hardened runtime and a secure timestamp, which is what
-# notarization requires. `scripts/build-dmg.sh` can then notarize and staple.
+#   ./scripts/build-app.sh release       # then build-dmg.sh can notarize + staple
 #
 set -euo pipefail
 
@@ -23,7 +31,12 @@ CONFIG="${1:-release}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/NotchHub.app"
 SIGNING_IDENTITY="${NOTCHHUB_SIGNING_IDENTITY:-}"
-ENTITLEMENTS="${NOTCHHUB_ENTITLEMENTS:-}"
+if [[ -z "$SIGNING_IDENTITY" ]]; then
+  # Prefer a stable identity so TCC grants persist across rebuilds (see header).
+  SIGNING_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+    | awk -F'"' '/Apple Development|Developer ID Application/ {print $2; exit}')"
+fi
+ENTITLEMENTS="${NOTCHHUB_ENTITLEMENTS:-Resources/NotchHub.entitlements}"
 TMP_DIR="$(mktemp -d)"
 TMP_APP="$TMP_DIR/NotchHub.app"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -81,7 +94,7 @@ sign_bundle() {
     return 0
   fi
 
-  echo "▸ Code-signing with Developer ID + hardened runtime…"
+  echo "▸ Code-signing with \"$SIGNING_IDENTITY\" + hardened runtime…"
   local -a args=(--force --deep --options runtime --timestamp --sign "$SIGNING_IDENTITY")
   if [[ -n "$ENTITLEMENTS" ]]; then
     local entitlements_path="$ENTITLEMENTS"
@@ -110,7 +123,9 @@ cleanup_legacy_apps
 echo "✓ Built $APP"
 if [[ -z "$SIGNING_IDENTITY" ]]; then
   echo "  Signing: ad-hoc — safe to run here, NOT safe to distribute."
-  echo "           Set NOTCHHUB_SIGNING_IDENTITY for a Developer ID build."
+  echo "           Privacy grants (Calendar/Reminders/Apple Events) reset on"
+  echo "           every rebuild. Install an Apple Development certificate or"
+  echo "           set NOTCHHUB_SIGNING_IDENTITY to make them stick."
 else
   echo "  Signing: $SIGNING_IDENTITY (hardened runtime, timestamped)."
 fi

@@ -1,13 +1,17 @@
 import AppKit
 import SwiftUI
 
-struct ActivitySettingsView: View {
+/// The Next Up half of the settings window. Vends sections rather than its own
+/// `Form`, so it composes into the single settings surface.
+struct NextUpSettingsSections: View {
     @Bindable var preferences: ActivityPreferences
     @Bindable var reminders: ReminderService
+    /// Combine-based, unlike the `@Observable` types above.
+    @ObservedObject var calendar: CalendarService
     @State private var settingsError: String?
 
     var body: some View {
-        Form {
+        Group {
             Section("Activity Types") {
                 ForEach(ActivityKind.allCases, id: \.self) { kind in
                     Toggle(kind.title, isOn: binding(for: kind))
@@ -18,10 +22,8 @@ struct ActivitySettingsView: View {
                 Toggle("Urgent activities override media", isOn: $preferences.urgentOverridesMedia)
             }
             remindersSection
+            calendarSection
         }
-        .formStyle(.grouped)
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var timingSection: some View {
@@ -64,6 +66,34 @@ struct ActivitySettingsView: View {
             if let settingsError {
                 Text(settingsError).foregroundStyle(.red)
             }
+        }
+    }
+
+    /// Calendar access is never requested automatically, so the only way to
+    /// grant it from a keyboard-reachable surface is this button.
+    private var calendarSection: some View {
+        Section("Calendar Access") {
+            HStack {
+                Text(calendarStatus)
+                    .foregroundStyle(calendar.access == .denied ? .red : .secondary)
+                Spacer()
+                switch calendar.access {
+                case .unknown:
+                    Button("Request Access") { calendar.requestAccess() }
+                case .denied:
+                    Button("Open System Settings") { openSystemSettings() }
+                case .granted:
+                    EmptyView()
+                }
+            }
+        }
+    }
+
+    private var calendarStatus: String {
+        switch calendar.access {
+        case .unknown: "Not requested"
+        case .granted: "Granted"
+        case .denied: calendar.lastError ?? "Denied in System Settings"
         }
     }
 

@@ -2,9 +2,11 @@ import Combine
 @preconcurrency import EventKit
 import Foundation
 
-/// Upcoming calendar events via EventKit. Requests read access on first use
-/// (the prompt text comes from `NSCalendarsUsageDescription` in Info.plist) and
-/// publishes the next handful of events for today and tomorrow.
+/// Upcoming calendar events via EventKit. Access is requested only when the user
+/// explicitly asks for it (the prompt text comes from
+/// `NSCalendarsUsageDescription` in Info.plist); until then the service simply
+/// reports `.unknown`. Once granted it publishes the next handful of events for
+/// today and tomorrow.
 @MainActor
 final class CalendarService: ObservableObject {
 
@@ -88,12 +90,17 @@ final class CalendarService: ObservableObject {
             events = []
             report(CalendarServiceError.accessDenied.localizedDescription)
         case .needsPrompt:
+            // Deliberately does NOT prompt. This runs on the refresh tick and on
+            // every app activation, so prompting here meant macOS could raise a
+            // Calendar dialog the user never asked for, at a moment they never
+            // chose. The UI offers an explicit Enable Calendar action instead.
             access = .unknown
-            requestAccess()
         }
     }
 
-    private func requestAccess() {
+    /// Ask EventKit for access. Call this only from an explicit user action —
+    /// see `refreshAuthorization`.
+    func requestAccess() {
         let handler: @Sendable (Bool, Error?) -> Void = { [weak self] granted, error in
             let errorMessage = error?.localizedDescription
             Task { @MainActor [weak self] in

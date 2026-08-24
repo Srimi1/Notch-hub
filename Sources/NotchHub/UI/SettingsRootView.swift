@@ -1,60 +1,103 @@
 import SwiftUI
 
-enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
-    case nextUp
-    case aiCredits
+/// The whole settings surface, on one screen.
+///
+/// This was a `NavigationSplitView` whose sidebar held a single row — navigation
+/// for a choice that didn't exist. NotchHub has about one screen's worth of
+/// settings, so it gets one screen, and the module switches move here from the
+/// menu bar where they had no room to explain themselves.
+struct SettingsRootView: View {
 
-    var id: String { rawValue }
+    @ObservedObject var preferences: ModulePreferences
+    @Bindable var launchAtLogin: LaunchAtLoginController
+    let services: ServiceHub
 
-    var title: String {
-        switch self {
-        case .nextUp: "Next Up"
-        case .aiCredits: "AI Credits"
+    var body: some View {
+        Form {
+            ModuleVisibilitySection(preferences: preferences)
+            PopupSection(preferences: services.hudPreferences)
+            NextUpSettingsSections(
+                preferences: services.activityPreferences,
+                reminders: services.reminders,
+                calendar: services.calendar
+            )
+            GeneralSection(launchAtLogin: launchAtLogin)
+        }
+        .formStyle(.grouped)
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // The login-item switch can also be flipped in System Settings, and
+        // macOS posts no notification when it is.
+        .onAppear { launchAtLogin.refresh() }
+    }
+}
+
+// MARK: - Modules
+
+private struct ModuleVisibilitySection: View {
+    @ObservedObject var preferences: ModulePreferences
+
+    var body: some View {
+        Section {
+            ForEach(FeatureModule.allCases) { module in
+                Toggle(isOn: binding(for: module)) {
+                    Label(module.title, systemImage: module.symbol)
+                }
+            }
+        } header: {
+            Text("Modules")
+        } footer: {
+            Text("Hiding a module removes it from the notch and stops the service behind it — "
+                + "clipboard reads, calendar access, and Apple Events to your music player "
+                + "stop with it.")
         }
     }
 
-    var symbol: String {
-        switch self {
-        case .nextUp: "waveform.path.ecg"
-        case .aiCredits: "key.fill"
+    /// Routed through `isVisible`/`setModule` rather than binding the array
+    /// directly: `setModule` re-sorts into canonical enum order, which is what
+    /// keeps the notch chip band stable no matter what order things are toggled.
+    private func binding(for module: FeatureModule) -> Binding<Bool> {
+        Binding(
+            get: { preferences.isVisible(module) },
+            set: { preferences.setModule(module, visible: $0) }
+        )
+    }
+}
+
+// MARK: - Popups
+
+private struct PopupSection: View {
+    @Bindable var preferences: HudPreferences
+
+    var body: some View {
+        Section {
+            Toggle("Show a popup when you copy", isOn: $preferences.copyPopup)
+            Toggle("Show a popup when power connects", isOn: $preferences.chargingPopup)
+        } header: {
+            Text("Popups")
+        } footer: {
+            Text("The popup only announces what was copied — hiding the Clipboard "
+                + "module stops pasteboard reading entirely, popup or not.")
         }
     }
 }
 
-struct SettingsRootView: View {
-    let services: ServiceHub
+// MARK: - General
 
-    @State private var selection: SettingsSection? = .nextUp
+private struct GeneralSection: View {
+    @Bindable var launchAtLogin: LaunchAtLoginController
 
     var body: some View {
-        NavigationSplitView {
-            List(SettingsSection.allCases, selection: $selection) { section in
-                Label(section.title, systemImage: section.symbol)
-                    .tag(section)
+        Section("General") {
+            Toggle("Launch NotchHub at login", isOn: $launchAtLogin.isEnabled)
+            if let note = launchAtLogin.statusMessage {
+                Text(note)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
-            .navigationTitle("NotchHub")
-            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
-        } detail: {
-            detail
-                .navigationTitle(activeSection.title)
+            if let failure = launchAtLogin.lastError {
+                Text(failure).foregroundStyle(.red)
+            }
         }
-        .frame(minWidth: 620, minHeight: 540)
-    }
-
-    @ViewBuilder
-    private var detail: some View {
-        switch activeSection {
-        case .nextUp:
-            ActivitySettingsView(
-                preferences: services.activityPreferences,
-                reminders: services.reminders
-            )
-        case .aiCredits:
-            CreditSettingsView(prefs: services.creditPrefs, credit: services.credit)
-        }
-    }
-
-    private var activeSection: SettingsSection {
-        selection ?? .nextUp
     }
 }

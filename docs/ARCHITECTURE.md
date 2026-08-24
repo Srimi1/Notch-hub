@@ -10,7 +10,6 @@ The most useful source-of-truth entry points are:
 - [`ServiceHub.swift`](../Sources/NotchHub/Services/ServiceHub.swift) — live-service composition root.
 - [`ExpandedDashboardView.swift`](../Sources/NotchHub/UI/ExpandedDashboardView.swift) — compile-time feature-module dispatch.
 - [`UntrustedInput.swift`](../Sources/NotchHub/Core/UntrustedInput.swift) — the single gate for text and URLs authored outside the app.
-- [`APIClient.swift`](../Sources/NotchHub/Services/APIClient.swift) — the only outbound network path, and the credential-safety rules that govern it.
 
 ## Runtime component map
 
@@ -35,28 +34,24 @@ flowchart TB
     VM --> Hub["ServiceHub<br/>service composition root"]
     Status --> ModulePrefs
     Settings --> Hub
-    Hub --> LocalServices["Time, system, battery, clipboard,<br/>focus, timers, memory, AI activity"]
+    Hub --> LocalServices["Time, system, battery,<br/>clipboard, focus, timers"]
     Hub --> PermissionServices["Calendar, reminders, media"]
     Hub --> Activity["ActivitySnapshotFactory<br/>and ActivityCoordinator"]
-    Hub --> Credit["CreditTrackerService<br/>and APIClient actor"]
 
     ModulePrefs --> Defaults[("UserDefaults")]
-    Credit --> Keychain[("macOS login Keychain")]
     LocalServices --> OS["macOS APIs and local integration files"]
     PermissionServices --> OS
-    Credit --> APIs["xAI, Anthropic, and OpenAI HTTPS APIs"]
 ```
 
 ### Layer responsibilities
 
 | Layer | Main types | Responsibility |
 | --- | --- | --- |
-| Process lifecycle | `main.swift`, `AppDelegate`, `AppInstanceCoordinator` | Starts an accessory app, prevents duplicate overlays, builds the menu bar menu, opens settings, manages launch-at-login, and reacts to display changes. |
+| Process lifecycle | `main.swift`, `AppDelegate`, `AppInstanceCoordinator`, `LaunchAtLoginController` | Starts an accessory app, prevents duplicate overlays, owns `ServiceHub` so settings work before any display exists, builds a three-item menu, and reacts to display changes. |
 | AppKit shell | `NotchWindowController`, `NotchPanel`, `HoverView`, `NotchGeometry` | Hosts SwiftUI in a non-activating, always-on-top panel; computes physical-notch or fallback dimensions; tracks hover; animates between collapsed and expanded frames. |
 | Presentation state | `NotchViewModel`, `ModulePreferences`, activity model types | Owns expansion, selected module, live-activity presentation, user actions, and persisted module layout. |
 | SwiftUI | `NotchContainerView`, `ExpandedDashboardView`, module/detail/settings views | Renders collapsed wings, the selected dashboard module, activity actions, and preferences. Views receive state and call explicit service/view-model operations. |
 | Service graph | `ServiceHub` and `Services/*` | Owns polling and OS integrations, republishes child changes, and converts raw service state into activity candidates. |
-| Network boundary | `CreditTrackerService`, provider fetchers, `APIClient` | Reads provider keys from Keychain, fetches provider-specific metrics concurrently, refuses cross-origin redirects, caps streamed response bodies, retries transient HTTP failures, and preserves stale last-good values (with a reason and an age) when refreshes fail. |
 | Hostile-input boundary | `DisplaySanitizer`, `SafeExternalURL` (`Core/UntrustedInput.swift`) | Normalizes text that arrives from other applications before it reaches the overlay, and classifies external URLs before they reach `NSWorkspace.open`. |
 | Permission state | `EventKitAccessDecision` (`Core/EventKitAccess.swift`) | Single testable mapping from `EKAuthorizationStatus` to grant/deny/prompt, shared by `CalendarService` and `ReminderService`. |
 
@@ -115,15 +110,12 @@ sequenceDiagram
 | `BatteryService` | Ambient, 30 seconds | IOKit power-source state and estimates. |
 | `ClipboardService` | Ambient, 1 second | `NSPasteboard`; holds up to 12 text/image/file entries in memory and ignores concealed/transient markers. |
 | `FocusService` | Ambient initial read; actions on demand | Accessibility-driven Control Center AppleScript, with a best-effort read of the TCC-protected DND assertions file. |
-| `AICodingService` | Ambient, 2 seconds | Read-only polling of `~/.cache/hermes-notify/state.db`; writes an approval response JSON only when the user chooses Allow/Deny. |
 | `ActivityTimerService` | Ambient, 1 second | Up to eight timers, JSON-encoded in `UserDefaults`, with `UNUserNotificationCenter` completion notifications. |
 | `ReminderService` | Ambient, 60 seconds when already authorized | EventKit reminders. It re-reads authorization each tick (and on app activation) without prompting; `requestAccess()` is an explicit user action. Reloads are generation-guarded and completions are tombstoned by generation. |
-| `CreditTrackerService` | Ambient, immediate then 5 minutes | Concurrent provider fetches through `APIClient`; keys come from Keychain. |
-| `PurgePrivilege` / `MemoryCleanerService` | Probe at launch; clean on demand | Mach VM counters and an explicitly elevated `/usr/sbin/purge` operation. |
 | `MediaService` | Interactive, 2 seconds | Apple Events/AppleScript against Music or Spotify; transport actions use the same channel. |
 | `CalendarService` | Interactive, 60 seconds plus EventKit notifications | Requests EventKit Calendar access, re-reads the status each tick and on app activation, then publishes up to eight events over the next two days. |
 
-Most existing services expose Combine `ObservableObject` / `@Published` state. Newer activity, reminder, timer, credit-preference, and credit-tracker types use Observation's `@Observable`. `NotchViewModel`, `ServiceHub`, activity coordination, timer/reminder stores, and credit UI publication are main-actor isolated. `APIClient` is an actor, and credit providers run concurrently in a task group before results are restored to canonical provider order.
+Most existing services expose Combine `ObservableObject` / `@Published` state. Newer activity, reminder, timer, and launch-at-login types use Observation's `@Observable`. `NotchViewModel`, `ServiceHub`, activity coordination, and the timer/reminder stores are main-actor isolated.
 
 The package intentionally remains at Swift tools version 5.9 while legacy strict-concurrency diagnostics are migrated. New isolation should follow the existing main-actor/actor boundaries rather than assuming the whole target is already Swift 6 clean.
 
@@ -137,8 +129,6 @@ flowchart LR
         Pasteboard["NSPasteboard"]
         IOKit["IOKit and Mach/BSD"]
         AppleEvents["Apple Events and Accessibility"]
-        Hermes["hermes-notify SQLite"]
-        Remote["Provider HTTPS APIs"]
     end
 
     Timers --> Services["Observable services"]
@@ -146,8 +136,6 @@ flowchart LR
     Pasteboard --> Services
     IOKit --> Services
     AppleEvents --> Services
-    Hermes --> Services
-    Remote --> Services
     Services -->|published changes / callbacks| Hub["ServiceHub"]
     Hub -->|objectWillChange| Views["SwiftUI module views"]
     Hub -->|raw service values| Factory["ActivitySnapshotFactory"]
@@ -159,7 +147,6 @@ flowchart LR
 
     ModulePrefs[("ModulePreferences<br/>UserDefaults")] <--> VM
     TimerDefaults[("Timer records<br/>UserDefaults JSON")] <--> Services
-    Secrets[("Provider keys<br/>Keychain")] --> Services
     Services --> Responses["Published values, errors,<br/>and user-action results"]
     Responses --> Views
 ```
@@ -200,12 +187,10 @@ The fresh-install visible set and status-menu toggles are these nine implemented
 | Calendar | `CalendarModuleView` → `CalendarService` |
 | Todo | `ReminderModuleView` → `ReminderService` |
 | Pomodoro | `TimerModuleView` → `ActivityTimerService` |
-| AI Coding | `CreditTrackerModuleView` → `AICodingService` and `CreditTrackerService` |
 | Clipboard | `ClipboardModuleView` → `ClipboardService` |
 | Focus | `FocusModuleView` → `FocusService` |
-| Clean RAM | `MemoryCleanerModuleView` → memory monitor, cleaner, and purge privilege |
 
-The other `FeatureModule` cases currently fall through to `FeatureChecklistView`, which renders planned capability labels rather than an implementation: Notes, Day Progress, Screen Time, Notifications, Code Hosting, Translation, Live Activities (as a selectable module), Drop Actions, Shelf, Window Snap, Bluetooth, System Monitor (as a selectable module), Shortcuts, Displays, Capture, and Support. The collapsed live-activity strip and dashboard system metrics are implemented even though those similarly named selectable modules remain placeholders.
+`FeatureModule` has exactly these seven cases and `ExpandedDashboardView.moduleBody` switches over them without a `default:` arm, so a new case fails to compile until it renders something real. The enum previously carried sixteen further cases that fell through to a placeholder view labelling them "Planned"; they were unreachable as toggles and have been removed.
 
 ```mermaid
 flowchart TD
@@ -217,77 +202,13 @@ flowchart TD
     Chip --> Select["NotchViewModel.select(module)"]
     Select --> Last[("lastActiveModule in UserDefaults")]
     Select --> Switch{"Compile-time switch on<br/>activeModule"}
-    Switch -->|9 implemented cases| Real["Concrete module view"]
+    Switch -->|exhaustive, 7 cases| Real["Concrete module view"]
     Real --> Existing["Existing ServiceHub instance"]
-    Switch -->|all other cases| Planned["FeatureChecklistView: Planned"]
 
     Note["Service startup is expansion-driven,<br/>not module-selection-driven"] -.-> Existing
 ```
 
-Module IDs are persisted as enum raw strings and validated when loaded. Unknown/renamed IDs are discarded, and an empty restoration falls back to the default implemented set. The selected module is also validated against visibility on view-model creation.
-
-## Credit and AI-coding integration
-
-Two different integrations share the AI Coding screen:
-
-1. `AICodingService` consumes local events written by the separate `hermes-notify` hook system. It opens the SQLite database read-only and derives Idle, Running, Needs Attention, or Completed state. Allow/Deny writes `~/.cache/hermes-notify/approval_response.json` atomically; the external hook owns consumption.
-2. `CreditTrackerService` fetches honest provider-specific values. xAI exposes prepaid balance, Anthropic/OpenAI support month-to-date spend only with suitable admin credentials, an optional Anthropic standard-key probe reads rate-limit headers, and Google is explicitly unsupported via API key. Cost requests explicitly ask for all 31 possible daily buckets in a UTC month and reject an unexpectedly paginated response instead of displaying a partial total. Anthropic's exclusive `ending_at` is the next UTC midnight so today's completed partial bucket is included.
-
-The xAI Management API is asymmetric and the code follows it exactly: key validation is `GET /auth/management-keys/validation` (unversioned) while the prepaid balance is `GET /v1/billing/teams/{id}/prepaid/balance`. Both URLs are pinned by an exact-string test so a stray `/v1` cannot silently 404 the team lookup.
-
-Every spend figure carries a `SpendScope`. Anthropic's cost report omits Priority Tier usage — that capacity is billed under a different model and only appears in the usage endpoint — so its metric is `.excludingPriorityTier` and the tile, tooltip, and settings row all say so. OpenAI's organization-costs figure is `.complete`. A number is never rendered as a whole-account total unless it is one.
-
-```mermaid
-sequenceDiagram
-    participant UI as Settings / AI Coding view
-    participant KC as KeychainStore
-    participant Tracker as CreditTrackerService
-    participant Fetcher as Provider fetcher
-    participant HTTP as APIClient actor
-    participant API as Provider HTTPS API
-
-    UI->>KC: save provider secret
-    UI->>Tracker: refreshNow(allowBillableProbe: false)
-    loop immediately, then every 5 minutes (non-billable paths)
-        Tracker->>Tracker: start task group for all providers
-        Tracker->>KC: read each configured secret
-        Tracker->>Fetcher: fetch(secret, non-secret preferences)
-        Fetcher->>HTTP: provider GET
-        HTTP->>API: ephemeral URLSession, TLS 1.3 minimum, 15s request timeout
-        alt 429 / selected 5xx / transient transport failure
-            HTTP->>HTTP: retry up to 2 times with capped backoff, body never buffered
-        end
-        alt redirect leaves scheme/host/port
-            HTTP->>HTTP: refuse to follow, raise unsafeRedirect
-        end
-        API-->>HTTP: status, streamed body, normalized headers
-        HTTP->>HTTP: cut the body off at 2 MiB while streaming
-        HTTP-->>Fetcher: response
-        Fetcher-->>Tracker: labeled metric or typed failure
-        alt failure after a previous live value
-            Tracker->>Tracker: retain value, record why and since when
-        end
-        Tracker-->>UI: publish canonical provider order
-    end
-    opt user enabled probe and explicitly clicks Refresh now
-        UI->>Tracker: refreshNow(allowBillableProbe: true)
-        Tracker->>Fetcher: Anthropic standard-key probe
-        Fetcher->>HTTP: one billable POST, retries disabled
-        HTTP->>API: Messages request (max_tokens: 1)
-        API-->>UI: rate-limit metric or typed failure
-    end
-```
-
-Secrets never enter `UserDefaults`. Non-secret xAI team ID and the opt-in Anthropic probe flag do. Credentials are trimmed, limited to 4,096 bytes, and restricted to visible ASCII before Keychain writes or network use. xAI team IDs are limited to 128 bytes and only alphanumerics, hyphen, and underscore before interpolation into a request URL.
-
-The HTTP client uses an ephemeral session with cookies and URL caching disabled and enforces TLS 1.3 as the minimum protocol. Provider fetchers route offline, other transport/cancellation, authentication, malformed-response, redirect-refusal, and provider errors into display-safe typed metrics. Keychain inspection/read failures become an explicit credential-store error. A failed refresh preserves any previous live metric as stale rather than fabricating a value or discarding useful last-known data.
-
-Two transport rules exist specifically because these requests carry a credential in a header:
-
-- **Same-origin redirects only.** `URLSession` replays request headers when it follows a redirect, so a 3xx pointing at another scheme, host, or port would hand the API key to that host. A per-task delegate refuses it and `APIClient` raises `unsafeRedirect` rather than following.
-- **Streamed, capped bodies.** A declared `Content-Length` above 2 MiB is refused before any byte is read, and the streaming read aborts the task the moment the running total exceeds the cap. Nothing is buffered first and measured afterwards.
-
-A retained-but-stale number is never shown bare. `ProviderResult.staleReason` records *why* the refresh failed (or that a billable probe needs a manual refresh) and `lastUpdated` supplies the age, so the tile reads "Offline · 12m old" instead of showing an unexplained indicator next to a financial figure.
+Module IDs are persisted as enum raw strings and validated when loaded. Unknown or renamed IDs are discarded. A **stored** empty list means the user hid everything and is honoured; only a missing key, or a stored list in which no ID still resolves, falls back to the defaults. The selected module is also validated against visibility on view-model creation.
 
 ## Untrusted input boundary
 
@@ -337,17 +258,14 @@ That narrowness is deliberate. Suppressing an id "until the store stops reportin
 
 | Boundary | Stored/read data | Notes |
 | --- | --- | --- |
-| `UserDefaults` | Visible/active modules, activity preferences, non-secret credit settings, timer JSON (`nextUp.timers.v1`) | Module IDs are validated; numeric activity preferences are bounded; restored timers are capped at eight. |
-| macOS login Keychain | AI provider secrets under service `com.notchhub.apikeys` | Centralized in `KeychainStore`; values are never intentionally logged or mirrored to defaults. Read/write/status failures are surfaced without logging secret material. |
+| `UserDefaults` | Visible/active modules, activity preferences, timer JSON (`nextUp.timers.v1`) | Module IDs are validated and unknown ones dropped; a stored empty module list is honoured rather than reset; numeric activity preferences are bounded; restored timers are capped at eight. |
 | Process memory | Clipboard history and thumbnails | Limited to 12 entries, not persisted, cleared on quit; concealed/transient pasteboard types are ignored. |
 | EventKit | Calendar events and incomplete reminders | OS permission controlled. Calendar prompts on first interactive start; reminder prompting is explicit. Status is re-read on the refresh tick and on app activation so a grant or revocation outside the app takes effect without a relaunch. External strings are sanitized before UI use. Completions are tombstoned by reload generation so an older in-flight fetch cannot undo them, while a later fetch stays authoritative if the reminder is un-completed elsewhere. |
-| `~/.cache/hermes-notify` | Read-only SQLite events; atomic approval-response JSON writes | Owned by another system. Database absence/read failure yields no fabricated activity. |
-| `/etc/sudoers.d/notchhub` | Optional, narrowly scoped passwordless `/usr/sbin/purge` rule | Installed only after an explicit admin action; username is restricted to safe account-name characters and `visudo` validates the candidate. |
 | Remote HTTPS APIs | xAI balance, Anthropic cost/rate limit, OpenAI organization cost | The shared client requires TLS 1.3, refuses cross-origin redirects so a credential header cannot be replayed to another host, and caps streamed bodies at 2 MiB. Secrets are sent only as provider-required auth headers. Google returns an honest unsupported state without a request. There is no certificate pinning — the system trust store is relied upon, and that limitation is stated in `SECURITY.md` rather than claimed away. |
 | External URLs | Meeting and map actions | Meeting URLs reject embedded credentials, non-allowlisted schemes, and every non-public host: loopback, private, link-local, CGNAT, unique-local, multicast, reserved/special-use TLDs, and octal/hex/dword IP spellings. Map URLs are constructed from sanitized text rather than concatenated. |
 | Overlay text | Calendar/reminder titles, locations, timer labels | Passed through `DisplaySanitizer` before display: control and Unicode format characters, default-ignorable scalars, the Tags block, non-characters, and combining-mark stacks beyond two marks are removed, and the result is length-bounded. |
 
-The current bundle is not sandboxed and carries no entitlements. It is ad-hoc signed for local use, which is why `KeychainStore` deliberately targets the file-based login keychain rather than a data-protection access group.
+The current bundle is not sandboxed and carries no entitlements. It is ad-hoc signed for local use. NotchHub stores no secrets: the Keychain wrapper and the credit tracker that used it were removed, and a one-shot cleanup deletes the keys earlier versions saved.
 
 ## Build, verification, and distribution
 
@@ -419,7 +337,7 @@ With `--skip-build` the bundle on disk is an *input* rather than something the s
 - The releases published from this repository today are **ad-hoc signed and not notarized**, because the project has no Apple Developer Program identity yet. That is stated plainly in `README.md` and `SECURITY.md`; building from source is the recommended install path.
 - `build-app.sh` performs a native SwiftPM build, so its ordinary output follows the build host/flags (the current local bundle is arm64). `build-dmg.sh` detects and labels arm64, x86_64, or a pre-existing universal binary; it does not itself combine architectures.
 - GitHub Actions runs build, test compilation, SwiftFormat, SwiftLint, and tests, but does not currently package or publish releases. Existing warning-level lint debt is visible without failing the workflow; error-level violations still fail it.
-- The app is not sandboxed and carries no entitlements file; Apple Events, the `purge` helper, and a read path outside a container do not survive the sandbox in the current design.
+- The app is not sandboxed and carries no entitlements file. Apple Events (media and Focus control) is now the only remaining blocker — the `purge` helper and the out-of-container read were removed with the RAM cleaner and the coding monitor.
 
 ## Change map
 
@@ -430,7 +348,6 @@ Use this checklist when extending the system:
 | Add a compiled feature module | Add/adjust `FeatureModule`, provide a concrete SwiftUI view, add the `ExpandedDashboardView.moduleBody` case, decide default visibility, and add tests for preference restoration/dispatch behavior. |
 | Add a live service | Define its isolation and lifecycle, construct it in `ServiceHub`, wire publication/callbacks, expose typed errors to UI, and stop or cancel owned timers/tasks where appropriate. |
 | Add a live-activity source | Extend `ActivityKind`, create sanitized snapshots in `ActivitySnapshotFactory`, include them in `ServiceHub.refreshActivities`, add action routing, preferences, tint/UI, and ranking tests. |
-| Add a credit provider | Extend provider/metric metadata, implement a `CreditFetcher`, register it in `defaultFetchers`, keep Keychain access in `CreditTrackerService`, pin each endpoint URL with an exact-string test, declare an accurate `SpendScope` for any spend figure, and add parser/offline/auth tests. |
 | Accept new external text or URLs | Route it through `DisplaySanitizer`/`SafeExternalURL` rather than adding a local check, and add hostile-input cases to `UntrustedInputTests`. A host check that disagrees with the system resolver is a bug, not a partial defence. |
 | Add a real plugin system | This is an architectural change, not a new enum case: define discovery, versioned interfaces, process/isolation boundaries, signing/trust policy, failure containment, and migration from static module dispatch before loading third-party code. |
 | Change packaging | Preserve the quality gate, strict signature/image verification, deterministic versioned output, checksum reporting, and explicit documentation of signing/notarization status. |

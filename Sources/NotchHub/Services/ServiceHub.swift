@@ -34,24 +34,16 @@ final class ServiceHub: ObservableObject {
 
     let time = TimeService()
     let system = SystemMonitorService()
-    let purgePrivilege = PurgePrivilege()
-    let memoryCleaner: MemoryCleanerService
     let battery = BatteryService()
     let media = MediaService()
     let calendar = CalendarService()
     let clipboard = ClipboardService()
     let focus = FocusService()
-    let aiCoding = AICodingService()
     let reminders = ReminderService()
     let timers = ActivityTimerService()
     let activityPreferences = ActivityPreferences()
+    let hudPreferences = HudPreferences()
     let activityCoordinator: ActivityCoordinator
-
-    /// Non-secret credit-tracker config (Grok team ID, probe toggle). Keys live
-    /// only in the Keychain, never here.
-    let creditPrefs = CreditPreferences()
-    /// Adaptive API-key credit/spend tracker backing the AI Coding tab.
-    let credit: CreditTrackerService
 
     private var started = false
     private var startedInteractive = false
@@ -68,8 +60,6 @@ final class ServiceHub: ObservableObject {
 
     init(modulePreferences: ModulePreferences? = nil) {
         self.modulePreferences = modulePreferences
-        memoryCleaner = MemoryCleanerService(privilege: purgePrivilege)
-        credit = CreditTrackerService(prefs: creditPrefs)
         activityCoordinator = ActivityCoordinator(preferences: activityPreferences)
 
         // Re-publish whenever any child service changes, so container views
@@ -79,8 +69,7 @@ final class ServiceHub: ObservableObject {
         let publishers: [ObservableObjectPublisher] = [
             time.objectWillChange, system.objectWillChange, battery.objectWillChange,
             media.objectWillChange, calendar.objectWillChange,
-            clipboard.objectWillChange, focus.objectWillChange, aiCoding.objectWillChange,
-            memoryCleaner.objectWillChange, purgePrivilege.objectWillChange
+            clipboard.objectWillChange, focus.objectWillChange
         ]
         for publisher in publishers {
             publisher
@@ -111,8 +100,8 @@ final class ServiceHub: ObservableObject {
     /// Starts or stops gated services to match the visible-module set.
     ///
     /// The gated ones are those that read something a user may not want read:
-    /// pasteboard contents, Apple Events to the media players, calendar and
-    /// reminder contents, and local coding-agent activity.
+    /// pasteboard contents, Apple Events to the media players, and calendar and
+    /// reminder contents.
     ///
     /// Hiding a module used to only hide its tab: unchecking Clipboard still
     /// read the pasteboard every second, and unchecking Media still sent Apple
@@ -122,7 +111,6 @@ final class ServiceHub: ObservableObject {
         guard started else { return }
 
         setRunning(clipboard.start, clipboard.stop, visible.contains(.clipboard))
-        setRunning(aiCoding.start, aiCoding.stop, visible.contains(.aiCoding))
         setRunning(reminders.start, reminders.stop, visible.contains(.todo))
 
         // Media and Calendar are permission-gated, so they only ever run once
@@ -153,12 +141,9 @@ final class ServiceHub: ObservableObject {
         battery.start()
         focus.start()
         timers.start()
-        credit.start()
         // Gated on their module being visible — see `applyModuleVisibility`.
         if isVisible(.clipboard) { clipboard.start() }
-        if isVisible(.aiCoding) { aiCoding.start() }
         if isVisible(.todo) { reminders.start() }
-        purgePrivilege.refresh()
         observeActivation()
         refreshActivities()
     }
@@ -185,10 +170,6 @@ final class ServiceHub: ObservableObject {
                 self?.reminders.refreshAuthorization()
             }
         }
-    }
-
-    func stopInteractive() {
-        media.stop()
     }
 
     func refreshActivities(now: Date = .now) {

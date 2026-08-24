@@ -21,9 +21,16 @@ final class NotchWindowController {
         height: NotchTheme.expandedHeight
     )
 
-    /// The live service layer, exposed so `AppDelegate` can open the API-keys
-    /// settings window bound to the same `CreditTrackerService`/`CreditPreferences`.
-    var services: ServiceHub { viewModel.services }
+    /// The transient popup tier: bigger than the pill, far smaller than the
+    /// dashboard — the "medium black box" the copy HUD lives in.
+    static let hudSize = CGSize(width: 520, height: 104)
+
+    /// The three window sizes the overlay animates between.
+    enum Tier: Equatable {
+        case collapsed
+        case hud
+        case expanded
+    }
 
     /// Fails when no display is attached yet.
     ///
@@ -33,9 +40,9 @@ final class NotchWindowController {
     /// same empty array and trapped. A headless launch is reachable in practice
     /// because NotchHub offers Launch at Login, which can fire before the
     /// displays wake.
-    init?(preferences: ModulePreferences) {
+    init?(preferences: ModulePreferences, services: ServiceHub) {
         guard let screen = NSScreen.notchScreen else { return nil }
-        self.viewModel = NotchViewModel(preferences: preferences)
+        self.viewModel = NotchViewModel(preferences: preferences, services: services)
         self.geometry = NotchGeometry(screen: screen)
 
         let collapsed = Self.topCentered(size: geometry.notchSize, on: geometry.screen)
@@ -71,21 +78,26 @@ final class NotchWindowController {
     }
 
     private func bind() {
-        viewModel.$isExpanded
+        Publishers.CombineLatest(viewModel.$isExpanded, viewModel.$hudContent)
+            .map { expanded, hud -> Tier in
+                if expanded { return .expanded }
+                return hud == nil ? .collapsed : .hud
+            }
             .removeDuplicates()
-            .sink { [weak self] expanded in
-                self?.animateFrame(expanded: expanded)
+            .sink { [weak self] tier in
+                self?.animateFrame(tier: tier)
             }
             .store(in: &cancellables)
 
         // Grow/shrink the collapsed pill when a live activity appears, but only
-        // while collapsed — expanding already owns the frame.
+        // while collapsed — the other tiers already own the frame.
         viewModel.$showCollapsedWings
             .removeDuplicates()
             .dropFirst()
             .sink { [weak self] _ in
-                guard let self, !self.viewModel.isExpanded else { return }
-                self.animateFrame(expanded: false)
+                guard let self, !self.viewModel.isExpanded,
+                      self.viewModel.hudContent == nil else { return }
+                self.animateFrame(tier: .collapsed)
             }
             .store(in: &cancellables)
     }
@@ -114,15 +126,27 @@ final class NotchWindowController {
         // Moving between a notched laptop display and an external monitor
         // changes how the overlay must be drawn, not just where it sits.
         hoverView?.hasPhysicalNotch = geometry.hasPhysicalNotch
-        animateFrame(expanded: viewModel.isExpanded)
+        let tier: Tier = viewModel.isExpanded ? .expanded : (viewModel.hudContent == nil ? .collapsed : .hud)
+        animateFrame(tier: tier)
     }
 
     // MARK: - Frame animation
 
-    private func animateFrame(expanded: Bool) {
-        let target = expanded ? expandedFrame() : collapsedFrame()
-        if expanded { panel.claimInteractionLayer() }
-        hoverView?.bottomRadius = expanded ? 24 : 10
+    private func animateFrame(tier: Tier) {
+        let target: NSRect
+        switch tier {
+        case .collapsed: target = collapsedFrame()
+        case .hud: target = hudFrame()
+        case .expanded: target = expandedFrame()
+        }
+        // The popup takes clicks and drags, so it needs the interaction layer
+        // exactly like the dashboard does.
+        if tier != .collapsed { panel.claimInteractionLayer() }
+        hoverView?.bottomRadius = switch tier {
+        case .collapsed: 10
+        case .hud: 18
+        case .expanded: 24
+        }
         resizeContent(to: target.size)
         NSAnimationContext.runAnimationGroup { context in
             context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.01 : 0.28
@@ -130,7 +154,7 @@ final class NotchWindowController {
             context.allowsImplicitAnimation = true
             panel.animator().setFrame(target, display: true)
         } completionHandler: { [weak self] in
-            guard !expanded else { return }
+            guard tier == .collapsed else { return }
             Task { @MainActor [weak self] in self?.panel.yieldToPeerOverlays() }
         }
     }
@@ -150,6 +174,14 @@ final class NotchWindowController {
             // physical camera housing.
             size.width += viewModel.collapsedWingWidth * 2
         }
+        return Self.topCentered(size: size, on: geometry.screen)
+    }
+
+    private func hudFrame() -> NSRect {
+        let size = CGSize(
+            width: min(Self.hudSize.width, max(0, geometry.screen.frame.width - 40)),
+            height: Self.hudSize.height
+        )
         return Self.topCentered(size: size, on: geometry.screen)
     }
 

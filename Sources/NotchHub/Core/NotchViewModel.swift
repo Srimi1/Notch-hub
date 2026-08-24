@@ -5,10 +5,27 @@ import SwiftUI
 /// Reactive state for the notch overlay. `isExpanded` drives both the SwiftUI
 /// content (via this `ObservableObject`) and the window-frame animation (the
 /// window controller subscribes to the published value).
+/// What the transient HUD tier is showing, when it is showing anything.
+enum HudContent: Equatable {
+    /// The copy popup: something new just landed on the pasteboard.
+    case clip(ClipboardService.Clip)
+    /// The hover peek: the last few clips, shown before the full dashboard.
+    case peek
+    /// Power just connected — the charge moment.
+    case charging
+}
+
 @MainActor
 final class NotchViewModel: ObservableObject {
 
-    @Published private(set) var isExpanded = false
+    // Neither gets a `private(set)`: Swift's `private` is file-scoped, and the
+    // setters are used from `NotchViewModel+HUD.swift`. Plain `var` already
+    // limits external writes to this module (SwiftUI views are read-only via
+    // `@ObservedObject`), so an explicit `internal(set)` here would be inert.
+    @Published var isExpanded = false
+    /// The middle presentation tier: bigger than the collapsed pill, far
+    /// smaller than the dashboard. `isExpanded` always wins over it.
+    @Published var hudContent: HudContent?
     @Published var activeModule: FeatureModule = .dashboard
     @Published private(set) var presentedActivityID: String?
     @Published private(set) var actionError: String?
@@ -42,30 +59,37 @@ final class NotchViewModel: ObservableObject {
     private let collapseDelay: TimeInterval = 0.15
     private var pendingCollapse: DispatchWorkItem?
 
+    // HUD-tier state. Internal (not private) because the behavior lives in
+    // NotchViewModel+HUD.swift and `private` is file-scoped in Swift.
+    /// How long a copy popup lingers before sliding away on its own.
+    let hudDismissDelay: TimeInterval = 4.0
+    var pendingHudDismiss: DispatchWorkItem?
+    /// Sustained hover on the peek promotes it to the full dashboard.
+    let peekPromotionDelay: TimeInterval = 0.6
+    var pendingPeekPromotion: DispatchWorkItem?
+    /// Dismisses the popup the instant its content is pasted — but only when
+    /// Accessibility was already granted for the Focus toggle. Never prompts.
+    let pasteMonitor = PasteEventMonitor()
+
     /// Tracks live hover so we know whether to collapse once a pin is released.
     private var isHovering = false
     /// The menu-bar "Toggle Notch" action is intentional, not hover-driven. Keep
     /// that expanded state pinned until the user toggles it again.
-    private var isManuallyPinned = false
-    /// While a RAM clean is in flight (and briefly after, to show the result),
-    /// the notch stays expanded even if the mouse leaves — otherwise the panel
-    /// collapses the moment you move to the auth dialog and you never see the
-    /// "Freed …" result.
-    private var cleanPinned = false
-
-    private var transitionAnimation: Animation {
+    var isManuallyPinned = false
+    var transitionAnimation: Animation {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             ? .linear(duration: 0.01)
             : .spring(response: 0.35, dampingFraction: 0.82)
     }
 
-    private var cancellables = Set<AnyCancellable>()
+    var cancellables = Set<AnyCancellable>()
 
-    init(preferences: ModulePreferences) {
+    /// The hub is injected rather than built here: `AppDelegate` owns it for the
+    /// whole app lifetime, so Settings can reach the live services even on a
+    /// launch where no display exists yet and no notch window was created.
+    init(preferences: ModulePreferences, services: ServiceHub) {
         self.preferences = preferences
-        // The hub needs the same preferences object so hiding a module really
-        // stops the service behind it, rather than only hiding its tab.
-        self.services = ServiceHub(modulePreferences: preferences)
+        self.services = services
         // Restore the last-viewed module, but only if it's still visible —
         // otherwise fall back to the first visible module (or dashboard).
         let restored = preferences.lastActiveModule
@@ -74,9 +98,15 @@ final class NotchViewModel: ObservableObject {
             : (preferences.visibleModules.first ?? .dashboard)
 
         observeLiveActivity()
-        observeCleaner()
         forwardPreferenceChanges()
-        services.startAmbient()
+
+        services.clipboard.onCopy = { [weak self] clip in
+            self?.showCopyHUD(clip)
+        }
+        pasteMonitor.onPaste = { [weak self] in
+            self?.dismissHUD()
+        }
+        observeCharging()
     }
 
     /// Re-emit preference changes (e.g. a module toggled from the status menu)
@@ -85,26 +115,6 @@ final class NotchViewModel: ObservableObject {
         preferences.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] in self?.objectWillChange.send() }
-            .store(in: &cancellables)
-    }
-
-    /// Pin the notch open while the RAM cleaner is busy / showing its result.
-    private func observeCleaner() {
-        services.memoryCleaner.$state
-            .map { $0 != .idle }
-            .removeDuplicates()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] active in
-                guard let self else { return }
-                self.cleanPinned = active
-                if active {
-                    self.pendingCollapse?.cancel()
-                    if !self.isExpanded { withAnimation(self.transitionAnimation) { self.isExpanded = true } }
-                } else if !self.isHovering, !self.isManuallyPinned {
-                    // Result has been shown; collapse now (unless still hovering).
-                    withAnimation(self.transitionAnimation) { self.isExpanded = false }
-                }
-            }
             .store(in: &cancellables)
     }
 
@@ -131,14 +141,34 @@ final class NotchViewModel: ObservableObject {
         isHovering = hovering
         pendingCollapse?.cancel()
 
+        // While the copy popup is up, the window IS the popup — hover pauses
+        // its countdown instead of expanding, so it can be read and dragged from.
+        if case .clip = hudContent, !isExpanded {
+            setHudHover(hovering)
+            return
+        }
+
         if hovering {
             guard !isExpanded else { return }
             beginInteractiveIfNeeded()
-            presentCurrentActivity()
-            withAnimation(transitionAnimation) { isExpanded = true }
+            // Grazing the notch used to detonate the full 860pt dashboard.
+            // Show the peek first; dwelling (or clicking) still opens it all.
+            if hudContent == nil, canPeek {
+                withAnimation(transitionAnimation) { hudContent = .peek }
+                armPeekPromotion()
+            } else if hudContent == nil {
+                presentCurrentActivity()
+                withAnimation(transitionAnimation) { isExpanded = true }
+            }
         } else {
+            if case .peek = hudContent {
+                pendingPeekPromotion?.cancel()
+                pendingPeekPromotion = nil
+                withAnimation(transitionAnimation) { hudContent = nil }
+                return
+            }
             let work = DispatchWorkItem { [weak self] in
-                guard let self, !self.cleanPinned, !self.isManuallyPinned else { return }
+                guard let self, !self.isManuallyPinned else { return }
                 withAnimation(self.transitionAnimation) { self.isExpanded = false }
             }
             pendingCollapse = work
@@ -149,21 +179,36 @@ final class NotchViewModel: ObservableObject {
     func toggle() {
         pendingCollapse?.cancel()
         beginInteractiveIfNeeded()
-        if !isExpanded { presentCurrentActivity() }
-        isManuallyPinned = !isExpanded
-        withAnimation(transitionAnimation) { isExpanded.toggle() }
+        let willExpand = !isExpanded
+        if willExpand { presentCurrentActivity() }
+        isManuallyPinned = willExpand
+        // Stop the HUD's own timers without letting it animate hudContent to
+        // nil on its own — see the ordering note on `expandFromHUD`. When
+        // expanding, isExpanded has to flip in the SAME animation that clears
+        // hudContent, or the window collapses and re-expands instead of
+        // growing straight from whatever HUD tier was showing (⌘T pressed
+        // while a popup or peek is up).
+        pasteMonitor.stop()
+        pendingHudDismiss?.cancel()
+        pendingHudDismiss = nil
+        pendingPeekPromotion?.cancel()
+        pendingPeekPromotion = nil
+        withAnimation(transitionAnimation) {
+            isExpanded = willExpand
+            hudContent = nil
+        }
     }
 
     func collapse() {
-        guard !cleanPinned else { return }
         pendingCollapse?.cancel()
+        dismissHUD()
         isManuallyPinned = false
         presentedActivityID = nil
         actionError = nil
         withAnimation(transitionAnimation) { isExpanded = false }
     }
 
-    private func beginInteractiveIfNeeded() {
+    func beginInteractiveIfNeeded() {
         guard !startedInteractive else { return }
         startedInteractive = true
         services.startInteractive()
@@ -250,7 +295,7 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    private func presentCurrentActivity() {
+    func presentCurrentActivity() {
         let current = services.activityCoordinator.currentActivity
         presentedActivityID = Self.shouldPresentActivity(current) ? current?.id : nil
         actionError = nil

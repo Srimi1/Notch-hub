@@ -4,6 +4,8 @@ struct ModuleChip: View {
     let module: FeatureModule
     let isSelected: Bool
     let shortcut: KeyEquivalent?
+    /// Shared with the other chips so the selected capsule slides between them.
+    let selectionNamespace: Namespace.ID
     let action: () -> Void
 
     @State private var isHovered = false
@@ -23,7 +25,7 @@ struct ModuleChip: View {
             .padding(.horizontal, isSelected ? 10 : 0)
             .frame(minWidth: NotchTheme.inactiveChipSize)
             .frame(height: NotchTheme.inactiveChipSize)
-            .background(Capsule().fill(backgroundColor))
+            .background(chipBackground)
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -34,10 +36,15 @@ struct ModuleChip: View {
         .notchKeyboardShortcut(shortcut)
     }
 
-    private var backgroundColor: Color {
-        if isSelected { return NotchTheme.selectedSurface }
-        if isHovered { return Color.white.opacity(0.12) }
-        return NotchTheme.subtleSurface
+    @ViewBuilder
+    private var chipBackground: some View {
+        if isSelected {
+            Capsule()
+                .fill(NotchTheme.selectedSurface)
+                .matchedGeometryEffect(id: "selectedChip", in: selectionNamespace)
+        } else {
+            Capsule().fill(isHovered ? Color.white.opacity(0.12) : NotchTheme.subtleSurface)
+        }
     }
 }
 

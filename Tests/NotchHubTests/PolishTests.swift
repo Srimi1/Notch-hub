@@ -79,9 +79,16 @@ struct NavigationAndSettingsTests {
         #expect(ModuleKeyboardShortcut.key(at: 9) == nil)
     }
 
+    /// Every module has to render something real. The dashboard's `switch` is
+    /// exhaustive now that the "Planned" placeholder arm is gone, so an added
+    /// case fails the build — this pins the list so the count can't drift back
+    /// up by accident.
     @Test
-    func settingsSectionsAreStableAndDistinct() {
-        #expect(SettingsSection.allCases.map(\.rawValue) == ["nextUp", "aiCredits"])
-        #expect(Set(SettingsSection.allCases.map(\.id)).count == SettingsSection.allCases.count)
+    func featureModulesAreExactlyTheSevenThatExist() {
+        #expect(FeatureModule.allCases.map(\.rawValue) == [
+            "dashboard", "media", "calendar", "todo", "pomodoro", "clipboard", "focus"
+        ])
+        #expect(Set(FeatureModule.allCases.map(\.id)).count == FeatureModule.allCases.count)
+        #expect(ModulePreferences.defaultVisibleModules == FeatureModule.allCases)
     }
 }
