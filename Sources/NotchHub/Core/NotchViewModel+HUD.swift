@@ -49,14 +49,26 @@ extension NotchViewModel {
     }
 
     /// Clicking the popup opens the full dashboard on the Clipboard module.
+    ///
+    /// `isExpanded` and `hudContent` are independently `@Published`, and
+    /// `NotchWindowController` derives its window tier from both together. If
+    /// `hudContent` clears before `isExpanded` flips, the window observes a
+    /// transient (not expanded, no hud) state and briefly collapses to the
+    /// bare notch before re-expanding — a visible double-hop that can leave
+    /// the content geometry desynced. Flipping `isExpanded` first makes the
+    /// tier map short-circuit straight to `.expanded`, so clearing
+    /// `hudContent` afterward is a no-op tier-wise. Same fix as
+    /// `armPeekPromotion` below.
     func expandFromHUD() {
         pendingHudDismiss?.cancel()
         pendingHudDismiss = nil
-        hudContent = nil
         if preferences.isVisible(.clipboard) { select(.clipboard) }
         beginInteractiveIfNeeded()
         isManuallyPinned = true
-        withAnimation(transitionAnimation) { isExpanded = true }
+        withAnimation(transitionAnimation) {
+            isExpanded = true
+            hudContent = nil
+        }
     }
 
     /// A peek needs something to show, and under Reduce Motion the two-stage
@@ -72,14 +84,20 @@ extension NotchViewModel {
         dismissHUD()
     }
 
+    /// See the ordering note on `expandFromHUD` — `isExpanded` must flip
+    /// before `hudContent` clears, in the same animation, or the window
+    /// collapses and re-expands instead of growing straight from peek to
+    /// dashboard size.
     func armPeekPromotion() {
         pendingPeekPromotion?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self, case .peek = self.hudContent else { return }
             self.pendingPeekPromotion = nil
-            self.hudContent = nil
             self.presentCurrentActivity()
-            withAnimation(self.transitionAnimation) { self.isExpanded = true }
+            withAnimation(self.transitionAnimation) {
+                self.isExpanded = true
+                self.hudContent = nil
+            }
         }
         pendingPeekPromotion = work
         DispatchQueue.main.asyncAfter(deadline: .now() + peekPromotionDelay, execute: work)

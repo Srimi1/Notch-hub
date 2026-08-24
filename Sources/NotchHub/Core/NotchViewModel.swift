@@ -18,11 +18,14 @@ enum HudContent: Equatable {
 @MainActor
 final class NotchViewModel: ObservableObject {
 
-    @Published internal(set) var isExpanded = false
+    // Neither gets a `private(set)`: Swift's `private` is file-scoped, and the
+    // setters are used from `NotchViewModel+HUD.swift`. Plain `var` already
+    // limits external writes to this module (SwiftUI views are read-only via
+    // `@ObservedObject`), so an explicit `internal(set)` here would be inert.
+    @Published var isExpanded = false
     /// The middle presentation tier: bigger than the collapsed pill, far
-    /// smaller than the dashboard. `isExpanded` always wins over it. The
-    /// internal setter belongs to NotchViewModel+HUD.swift.
-    @Published internal(set) var hudContent: HudContent?
+    /// smaller than the dashboard. `isExpanded` always wins over it.
+    @Published var hudContent: HudContent?
     @Published var activeModule: FeatureModule = .dashboard
     @Published private(set) var presentedActivityID: String?
     @Published private(set) var actionError: String?
@@ -175,11 +178,25 @@ final class NotchViewModel: ObservableObject {
 
     func toggle() {
         pendingCollapse?.cancel()
-        dismissHUD()
         beginInteractiveIfNeeded()
-        if !isExpanded { presentCurrentActivity() }
-        isManuallyPinned = !isExpanded
-        withAnimation(transitionAnimation) { isExpanded.toggle() }
+        let willExpand = !isExpanded
+        if willExpand { presentCurrentActivity() }
+        isManuallyPinned = willExpand
+        // Stop the HUD's own timers without letting it animate hudContent to
+        // nil on its own — see the ordering note on `expandFromHUD`. When
+        // expanding, isExpanded has to flip in the SAME animation that clears
+        // hudContent, or the window collapses and re-expands instead of
+        // growing straight from whatever HUD tier was showing (⌘T pressed
+        // while a popup or peek is up).
+        pasteMonitor.stop()
+        pendingHudDismiss?.cancel()
+        pendingHudDismiss = nil
+        pendingPeekPromotion?.cancel()
+        pendingPeekPromotion = nil
+        withAnimation(transitionAnimation) {
+            isExpanded = willExpand
+            hudContent = nil
+        }
     }
 
     func collapse() {
