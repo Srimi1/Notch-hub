@@ -21,8 +21,8 @@ final class NotchWindowController {
         height: NotchTheme.expandedHeight
     )
 
-    /// The live service layer, exposed so `AppDelegate` can open the API-keys
-    /// settings window bound to the same `CreditTrackerService`/`CreditPreferences`.
+    /// The live service layer, exposed so `AppDelegate` can open the settings
+    /// window bound to the same services the notch is already using.
     var services: ServiceHub { viewModel.services }
 
     /// Fails when no display is attached yet.

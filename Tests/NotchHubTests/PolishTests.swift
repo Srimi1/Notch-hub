@@ -81,7 +81,7 @@ struct NavigationAndSettingsTests {
 
     @Test
     func settingsSectionsAreStableAndDistinct() {
-        #expect(SettingsSection.allCases.map(\.rawValue) == ["nextUp", "aiCredits"])
+        #expect(SettingsSection.allCases.map(\.rawValue) == ["nextUp"])
         #expect(Set(SettingsSection.allCases.map(\.id)).count == SettingsSection.allCases.count)
     }
 }

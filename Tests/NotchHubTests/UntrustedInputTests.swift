@@ -142,44 +142,6 @@ struct SafeExternalURLTests {
     }
 }
 
-/// Provider requests carry a bearer token in a header and `URLSession` replays
-/// headers across redirects, so only same-origin redirects may be followed.
-@Suite("Credential-bearing transport")
-struct APIClientPolicyTests {
-
-    @Test
-    func sameOriginMeansSameSchemeHostAndEffectivePort() throws {
-        let origin = try #require(URL(string: "https://api.anthropic.com/v1/x"))
-
-        #expect(URLOrigin.isSameOrigin(origin, try #require(URL(string: "https://api.anthropic.com/v2/y"))))
-        #expect(URLOrigin.isSameOrigin(origin, try #require(URL(string: "https://API.Anthropic.com/y"))))
-        // An omitted port is the scheme's default.
-        #expect(URLOrigin.isSameOrigin(origin, try #require(URL(string: "https://api.anthropic.com:443/y"))))
-
-        #expect(!URLOrigin.isSameOrigin(origin, try #require(URL(string: "https://evil.example/y"))))
-        // A scheme downgrade is a different origin.
-        #expect(!URLOrigin.isSameOrigin(origin, try #require(URL(string: "http://api.anthropic.com/y"))))
-        #expect(!URLOrigin.isSameOrigin(origin, try #require(URL(string: "https://api.anthropic.com:8443/y"))))
-        // Suffix confusion must not read as the same host.
-        #expect(!URLOrigin.isSameOrigin(origin, try #require(URL(string: "https://api.anthropic.com.evil.test/y"))))
-    }
-
-    /// This is a pure origin comparison, so it holds for any scheme; the
-    /// HTTPS-only rule lives in the redirect guard, not here. Keeping the two
-    /// separate is what stops an ordinary same-origin response from being
-    /// misreported as a refused redirect.
-    @Test
-    func originComparisonIsSchemeAgnostic() throws {
-        let plain = try #require(URL(string: "http://127.0.0.1:18731/final"))
-        #expect(URLOrigin.isSameOrigin(plain, try #require(URL(string: "http://127.0.0.1:18731/other"))))
-        #expect(!URLOrigin.isSameOrigin(plain, try #require(URL(string: "http://127.0.0.1:18732/other"))))
-        #expect(URLOrigin.isSameOrigin(
-            try #require(URL(string: "http://example.com/a")),
-            try #require(URL(string: "http://example.com:80/b"))
-        ))
-    }
-}
-
 /// macOS posts no notification when the user changes an app's Calendar or
 /// Reminders switch, so the status is re-read and mapped through this decision.
 @Suite("EventKit access decisions")

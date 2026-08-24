@@ -2,21 +2,18 @@ import SwiftUI
 
 enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
     case nextUp
-    case aiCredits
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .nextUp: "Next Up"
-        case .aiCredits: "AI Credits"
         }
     }
 
     var symbol: String {
         switch self {
         case .nextUp: "waveform.path.ecg"
-        case .aiCredits: "key.fill"
         }
     }
 }
@@ -49,8 +46,6 @@ struct SettingsRootView: View {
                 preferences: services.activityPreferences,
                 reminders: services.reminders
             )
-        case .aiCredits:
-            CreditSettingsView(prefs: services.creditPrefs, credit: services.credit)
         }
     }
 

@@ -27,6 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
+        // Clear API keys left by the removed credit tracker. No-op after the
+        // first run; see `LegacyCredentialCleanup`.
+        LegacyCredentialCleanup.runIfNeeded()
+
         setUpStatusItem()
         installOverlayIfPossible()
 

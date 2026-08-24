@@ -18,7 +18,7 @@ final class ModulePreferences: ObservableObject {
     /// Dashboard layout for a fresh install (matches the modules backed by real
     /// services today).
     static let defaultVisibleModules: [FeatureModule] =
-        [.dashboard, .media, .calendar, .todo, .pomodoro, .aiCoding, .clipboard, .focus, .ramCleaner]
+        [.dashboard, .media, .calendar, .todo, .pomodoro, .clipboard, .focus, .ramCleaner]
 
     /// Modules shown in the toggle band, kept in canonical (enum-declaration) order.
     @Published var visibleModules: [FeatureModule] {

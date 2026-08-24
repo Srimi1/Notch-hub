@@ -10,7 +10,6 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
     case dayProgress
     case screenTime
     case notifications
-    case aiCoding
     case codeHosting
     case translation
     case liveActivities
@@ -40,7 +39,6 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
         case .dayProgress: "Day Progress"
         case .screenTime: "Screen Time"
         case .notifications: "Notifications"
-        case .aiCoding: "AI Coding"
         case .codeHosting: "Code Hosting"
         case .translation: "Translation"
         case .liveActivities: "Live Activities"
@@ -70,7 +68,6 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
         case .dayProgress: "sun.max"
         case .screenTime: "chart.pie"
         case .notifications: "bell"
-        case .aiCoding: "terminal"
         case .codeHosting: "point.3.connected.trianglepath.dotted"
         case .translation: "character.book.closed"
         case .liveActivities: "waveform"
@@ -109,8 +106,6 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
             "Category charts, ranked apps, app-switch counts, and a daily donut summary."
         case .notifications:
             "Centered alert inbox, unread glance, clearing, and reply actions."
-        case .aiCoding:
-            "Agent status and API balance or spend signals."
         case .codeHosting:
             "GitHub PRs, GitLab MRs, and Bitbucket PRs waiting on review or opened by you."
         case .translation:
@@ -165,8 +160,6 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
             ["Categories", "Ranked apps", "Switch count", "Donut widget", "Exclusions"]
         case .notifications:
             ["Unread glance", "Clear", "Reply", "App icons"]
-        case .aiCoding:
-            ["Grok balance", "Anthropic spend", "OpenAI spend", "Gemini", "Agent status", "Allow/Deny"]
         case .codeHosting:
             ["GitHub", "GitLab", "Bitbucket", "Review queue", "Opened by me"]
         case .translation:

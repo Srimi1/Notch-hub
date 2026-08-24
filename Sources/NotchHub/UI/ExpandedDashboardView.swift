@@ -124,8 +124,6 @@ struct ExpandedDashboardView: View {
             TimerModuleView(timers: services.timers)
         case .todo:
             ReminderModuleView(reminders: services.reminders)
-        case .aiCoding:
-            CreditTrackerModuleView(aiCoding: services.aiCoding, credit: services.credit)
         case .clipboard:
             ClipboardModuleView(clipboard: services.clipboard)
         case .focus:
