@@ -12,10 +12,15 @@ enum RelativeTime {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
+    /// Wall-clock time, in whatever form the user's region uses.
+    ///
+    /// This runs inside views that redraw every second, and the old
+    /// `DateFormatter` here was rebuilt on each of those calls — one of the most
+    /// expensive objects in Foundation, allocated for a five-character string.
+    /// `FormatStyle` is a value type with its own caching, and it follows the
+    /// system 24-hour setting instead of forcing `h:mm a` on everyone.
     static func clock(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "h:mm a"
-        return formatter.string(from: date)
+        date.formatted(date: .omitted, time: .shortened)
     }
 
     /// "now", "in 12m", "in 3h" — compact countdown for chips.

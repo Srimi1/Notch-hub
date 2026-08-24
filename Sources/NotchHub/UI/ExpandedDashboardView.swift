@@ -8,6 +8,11 @@ struct ExpandedDashboardView: View {
     @ObservedObject var viewModel: NotchViewModel
     private var services: ServiceHub { viewModel.services }
 
+    /// Lets the selected-chip capsule travel between chips instead of blinking
+    /// out of one and into the next.
+    @Namespace private var chipSelection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         if viewModel.presentedActivity != nil {
             ActivityDetailView(
@@ -55,6 +60,10 @@ struct ExpandedDashboardView: View {
                     alignment: .leading
                 )
                 .clipped()
+                // Keyed on the module so switching cross-fades the whole body
+                // rather than mutating one view's contents in place.
+                .id(viewModel.activeModule)
+                .transition(.opacity)
         }
         .frame(
             maxWidth: .infinity,
@@ -86,12 +95,19 @@ struct ExpandedDashboardView: View {
                 ModuleChip(
                     module: module,
                     isSelected: module == viewModel.activeModule,
-                    shortcut: keyboardShortcut(for: module)
+                    shortcut: keyboardShortcut(for: module),
+                    selectionNamespace: chipSelection
                 ) {
-                    viewModel.select(module)
+                    withAnimation(moduleAnimation) { viewModel.select(module) }
                 }
             }
         }
+    }
+
+    /// Matches the notch's own expand/collapse feel, and collapses to a near
+    /// instant cut under Reduce Motion — the same rule `NotchViewModel` uses.
+    private var moduleAnimation: Animation {
+        reduceMotion ? .linear(duration: 0.01) : .spring(response: 0.3, dampingFraction: 0.85)
     }
 
     private func keyboardShortcut(for module: FeatureModule) -> KeyEquivalent? {
@@ -116,6 +132,7 @@ struct ExpandedDashboardView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
+                    .contentTransition(.opacity)
                 Text(viewModel.activeModule.summary)
                     .font(.system(size: 11))
                     .foregroundStyle(NotchTheme.secondaryText)
@@ -143,49 +160,6 @@ struct ExpandedDashboardView: View {
         case .focus:
             FocusModuleView(focus: services.focus)
         }
-    }
-}
-
-// MARK: - Dashboard (glanceable real tiles)
-
-private struct DashboardModuleView: View {
-    @ObservedObject var services: ServiceHub
-
-    var body: some View {
-        HStack(spacing: 8) {
-            StatTile(symbol: "clock", title: services.time.clock, subtitle: services.time.dateLabel)
-            if services.battery.hasBattery {
-                StatTile(
-                    symbol: services.battery.symbol,
-                    title: "\(services.battery.percent)%",
-                    subtitle: batterySub
-                ) {
-                    BatteryGlyphView(
-                        level: services.battery.level,
-                        state: batteryState,
-                        height: 13
-                    )
-                }
-            }
-            StatTile(symbol: "cpu", title: "\(Int(services.system.cpuUsage * 100))%", subtitle: "CPU")
-            StatTile(symbol: "memorychip", title: "\(Int(services.system.memoryUsage * 100))%", subtitle: "RAM")
-        }
-    }
-
-    private var batteryState: BatteryGlyphState {
-        BatteryGlyphState.resolve(
-            percent: services.battery.percent,
-            isCharging: services.battery.isCharging,
-            isCharged: services.battery.isCharged,
-            isLowPowerMode: services.battery.isLowPowerMode,
-            warningPercent: services.activityPreferences.batteryWarningPercent
-        )
-    }
-
-    private var batterySub: String {
-        if services.battery.isCharging { return "Charging" }
-        if let m = services.battery.minutesRemaining { return "\(m / 60)h \(m % 60)m" }
-        return "Battery"
     }
 }
 
@@ -414,47 +388,6 @@ private struct ClipTile: View {
                 .fill(Color.white.opacity(0.1))
                 .frame(width: 34, height: 34)
                 .overlay(Image(systemName: clip.symbol).font(.system(size: 14)))
-        }
-    }
-}
-
-// MARK: - Shared tiles
-
-private struct StatTile<Icon: View>: View {
-    let symbol: String
-    let title: String
-    let subtitle: String
-    /// Overrides the SF Symbol when a tile needs a live drawing instead — the
-    /// battery glyph is the only one so far.
-    @ViewBuilder var icon: () -> Icon
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            // Sized here so the symbol-led convenience init stays a plain
-            // `Image`; the battery glyph draws at an explicit size and ignores it.
-            icon()
-                .font(.system(size: 14, weight: .semibold))
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Text(subtitle)
-                .font(.system(size: 10))
-                .foregroundStyle(.white.opacity(0.55))
-                .lineLimit(1)
-        }
-        .foregroundStyle(.white)
-        .frame(maxWidth: .infinity, minHeight: 38, maxHeight: 38, alignment: .topLeading)
-        .padding(5)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.07)))
-    }
-}
-
-extension StatTile where Icon == Image {
-    /// The ordinary symbol-led tile.
-    init(symbol: String, title: String, subtitle: String) {
-        self.init(symbol: symbol, title: title, subtitle: subtitle) {
-            Image(systemName: symbol)
         }
     }
 }
