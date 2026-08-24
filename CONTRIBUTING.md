@@ -35,9 +35,10 @@ full Xcode is installed and skips Xcode-only gates otherwise.
 
 ### Known accepted debt
 
-- `Sources/NotchHub/UI/ExpandedDashboardView.swift` exceeds the SwiftLint
-  `file_length` cap (tracked; splitting it is welcome).
-- ~328 strict-concurrency warnings in legacy files (Swift 6 migration in progress).
+- ~202 strict-concurrency warnings in legacy files (Swift 6 migration in progress).
+
+SwiftLint is currently green: 7 warnings, no errors. Every file is under the
+500-line `file_length` cap.
 
 ## Pull requests
 

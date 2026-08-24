@@ -32,56 +32,28 @@ talk directly to third-party AI provider APIs when *you* configure a key — see
 | Focus / Do Not Disturb state | Focus activity | AppleScript |
 | Clipboard | Clipboard history module | None (macOS grants pasteboard read) |
 | Battery, CPU, RAM, disk | System module | None |
-| `~/.cache/hermes-notify/state.db` | Coding-agent activity | Opened **read-only**; absent on most machines |
 
 ### Writes
 
 | Destination | Contents |
 | --- | --- |
-| macOS Keychain (`com.notchhub.apikeys`) | Your AI provider API keys, one item per provider |
-| `UserDefaults` | Module visibility, Next Up preferences, persistent timers, the Grok team ID, and the Anthropic probe toggle — **never** a key |
+| `UserDefaults` | Module visibility, Next Up preferences, and persistent timers |
 | EventKit | Marking a reminder complete, only when you tap Complete |
 | `UNUserNotificationCenter` | A local notification when a timer you started finishes |
-| `~/.cache/hermes-notify/approval_response.json` | Your allow/deny decision for an agent prompt |
 
 ## Network
 
-NotchHub makes **no network request at all until you save an API key** in
-Settings → AI Credits. Once a key is stored, the credit tracker polls the
-matching provider every five minutes (and on a manual refresh):
+NotchHub makes **no network requests.** There is no networking code in the app.
 
-| Host | Endpoint | Sent |
-| --- | --- | --- |
-| `management-api.x.ai` | `/auth/management-keys/validation`, `/v1/billing/teams/{id}/prepaid/balance` | Your xAI **management** key as a bearer token |
-| `api.anthropic.com` | `/v1/organizations/cost_report` | Your Anthropic **admin** key as `x-api-key` |
-| `api.anthropic.com` | `/v1/messages` | Your Anthropic key — **only** on a manual refresh, and only if you enable the rate-limit probe. This request is billable. |
-| `api.openai.com` | `/v1/organization/costs` | Your OpenAI **admin** key as a bearer token |
+Earlier versions shipped a credit tracker that polled xAI, Anthropic, and OpenAI
+with API keys from your Keychain. It has been removed, along with the HTTP client
+and the Keychain wrapper it used. The first launch after upgrading deletes the
+keys it stored (service `com.notchhub.apikeys`); you can confirm with
+`security find-generic-password -s com.notchhub.apikeys`.
 
-Removing a key from Settings stops the corresponding requests. Google/Gemini has
-no API-key balance endpoint, so its tile is a static placeholder and issues no
-request.
-
-Requests additionally open in your browser or Maps when *you* activate a Next Up
-action (a meeting link, or an `https://maps.apple.com/` search for an event
-location).
-
-### Transport controls
-
-- TLS 1.3 minimum, ephemeral session, no cookie storage, no URL cache.
-- 15-second request and resource timeouts.
-- **Cross-origin redirects are refused.** `URLSession` replays request headers
-  across redirects, so a redirect off the original scheme/host/port would leak
-  the API key; NotchHub rejects it and surfaces an error instead.
-- Response bodies are **streamed and cut off at 2 MiB**, and a declared
-  `Content-Length` above that is refused before any byte is read.
-- Retries are limited to transient failures (429/5xx/timeout); auth and client
-  errors are never retried.
-
-There is **no certificate or public-key pinning**. NotchHub relies on the system
-trust store, so an attacker able to install a trusted root on your Mac could
-observe these requests. Pinning provider certificates is not currently
-sustainable for a community project (rotation would break the app between
-releases), so it is documented here rather than claimed.
+The only outbound traffic NotchHub can still cause is indirect: opening a meeting
+link or an Apple Maps search **in your browser**, and only when you activate a
+Next Up action yourself. Those URLs are validated first — see below.
 
 ## Untrusted input
 
@@ -96,19 +68,37 @@ one of a small set of meeting schemes. Loopback, private, link-local,
 carrier-grade-NAT, unique-local, multicast, and special-use names and addresses
 are refused, as are octal/hex/dword spellings of an IP address.
 
-## Elevated privilege (opt-in)
+## Elevated privilege: removed
 
-The RAM cleaner runs Apple's built-in `/usr/sbin/purge`. You may **optionally**
-grant a passwordless `sudo` rule so it runs without a prompt. This is an explicit
-choice you make; if you don't grant it, the app falls back to an authenticated
-prompt. Review `Sources/NotchHub/Services/PurgePrivilege.swift` and
-`MemoryCleanerService.swift` before enabling it.
+NotchHub contains **no privileged code path** and never asks for an administrator
+password.
+
+Versions up to v0.1.x included a RAM cleaner that ran `/usr/sbin/purge` as root,
+either through an authentication dialog or — if you opted in — through a sudoers
+rule at `/etc/sudoers.d/notchhub` granting passwordless `sudo` for that one
+binary. The cleaner and the rule-installer are both gone.
+
+**Removing the app does not remove that rule**, and neither does upgrading:
+deleting a root-owned file requires an administrator password, and a release
+whose purpose is removing the privileged path should not prompt you for one. If
+you enabled it, remove it yourself:
+
+```bash
+sudo --non-interactive --list /usr/sbin/purge   # prints the path if still installed
+sudo rm -f /etc/sudoers.d/notchhub
+```
+
+The residual risk if you leave it is narrow — the rule grants exactly
+`/usr/sbin/purge`, with no argument wildcard — but it is still a standing
+passwordless root grant, so remove it.
 
 ## Sandboxing and distribution
 
-NotchHub is **not App Sandboxed**. It needs Apple Events (media control), an
-unsandboxed helper invocation (`purge`), and read access to a path outside a
-container, none of which survive the sandbox in the current design.
+NotchHub is **not App Sandboxed**. It needs Apple Events for media and Focus
+control, plus EventKit. The two other blockers — the unsandboxed `purge`
+invocation and a read of `~/.cache/hermes-notify` outside any container — were
+removed with the RAM cleaner and the coding monitor, so sandboxing is now a
+realistic option rather than a design conflict. It is not done yet.
 
 **NotchHub ships as source. No pre-built binary is distributed.**
 
