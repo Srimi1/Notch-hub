@@ -1,13 +1,15 @@
 import AppKit
 import SwiftUI
 
-struct ActivitySettingsView: View {
+/// The Next Up half of the settings window. Vends sections rather than its own
+/// `Form`, so it composes into the single settings surface.
+struct NextUpSettingsSections: View {
     @Bindable var preferences: ActivityPreferences
     @Bindable var reminders: ReminderService
     @State private var settingsError: String?
 
     var body: some View {
-        Form {
+        Group {
             Section("Activity Types") {
                 ForEach(ActivityKind.allCases, id: \.self) { kind in
                     Toggle(kind.title, isOn: binding(for: kind))
@@ -19,9 +21,6 @@ struct ActivitySettingsView: View {
             }
             remindersSection
         }
-        .formStyle(.grouped)
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var timingSection: some View {

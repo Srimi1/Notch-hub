@@ -91,10 +91,4 @@ struct NavigationAndSettingsTests {
         #expect(Set(FeatureModule.allCases.map(\.id)).count == FeatureModule.allCases.count)
         #expect(ModulePreferences.defaultVisibleModules == FeatureModule.allCases)
     }
-
-    @Test
-    func settingsSectionsAreStableAndDistinct() {
-        #expect(SettingsSection.allCases.map(\.rawValue) == ["nextUp"])
-        #expect(Set(SettingsSection.allCases.map(\.id)).count == SettingsSection.allCases.count)
-    }
 }

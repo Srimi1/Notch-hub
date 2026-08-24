@@ -1,12 +1,11 @@
 import AppKit
-import ServiceManagement
 import SwiftUI
 
 /// Owns the app lifecycle: spins up the notch overlay window and a menu-bar
 /// status item, and re-positions the overlay when the display configuration
 /// changes (external monitor connected, resolution change, sleep/wake).
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var notchController: NotchWindowController?
     private var statusItem: NSStatusItem?
@@ -17,13 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// on a launch where no display exists yet — Launch at Login can fire before
     /// the displays wake, and `NotchWindowController.init` returns nil then.
     private let services: ServiceHub
-
-    /// Modules offered as visibility toggles in the status menu — the ones backed
-    /// by real implementations today (the rest render placeholders, so toggling
-    /// them isn't meaningful yet).
-    private let toggleableModules = ModulePreferences.defaultVisibleModules
-
-    private static let loginItemTag = 100
+    private let launchAtLogin = LaunchAtLoginController()
 
     override init() {
         // The hub needs the same preferences object so hiding a module really
@@ -81,7 +74,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         configureStatusButton(item.button)
 
         let menu = NSMenu()
-        menu.delegate = self
 
         let header = NSMenuItem(title: "NotchHub", action: nil, keyEquivalent: "")
         header.isEnabled = false
@@ -91,16 +83,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(
             NSMenuItem(title: "Toggle Notch", action: #selector(toggleNotch), keyEquivalent: "t")
         )
-        menu.addItem(makeModulesItem())
         menu.addItem(
             NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         )
-
-        let loginItem = NSMenuItem(
-            title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: ""
-        )
-        loginItem.tag = Self.loginItemTag
-        menu.addItem(loginItem)
 
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit NotchHub", action: #selector(quit), keyEquivalent: "q"))
@@ -110,24 +95,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         item.menu = menu
         statusItem = item
-    }
-
-    /// A "Modules" submenu with a visibility checkbox per implemented module.
-    private func makeModulesItem() -> NSMenuItem {
-        let modulesItem = NSMenuItem(title: "Modules", action: nil, keyEquivalent: "")
-        let modulesMenu = NSMenu()
-        for module in toggleableModules {
-            let entry = NSMenuItem(
-                title: module.title,
-                action: #selector(toggleModule(_:)),
-                keyEquivalent: ""
-            )
-            entry.representedObject = module.rawValue
-            entry.target = self
-            modulesMenu.addItem(entry)
-        }
-        modulesItem.submenu = modulesMenu
-        return modulesItem
     }
 
     private func configureStatusButton(_ button: NSStatusBarButton?) {
@@ -146,24 +113,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         button.setAccessibilityLabel("NotchHub")
     }
 
-    // MARK: - NSMenuDelegate
-
-    /// Refresh checkbox states each time the menu opens, so they reflect the
-    /// current preferences and the live launch-at-login registration status.
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        for item in menu.items {
-            if item.tag == Self.loginItemTag {
-                item.state = launchAtLoginEnabled ? .on : .off
-            }
-            guard let submenu = item.submenu else { continue }
-            for entry in submenu.items {
-                guard let raw = entry.representedObject as? String,
-                      let module = FeatureModule(rawValue: raw) else { continue }
-                entry.state = preferences.isVisible(module) ? .on : .off
-            }
-        }
-    }
-
     // MARK: - Actions
 
     @objc private func toggleNotch() {
@@ -173,13 +122,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func openSettings() {
         notchController?.collapse()
         if settingsWindow == nil {
-            let view = SettingsRootView(services: services)
+            let view = SettingsRootView(
+                preferences: preferences,
+                launchAtLogin: launchAtLogin,
+                services: services
+            )
             let window = NSWindow(contentViewController: NSHostingController(rootView: view))
             window.title = "NotchHub Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.isReleasedWhenClosed = false
-            window.minSize = NSSize(width: 620, height: 560)
-            window.setContentSize(NSSize(width: 680, height: 680))
+            window.minSize = NSSize(width: 460, height: 420)
+            window.setContentSize(NSSize(width: 520, height: 640))
+            window.setFrameAutosaveName("NotchHubSettings")
             window.center()
             settingsWindow = window
         }
@@ -187,31 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
 
-    @objc private func toggleModule(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String,
-              let module = FeatureModule(rawValue: raw) else { return }
-        preferences.setModule(module, visible: !preferences.isVisible(module))
-        sender.state = preferences.isVisible(module) ? .on : .off
-    }
-
-    @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
-        do {
-            if launchAtLoginEnabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
-        } catch {
-            NSLog("NotchHub: launch-at-login toggle failed: \(error.localizedDescription)")
-        }
-        sender.state = launchAtLoginEnabled ? .on : .off
-    }
-
     @objc private func quit() {
         NSApplication.shared.terminate(nil)
-    }
-
-    private var launchAtLoginEnabled: Bool {
-        SMAppService.mainApp.status == .enabled
     }
 }
