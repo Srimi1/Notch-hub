@@ -128,8 +128,6 @@ struct ExpandedDashboardView: View {
             ClipboardModuleView(clipboard: services.clipboard)
         case .focus:
             FocusModuleView(focus: services.focus)
-        default:
-            FeatureChecklistView(module: viewModel.activeModule)
         }
     }
 }
@@ -380,23 +378,6 @@ private struct ClipTile: View {
     }
 }
 
-// MARK: - Remaining modules (descriptive until implemented)
-
-private struct FeatureChecklistView: View {
-    let module: FeatureModule
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(module.items.prefix(8), id: \.self) { item in
-                    StatTile(symbol: "checkmark.circle", title: item, subtitle: "Planned")
-                        .frame(width: 116)
-                }
-            }
-        }
-    }
-}
-
 // MARK: - Shared tiles
 
 private struct StatTile: View {
@@ -438,44 +419,5 @@ private struct EmptyHint: View {
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-    }
-}
-
-// MARK: - Time helpers
-
-enum RelativeTime {
-    static func timer(_ interval: TimeInterval) -> String {
-        let value = max(0, Int(interval.rounded(.up)))
-        let hours = value / 3600
-        let minutes = (value % 3600) / 60
-        let seconds = value % 60
-        if hours > 0 { return String(format: "%d:%02d:%02d", hours, minutes, seconds) }
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
-
-    static func clock(_ date: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "h:mm a"
-        return f.string(from: date)
-    }
-
-    /// "now", "in 12m", "in 3h" — compact countdown for chips.
-    static func short(to date: Date) -> String {
-        let delta = date.timeIntervalSinceNow
-        if delta <= 0 { return "now" }
-        let minutes = Int(delta / 60)
-        if minutes < 60 { return "in \(max(minutes, 1))m" }
-        let hours = minutes / 60
-        return "in \(hours)h"
-    }
-
-    /// "now", "2m ago", "3h ago" — compact elapsed time for past events.
-    static func ago(_ date: Date) -> String {
-        let delta = -date.timeIntervalSinceNow
-        if delta < 60 { return "now" }
-        let minutes = Int(delta / 60)
-        if minutes < 60 { return "\(minutes)m ago" }
-        let hours = minutes / 60
-        if hours < 24 { return "\(hours)h ago" }
-        return "\(hours / 24)d ago"
     }
 }
