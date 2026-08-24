@@ -27,9 +27,12 @@ struct HudTests {
 
         let prefs = HudPreferences(defaults: defaults)
         #expect(prefs.copyPopup)
+        #expect(prefs.chargingPopup)
 
         prefs.copyPopup = false
+        prefs.chargingPopup = false
         let reloaded = HudPreferences(defaults: defaults)
         #expect(!reloaded.copyPopup)
+        #expect(!reloaded.chargingPopup)
     }
 }

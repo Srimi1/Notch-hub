@@ -72,6 +72,7 @@ private struct PopupSection: View {
     var body: some View {
         Section {
             Toggle("Show a popup when you copy", isOn: $preferences.copyPopup)
+            Toggle("Show a popup when power connects", isOn: $preferences.chargingPopup)
         } header: {
             Text("Popups")
         } footer: {

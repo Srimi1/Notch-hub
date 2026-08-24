@@ -11,6 +11,8 @@ enum HudContent: Equatable {
     case clip(ClipboardService.Clip)
     /// The hover peek: the last few clips, shown before the full dashboard.
     case peek
+    /// Power just connected — the charge moment.
+    case charging
 }
 
 @MainActor
@@ -98,6 +100,33 @@ final class NotchViewModel: ObservableObject {
         pasteMonitor.onPaste = { [weak self] in
             self?.dismissHUD()
         }
+        observeCharging()
+    }
+
+    /// Announce the cable. `isCharging` flips instantly thanks to the battery
+    /// service's IOKit callback, so the moment lands while the connector is
+    /// still in hand — the Dynamic Island beat, not a delayed echo of it.
+    private func observeCharging() {
+        services.battery.$isCharging
+            .removeDuplicates()
+            .dropFirst() // launch state is not an event
+            .receive(on: RunLoop.main)
+            .sink { [weak self] charging in
+                guard let self, charging else { return }
+                self.showChargingHUD()
+            }
+            .store(in: &cancellables)
+    }
+
+    func showChargingHUD() {
+        guard services.hudPreferences.chargingPopup, !isExpanded else { return }
+        // A copy popup is more actionable than a charge notice; don't replace it.
+        if case .clip = hudContent { return }
+        pendingHudDismiss?.cancel()
+        withAnimation(transitionAnimation) { hudContent = .charging }
+        let work = DispatchWorkItem { [weak self] in self?.dismissHUD() }
+        pendingHudDismiss = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
     }
 
     // MARK: - HUD tier

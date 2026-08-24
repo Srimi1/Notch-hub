@@ -6,6 +6,7 @@ import SwiftUI
 struct NotchHUDView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var clipboard: ClipboardService
+    @ObservedObject var battery: BatteryService
 
     var body: some View {
         Group {
@@ -17,6 +18,8 @@ struct NotchHUDView: View {
                     clips: Array(clipboard.clips.prefix(3)),
                     thumbnails: clipboard.thumbnails
                 ) { viewModel.restoreFromPeek($0) }
+            case .charging:
+                ChargingRow(battery: battery)
             case nil:
                 EmptyView()
             }
@@ -95,6 +98,45 @@ private struct CopyHUDRow: View {
                 .font(.system(size: 24, weight: .medium))
                 .foregroundStyle(.white.opacity(0.8))
         }
+    }
+}
+
+/// The charge moment: the green glyph carries it, the text says how long.
+private struct ChargingRow: View {
+    @ObservedObject var battery: BatteryService
+
+    var body: some View {
+        HStack(spacing: 12) {
+            BatteryGlyphView(
+                level: battery.level,
+                state: .charging,
+                height: 20
+            )
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Charging")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(NotchTheme.secondaryText)
+            }
+            Spacer()
+            Text("\(battery.percent)%")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.green)
+                .contentTransition(.numericText())
+        }
+        .transition(.asymmetric(
+            insertion: .move(edge: .top).combined(with: .opacity),
+            removal: .move(edge: .bottom).combined(with: .opacity)
+        ))
+    }
+
+    private var detail: String {
+        guard let minutes = battery.minutesRemaining else { return "Power connected" }
+        let hours = minutes / 60
+        let rest = minutes % 60
+        return hours > 0 ? "\(hours) h \(rest) m until full" : "\(rest) m until full"
     }
 }
 

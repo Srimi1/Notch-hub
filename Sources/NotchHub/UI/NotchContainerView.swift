@@ -15,8 +15,12 @@ struct NotchContainerView: View {
                     .padding(.vertical, NotchTheme.verticalPadding)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
             } else if viewModel.hudContent != nil {
-                NotchHUDView(viewModel: viewModel, clipboard: viewModel.services.clipboard)
-                    .transition(.opacity)
+                NotchHUDView(
+                    viewModel: viewModel,
+                    clipboard: viewModel.services.clipboard,
+                    battery: viewModel.services.battery
+                )
+                .transition(.opacity)
             } else if viewModel.showCollapsedWings {
                 CollapsedStripView(
                     time: viewModel.services.time,
@@ -78,6 +82,7 @@ private struct ClockWingView: View {
 
 private struct ActivityWingView: View {
     let activity: ActivitySnapshot?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var battery: BatteryService
     let warningPercent: Int
 
@@ -99,6 +104,16 @@ private struct ActivityWingView: View {
     private var leading: some View {
         if activity?.kind == .battery {
             BatteryGlyphView(level: battery.level, state: batteryState, height: 11)
+        } else if activity?.kind == .media {
+            // Playing music gets a heartbeat — a slow breathing scale, no timers.
+            Image(systemName: activity?.symbol ?? "waveform")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(ActivityKind.media.tint)
+                .phaseAnimator([1.0, 1.12]) { view, scale in
+                    view.scaleEffect(reduceMotion ? 1 : scale)
+                } animation: { _ in
+                    .easeInOut(duration: 0.8)
+                }
         } else {
             Image(systemName: activity?.symbol ?? "circle")
                 .font(.system(size: 11, weight: .bold))
