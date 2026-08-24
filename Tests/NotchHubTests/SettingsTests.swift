@@ -100,6 +100,91 @@ struct LaunchAtLoginTests {
         #expect(controller.statusMessage == nil)
     }
 
+    // MARK: - First-run default
+
+    private func isolatedDefaults() -> (UserDefaults, String)? {
+        let suite = "LaunchAtLoginTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else { return nil }
+        return (defaults, suite)
+    }
+
+    /// A menu-bar utility is expected to come back after a restart, so the first
+    /// run opts in without asking.
+    @Test
+    func firstRunEnablesLaunchAtLogin() {
+        guard let (defaults, suite) = isolatedDefaults() else {
+            Issue.record("Could not create isolated UserDefaults")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let fake = FakeService(status: .notRegistered)
+        let controller = LaunchAtLoginController(service: fake.make(), defaults: defaults)
+
+        controller.enableByDefaultOnFirstRun()
+
+        #expect(fake.registerCount == 1)
+        #expect(controller.isEnabled)
+    }
+
+    /// The whole point of the flag: someone who turns it off stays off.
+    @Test
+    func aUserWhoTurnsItOffIsNotReEnrolledOnTheNextLaunch() {
+        guard let (defaults, suite) = isolatedDefaults() else {
+            Issue.record("Could not create isolated UserDefaults")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let fake = FakeService(status: .notRegistered)
+        LaunchAtLoginController(service: fake.make(), defaults: defaults)
+            .enableByDefaultOnFirstRun()
+        #expect(fake.registerCount == 1)
+
+        // User switches it off, then relaunches the app.
+        fake.status = .notRegistered
+        LaunchAtLoginController(service: fake.make(), defaults: defaults)
+            .enableByDefaultOnFirstRun()
+
+        #expect(fake.registerCount == 1)
+    }
+
+    /// A failed registration still burns the flag — otherwise a Mac that refuses
+    /// the login item would be re-asked on every single launch.
+    @Test
+    func aFailedFirstRunAttemptIsNotRetriedForever() {
+        guard let (defaults, suite) = isolatedDefaults() else {
+            Issue.record("Could not create isolated UserDefaults")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let fake = FakeService(status: .notRegistered)
+        fake.throwsOnChange = RegistrationRefused()
+        LaunchAtLoginController(service: fake.make(), defaults: defaults)
+            .enableByDefaultOnFirstRun()
+        LaunchAtLoginController(service: fake.make(), defaults: defaults)
+            .enableByDefaultOnFirstRun()
+
+        #expect(fake.registerCount == 1)
+    }
+
+    /// Nothing to do when macOS already has the registration.
+    @Test
+    func anAlreadyEnabledItemIsLeftAlone() {
+        guard let (defaults, suite) = isolatedDefaults() else {
+            Issue.record("Could not create isolated UserDefaults")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let fake = FakeService(status: .enabled)
+        LaunchAtLoginController(service: fake.make(), defaults: defaults)
+            .enableByDefaultOnFirstRun()
+
+        #expect(fake.registerCount == 0)
+    }
+
     /// The window re-reads on appear because the switch can also be flipped in
     /// System Settings, which posts no notification.
     @Test

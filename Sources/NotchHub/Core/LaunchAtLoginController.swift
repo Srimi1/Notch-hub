@@ -53,9 +53,29 @@ final class LaunchAtLoginController {
         }
     }
 
-    init(service: LaunchAtLoginService = .mainApp) {
+    /// Set once the app has tried to turn launch-at-login on by itself, so it
+    /// never fights a user who deliberately turned it off.
+    static let defaultEnableKey = "didAttemptDefaultLaunchAtLogin"
+
+    @ObservationIgnored private let defaults: UserDefaults
+
+    init(service: LaunchAtLoginService = .mainApp, defaults: UserDefaults = .standard) {
         self.service = service
+        self.defaults = defaults
         status = service.status()
+    }
+
+    /// Turn launch-at-login on the first time the app ever runs, because "it
+    /// should just always start" is the expectation for a menu-bar utility.
+    ///
+    /// Runs at most once in the app's lifetime: the flag is written whether or
+    /// not registration succeeds, so a user who later switches it off — or whose
+    /// Mac refuses the registration — is not re-enrolled on the next launch.
+    func enableByDefaultOnFirstRun() {
+        guard !defaults.bool(forKey: Self.defaultEnableKey) else { return }
+        defaults.set(true, forKey: Self.defaultEnableKey)
+        guard status == .notRegistered else { return }
+        apply(enable: true)
     }
 
     /// Re-read the system's view of the login item.

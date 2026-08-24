@@ -35,6 +35,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // first run; see `LegacyCredentialCleanup`.
         LegacyCredentialCleanup.runIfNeeded()
 
+        // A menu-bar utility is expected to just be there after a restart, so
+        // opt in once on first run. The Settings toggle owns it from then on.
+        launchAtLogin.enableByDefaultOnFirstRun()
+
         services.startAmbient()
         setUpStatusItem()
         installOverlayIfPossible()
