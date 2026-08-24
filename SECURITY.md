@@ -37,7 +37,7 @@ talk directly to third-party AI provider APIs when *you* configure a key — see
 
 | Destination | Contents |
 | --- | --- |
-| `UserDefaults` | Module visibility, Next Up preferences, and persistent timers |
+| `UserDefaults` | Module visibility, Next Up preferences, popup switches, and persistent timers |
 | EventKit | Marking a reminder complete, only when you tap Complete |
 | `UNUserNotificationCenter` | A local notification when a timer you started finishes |
 
@@ -91,6 +91,20 @@ sudo rm -f /etc/sudoers.d/notchhub
 The residual risk if you leave it is narrow — the rule grants exactly
 `/usr/sbin/purge`, with no argument wildcard — but it is still a standing
 passwordless root grant, so remove it.
+
+## The copy popup and the ⌘V monitor
+
+The copy popup can dismiss the moment its content is pasted. Detecting ⌘V
+anywhere on the system uses a global key monitor, which macOS only feeds to
+apps trusted for Accessibility. NotchHub **never requests** that permission for
+this: it checks `AXIsProcessTrusted()` — the non-prompting read — and when the
+grant is absent (it is, unless you granted it for the Focus toggle) the monitor
+is simply never installed and the popup falls back to its timer.
+
+When the monitor does run: it exists only while a copy popup is on screen, it
+is torn down with it, and the handler matches ⌘V and does nothing else with the
+event. The gating is enforced by unit tests
+(`Tests/NotchHubTests/PasteEventMonitorTests.swift`), not by convention.
 
 ## Code signing and privacy grants
 

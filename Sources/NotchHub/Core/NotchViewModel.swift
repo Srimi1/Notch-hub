@@ -18,10 +18,11 @@ enum HudContent: Equatable {
 @MainActor
 final class NotchViewModel: ObservableObject {
 
-    @Published private(set) var isExpanded = false
+    @Published internal(set) var isExpanded = false
     /// The middle presentation tier: bigger than the collapsed pill, far
-    /// smaller than the dashboard. `isExpanded` always wins over it.
-    @Published private(set) var hudContent: HudContent?
+    /// smaller than the dashboard. `isExpanded` always wins over it. The
+    /// internal setter belongs to NotchViewModel+HUD.swift.
+    @Published internal(set) var hudContent: HudContent?
     @Published var activeModule: FeatureModule = .dashboard
     @Published private(set) var presentedActivityID: String?
     @Published private(set) var actionError: String?
@@ -55,28 +56,30 @@ final class NotchViewModel: ObservableObject {
     private let collapseDelay: TimeInterval = 0.15
     private var pendingCollapse: DispatchWorkItem?
 
+    // HUD-tier state. Internal (not private) because the behavior lives in
+    // NotchViewModel+HUD.swift and `private` is file-scoped in Swift.
     /// How long a copy popup lingers before sliding away on its own.
-    private let hudDismissDelay: TimeInterval = 4.0
-    private var pendingHudDismiss: DispatchWorkItem?
+    let hudDismissDelay: TimeInterval = 4.0
+    var pendingHudDismiss: DispatchWorkItem?
     /// Sustained hover on the peek promotes it to the full dashboard.
-    private let peekPromotionDelay: TimeInterval = 0.6
-    private var pendingPeekPromotion: DispatchWorkItem?
+    let peekPromotionDelay: TimeInterval = 0.6
+    var pendingPeekPromotion: DispatchWorkItem?
     /// Dismisses the popup the instant its content is pasted — but only when
     /// Accessibility was already granted for the Focus toggle. Never prompts.
-    private let pasteMonitor = PasteEventMonitor()
+    let pasteMonitor = PasteEventMonitor()
 
     /// Tracks live hover so we know whether to collapse once a pin is released.
     private var isHovering = false
     /// The menu-bar "Toggle Notch" action is intentional, not hover-driven. Keep
     /// that expanded state pinned until the user toggles it again.
-    private var isManuallyPinned = false
-    private var transitionAnimation: Animation {
+    var isManuallyPinned = false
+    var transitionAnimation: Animation {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             ? .linear(duration: 0.01)
             : .spring(response: 0.35, dampingFraction: 0.82)
     }
 
-    private var cancellables = Set<AnyCancellable>()
+    var cancellables = Set<AnyCancellable>()
 
     /// The hub is injected rather than built here: `AppDelegate` owns it for the
     /// whole app lifetime, so Settings can reach the live services even on a
@@ -101,117 +104,6 @@ final class NotchViewModel: ObservableObject {
             self?.dismissHUD()
         }
         observeCharging()
-    }
-
-    /// Announce the cable. `isCharging` flips instantly thanks to the battery
-    /// service's IOKit callback, so the moment lands while the connector is
-    /// still in hand — the Dynamic Island beat, not a delayed echo of it.
-    private func observeCharging() {
-        services.battery.$isCharging
-            .removeDuplicates()
-            .dropFirst() // launch state is not an event
-            .receive(on: RunLoop.main)
-            .sink { [weak self] charging in
-                guard let self, charging else { return }
-                self.showChargingHUD()
-            }
-            .store(in: &cancellables)
-    }
-
-    func showChargingHUD() {
-        guard services.hudPreferences.chargingPopup, !isExpanded else { return }
-        // A copy popup is more actionable than a charge notice; don't replace it.
-        if case .clip = hudContent { return }
-        pendingHudDismiss?.cancel()
-        withAnimation(transitionAnimation) { hudContent = .charging }
-        let work = DispatchWorkItem { [weak self] in self?.dismissHUD() }
-        pendingHudDismiss = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
-    }
-
-    // MARK: - HUD tier
-
-    /// Whether a fresh copy should raise the popup right now. Static so the
-    /// rule is testable without building the service graph.
-    static func shouldShowCopyHUD(popupEnabled: Bool, isExpanded: Bool) -> Bool {
-        popupEnabled && !isExpanded
-    }
-
-    func showCopyHUD(_ clip: ClipboardService.Clip) {
-        guard Self.shouldShowCopyHUD(
-            popupEnabled: services.hudPreferences.copyPopup,
-            isExpanded: isExpanded
-        ) else { return }
-        pendingHudDismiss?.cancel()
-        withAnimation(transitionAnimation) { hudContent = .clip(clip) }
-        armHudDismiss()
-        pasteMonitor.start()
-    }
-
-    func dismissHUD() {
-        pasteMonitor.stop()
-        pendingHudDismiss?.cancel()
-        pendingHudDismiss = nil
-        pendingPeekPromotion?.cancel()
-        pendingPeekPromotion = nil
-        guard hudContent != nil else { return }
-        withAnimation(transitionAnimation) { hudContent = nil }
-    }
-
-    /// Hovering the popup pauses the countdown so it can be read or dragged
-    /// from; leaving re-arms it.
-    func setHudHover(_ hovering: Bool) {
-        guard hudContent != nil else { return }
-        if hovering {
-            pendingHudDismiss?.cancel()
-            pendingHudDismiss = nil
-        } else {
-            armHudDismiss()
-        }
-    }
-
-    /// Clicking the popup opens the full dashboard on the Clipboard module.
-    func expandFromHUD() {
-        pendingHudDismiss?.cancel()
-        pendingHudDismiss = nil
-        hudContent = nil
-        if preferences.isVisible(.clipboard) { select(.clipboard) }
-        beginInteractiveIfNeeded()
-        isManuallyPinned = true
-        withAnimation(transitionAnimation) { isExpanded = true }
-    }
-
-    /// A peek needs something to show, and under Reduce Motion the two-stage
-    /// reveal is replaced by the old direct expansion.
-    private var canPeek: Bool {
-        !services.clipboard.clips.isEmpty
-            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-    }
-
-    /// Clicking a peek card puts that clip back on the pasteboard.
-    func restoreFromPeek(_ clip: ClipboardService.Clip) {
-        services.clipboard.copy(clip)
-        dismissHUD()
-    }
-
-    private func armPeekPromotion() {
-        pendingPeekPromotion?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, case .peek = self.hudContent else { return }
-            self.pendingPeekPromotion = nil
-            self.hudContent = nil
-            self.presentCurrentActivity()
-            withAnimation(self.transitionAnimation) { self.isExpanded = true }
-        }
-        pendingPeekPromotion = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + peekPromotionDelay, execute: work)
-    }
-
-    private func armHudDismiss() {
-        pendingHudDismiss?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.dismissHUD() }
-        pendingHudDismiss = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + hudDismissDelay, execute: work)
     }
 
     /// Re-emit preference changes (e.g. a module toggled from the status menu)
@@ -299,7 +191,7 @@ final class NotchViewModel: ObservableObject {
         withAnimation(transitionAnimation) { isExpanded = false }
     }
 
-    private func beginInteractiveIfNeeded() {
+    func beginInteractiveIfNeeded() {
         guard !startedInteractive else { return }
         startedInteractive = true
         services.startInteractive()
@@ -386,7 +278,7 @@ final class NotchViewModel: ObservableObject {
         }
     }
 
-    private func presentCurrentActivity() {
+    func presentCurrentActivity() {
         let current = services.activityCoordinator.currentActivity
         presentedActivityID = Self.shouldPresentActivity(current) ? current?.id : nil
         actionError = nil

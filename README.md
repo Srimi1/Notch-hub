@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/macOS-14.0%2B-blue?logo=apple" alt="macOS 14+" />
   <img src="https://img.shields.io/badge/Architecture-Apple%20Silicon%20(arm64)-informational" alt="Apple Silicon" />
   <img src="https://img.shields.io/badge/Swift-5.9%20%7C%206.0-orange?logo=swift" alt="Swift" />
-  <img src="https://img.shields.io/badge/Tests-91%20Passed-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-102%20Passed-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/License-Apache%202.0-lightgrey" alt="License" />
 </p>
 
@@ -31,6 +31,7 @@ Built natively in Swift using AppKit for windowing and SwiftUI for rendering, No
 - ⚡ **Zero Friction Overlay:** Floats at status level (`NSPanel.Floating`) without ever stealing active keyboard focus or disrupting your workflow.
 - 🎯 **Context-Aware Next Up Strip:** Intelligently arbitrates and surfaces imminent calendar meetings, running pomodoro/countdown timers, overdue reminders, media playback, focus modes, and critical battery warnings.
 - 🛠️ **Modular Dashboard:** Seven modules, every one backed by a live service — Mach-level system vitals, media transport, calendar, reminders, timers, in-memory clipboard history, and Focus.
+- 📋 **Copy Popup:** Copy anything and a Dynamic-Island-style box grows out of the notch — real file icon, name, and size. It slides away on its own, dismisses instantly on ⌘V when Accessibility is already granted, and file clips can be dragged straight out of it.
 - 🔋 **Live Battery Glyph:** A drawn battery whose fill tracks the real charge and whose colour follows the system's own language — green on power, red when low, yellow in Low Power Mode. Reacts the instant the cable goes in.
 - 🔒 **Asks Once:** Signed with a stable identity, so macOS privacy grants survive rebuilds. Nothing prompts on launch — every permission dialog traces to a button you pressed.
 - 🛡️ **Nothing To Leak:** No network requests, no stored credentials, and no privileged code path. All calendar strings and external URLs pass through Unicode sanitizers and hostile URL/SSRF blockers.
@@ -269,7 +270,7 @@ NotchHub uses SwiftPM, SwiftTesting (`import Testing`), SwiftLint, and SwiftForm
 # Run debug build
 swift build
 
-# Run unit tests (91 tests across 21 suites)
+# Run unit tests (102 tests across 24 suites)
 swift test
 
 # Run full repository quality gate (build, test compile, format, lint, concurrency)

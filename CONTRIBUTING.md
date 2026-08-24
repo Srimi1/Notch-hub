@@ -35,7 +35,7 @@ full Xcode is installed and skips Xcode-only gates otherwise.
 
 ### Known accepted debt
 
-- ~192 strict-concurrency warnings in legacy files (Swift 6 migration in progress).
+- ~168 strict-concurrency warnings in legacy files (Swift 6 migration in progress).
 
 SwiftLint is currently green: 6 warnings, no errors. Every file is under the
 500-line `file_length` cap.
