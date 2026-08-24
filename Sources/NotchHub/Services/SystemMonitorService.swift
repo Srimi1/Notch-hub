@@ -126,38 +126,6 @@ final class SystemMonitorService: ObservableObject {
             + UInt64(snapshot.compressor_page_count)) * pageSize
     }
 
-    /// App memory = active + wired — the working set of running apps (the part
-    /// `purge` deliberately leaves untouched).
-    static func appBytes() -> UInt64? {
-        guard let snapshot = vmSnapshot() else { return nil }
-        let pageSize = UInt64(vm_kernel_page_size)
-        return (UInt64(snapshot.active_count) + UInt64(snapshot.wire_count)) * pageSize
-    }
-
-    /// Cached / reclaimable file-backed memory = inactive + speculative +
-    /// purgeable — the pages `purge` actually flushes back to free.
-    static func cachedBytes() -> UInt64? {
-        guard let snapshot = vmSnapshot() else { return nil }
-        let pageSize = UInt64(vm_kernel_page_size)
-        return (UInt64(snapshot.inactive_count) + UInt64(snapshot.speculative_count)
-            + UInt64(snapshot.purgeable_count)) * pageSize
-    }
-
-    /// Footprint of the memory compressor — pages occupied by compressed data.
-    /// This counts as "used" memory in Activity Monitor.
-    static func compressedBytes() -> UInt64? {
-        guard let snapshot = vmSnapshot() else { return nil }
-        return UInt64(snapshot.compressor_page_count) * UInt64(vm_kernel_page_size)
-    }
-
-    /// Swap currently in use, via BSD `sysctl vm.swapusage` → xsw_usage.xsu_used.
-    static func swapUsedBytes() -> UInt64? {
-        var usage = xsw_usage()
-        var size = MemoryLayout<xsw_usage>.size
-        let ok = sysctlbyname("vm.swapusage", &usage, &size, nil, 0) == 0
-        return ok ? usage.xsu_used : nil
-    }
-
     // MARK: - Disk
 
     private func readDisk() {

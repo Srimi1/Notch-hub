@@ -34,8 +34,6 @@ final class ServiceHub: ObservableObject {
 
     let time = TimeService()
     let system = SystemMonitorService()
-    let purgePrivilege = PurgePrivilege()
-    let memoryCleaner: MemoryCleanerService
     let battery = BatteryService()
     let media = MediaService()
     let calendar = CalendarService()
@@ -61,7 +59,6 @@ final class ServiceHub: ObservableObject {
 
     init(modulePreferences: ModulePreferences? = nil) {
         self.modulePreferences = modulePreferences
-        memoryCleaner = MemoryCleanerService(privilege: purgePrivilege)
         activityCoordinator = ActivityCoordinator(preferences: activityPreferences)
 
         // Re-publish whenever any child service changes, so container views
@@ -71,8 +68,7 @@ final class ServiceHub: ObservableObject {
         let publishers: [ObservableObjectPublisher] = [
             time.objectWillChange, system.objectWillChange, battery.objectWillChange,
             media.objectWillChange, calendar.objectWillChange,
-            clipboard.objectWillChange, focus.objectWillChange,
-            memoryCleaner.objectWillChange, purgePrivilege.objectWillChange
+            clipboard.objectWillChange, focus.objectWillChange
         ]
         for publisher in publishers {
             publisher
@@ -147,7 +143,6 @@ final class ServiceHub: ObservableObject {
         // Gated on their module being visible — see `applyModuleVisibility`.
         if isVisible(.clipboard) { clipboard.start() }
         if isVisible(.todo) { reminders.start() }
-        purgePrivilege.refresh()
         observeActivation()
         refreshActivities()
     }

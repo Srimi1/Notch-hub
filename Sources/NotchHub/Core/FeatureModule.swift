@@ -17,7 +17,6 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
     case shelf
     case clipboard
     case focus
-    case ramCleaner
     case windowSnap
     case bluetooth
     case systemMonitor
@@ -46,7 +45,6 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
         case .shelf: "Shelf"
         case .clipboard: "Clipboard"
         case .focus: "Focus"
-        case .ramCleaner: "Clean RAM"
         case .windowSnap: "Window Snap"
         case .bluetooth: "Bluetooth"
         case .systemMonitor: "System Monitor"
@@ -75,7 +73,6 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
         case .shelf: "shippingbox"
         case .clipboard: "doc.on.clipboard"
         case .focus: "moon.fill"
-        case .ramCleaner: "memorychip"
         case .windowSnap: "rectangle.3.group"
         case .bluetooth: "antenna.radiowaves.left.and.right"
         case .systemMonitor: "cpu"
@@ -121,8 +118,6 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
             "Recent clipboard items with one-click restore."
         case .focus:
             "Do Not Disturb status and controls."
-        case .ramCleaner:
-            "Memory pressure and on-demand cleanup."
         case .windowSnap:
             "Top-edge snap tiles for halves, thirds, quarters, maximize, and custom layouts."
         case .bluetooth:
@@ -177,8 +172,6 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
             ["Text", "Images", "Files & video", "Copy back", "Private local only"]
         case .focus:
             ["Do Not Disturb", "Focus status", "One-tap toggle"]
-        case .ramCleaner:
-            ["Free RAM", "Live usage", "No password", "One tap"]
         case .windowSnap:
             ["Halves", "Thirds", "Quarters", "Maximize", "Tile reorder"]
         case .bluetooth:

@@ -47,12 +47,6 @@ final class NotchViewModel: ObservableObject {
     /// The menu-bar "Toggle Notch" action is intentional, not hover-driven. Keep
     /// that expanded state pinned until the user toggles it again.
     private var isManuallyPinned = false
-    /// While a RAM clean is in flight (and briefly after, to show the result),
-    /// the notch stays expanded even if the mouse leaves — otherwise the panel
-    /// collapses the moment you move to the auth dialog and you never see the
-    /// "Freed …" result.
-    private var cleanPinned = false
-
     private var transitionAnimation: Animation {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             ? .linear(duration: 0.01)
@@ -74,7 +68,6 @@ final class NotchViewModel: ObservableObject {
             : (preferences.visibleModules.first ?? .dashboard)
 
         observeLiveActivity()
-        observeCleaner()
         forwardPreferenceChanges()
         services.startAmbient()
     }
@@ -85,26 +78,6 @@ final class NotchViewModel: ObservableObject {
         preferences.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] in self?.objectWillChange.send() }
-            .store(in: &cancellables)
-    }
-
-    /// Pin the notch open while the RAM cleaner is busy / showing its result.
-    private func observeCleaner() {
-        services.memoryCleaner.$state
-            .map { $0 != .idle }
-            .removeDuplicates()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] active in
-                guard let self else { return }
-                self.cleanPinned = active
-                if active {
-                    self.pendingCollapse?.cancel()
-                    if !self.isExpanded { withAnimation(self.transitionAnimation) { self.isExpanded = true } }
-                } else if !self.isHovering, !self.isManuallyPinned {
-                    // Result has been shown; collapse now (unless still hovering).
-                    withAnimation(self.transitionAnimation) { self.isExpanded = false }
-                }
-            }
             .store(in: &cancellables)
     }
 
@@ -138,7 +111,7 @@ final class NotchViewModel: ObservableObject {
             withAnimation(transitionAnimation) { isExpanded = true }
         } else {
             let work = DispatchWorkItem { [weak self] in
-                guard let self, !self.cleanPinned, !self.isManuallyPinned else { return }
+                guard let self, !self.isManuallyPinned else { return }
                 withAnimation(self.transitionAnimation) { self.isExpanded = false }
             }
             pendingCollapse = work
@@ -155,7 +128,6 @@ final class NotchViewModel: ObservableObject {
     }
 
     func collapse() {
-        guard !cleanPinned else { return }
         pendingCollapse?.cancel()
         isManuallyPinned = false
         presentedActivityID = nil
