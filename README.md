@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/macOS-14.0%2B-blue?logo=apple" alt="macOS 14+" />
   <img src="https://img.shields.io/badge/Architecture-Apple%20Silicon%20(arm64)-informational" alt="Apple Silicon" />
   <img src="https://img.shields.io/badge/Swift-5.9%20%7C%206.0-orange?logo=swift" alt="Swift" />
-  <img src="https://img.shields.io/badge/Tests-74%20Passed-brightgreen" alt="Tests" />
+  <img src="https://img.shields.io/badge/Tests-91%20Passed-brightgreen" alt="Tests" />
   <img src="https://img.shields.io/badge/License-Apache%202.0-lightgrey" alt="License" />
 </p>
 
@@ -31,6 +31,8 @@ Built natively in Swift using AppKit for windowing and SwiftUI for rendering, No
 - ⚡ **Zero Friction Overlay:** Floats at status level (`NSPanel.Floating`) without ever stealing active keyboard focus or disrupting your workflow.
 - 🎯 **Context-Aware Next Up Strip:** Intelligently arbitrates and surfaces imminent calendar meetings, running pomodoro/countdown timers, overdue reminders, media playback, focus modes, and critical battery warnings.
 - 🛠️ **Modular Dashboard:** Seven modules, every one backed by a live service — Mach-level system vitals, media transport, calendar, reminders, timers, in-memory clipboard history, and Focus.
+- 🔋 **Live Battery Glyph:** A drawn battery whose fill tracks the real charge and whose colour follows the system's own language — green on power, red when low, yellow in Low Power Mode. Reacts the instant the cable goes in.
+- 🔒 **Asks Once:** Signed with a stable identity, so macOS privacy grants survive rebuilds. Nothing prompts on launch — every permission dialog traces to a button you pressed.
 - 🛡️ **Nothing To Leak:** No network requests, no stored credentials, and no privileged code path. All calendar strings and external URLs pass through Unicode sanitizers and hostile URL/SSRF blockers.
 
 ---
@@ -118,7 +120,7 @@ mindmap
 | Module | Concrete View & Service | Description & Capabilities |
 | :--- | :--- | :--- |
 | **Next Up Strip** | [`ActivityCoordinator`](Sources/NotchHub/Core/ActivityCoordinator.swift) | Real-time wings on either side of the notch displaying active countdowns, imminent meeting join buttons, media titles, and battery warnings. |
-| **Dashboard** | `DashboardModuleView` → [`SystemMonitorService`](Sources/NotchHub/Services/SystemMonitorService.swift) | Live Mach CPU load, memory-used percentage, clock, and battery state. |
+| **Dashboard** | `DashboardModuleView` → [`SystemMonitorService`](Sources/NotchHub/Services/SystemMonitorService.swift) | Live Mach CPU load, memory-used percentage, clock, and a drawn [`BatteryGlyphView`](Sources/NotchHub/UI/BatteryGlyphView.swift) whose fill and colour track the real charge. |
 | **Calendar** | `CalendarModuleView` → [`CalendarService`](Sources/NotchHub/Services/CalendarService.swift) | Surfaces events across connected calendars, provides 1-click launch for verified Zoom/Teams/Meet URLs, and displays location map previews. |
 | **Todo & Reminders** | `ReminderModuleView` → [`ReminderService`](Sources/NotchHub/Services/ReminderService.swift) | Fetches reminders from EventKit with generation-token serialization and tombstone tracking to ensure completions never get undone by out-of-order responses. |
 | **Pomodoro & Timers** | `TimerModuleView` → [`ActivityTimerService`](Sources/NotchHub/Services/ActivityTimerService.swift) | Up to 8 concurrent persistent countdown and focus timers that survive app restarts and Mac sleep/wake cycles. |
@@ -189,13 +191,22 @@ flowchart LR
 git clone https://github.com/Srimi1/Notch-hub.git
 cd Notch-hub
 
-# 2. Build the release .app (ad-hoc signed)
+# 2. Build the release .app (signed with your Apple Development cert if you have one)
 ./scripts/build-app.sh release
 
 # 3. Copy to Applications and launch
 cp -R NotchHub.app /Applications/
 open /Applications/NotchHub.app
 ```
+
+> **Signing and permissions**
+> `build-app.sh` signs with the first Apple Development or Developer ID
+> certificate in your keychain, falling back to ad-hoc if you have none. This
+> matters more than it sounds: an ad-hoc signature is regenerated on every
+> build, so macOS treats each rebuild as a brand-new app and throws away your
+> Calendar and Reminders grants — which is what makes an app seem to ask for
+> permission endlessly. A stable identity makes each grant a one-time answer.
+> Override with `export NOTCHHUB_SIGNING_IDENTITY="…"`.
 
 > **Why distributed as source?**  
 > NotchHub is distributed as source for full auditability and provenance. When built locally on your machine, macOS will run the resulting binary without Gatekeeper quarantine blocks.
@@ -258,7 +269,7 @@ NotchHub uses SwiftPM, SwiftTesting (`import Testing`), SwiftLint, and SwiftForm
 # Run debug build
 swift build
 
-# Run unit tests (74 tests across 19 suites)
+# Run unit tests (91 tests across 21 suites)
 swift test
 
 # Run full repository quality gate (build, test compile, format, lint, concurrency)

@@ -92,6 +92,21 @@ The residual risk if you leave it is narrow — the rule grants exactly
 `/usr/sbin/purge`, with no argument wildcard — but it is still a standing
 passwordless root grant, so remove it.
 
+## Code signing and privacy grants
+
+macOS ties privacy grants (Calendar, Reminders, Apple Events) to an app's code
+signature. An **ad-hoc** signature is regenerated on every build, so each rebuild
+looks like a different application and the grants are discarded — the symptom is
+an app that seems to ask for the same permission forever.
+
+`scripts/build-app.sh` therefore prefers a real identity: `Apple Development` or
+`Developer ID Application` from your keychain, or whatever you set in
+`NOTCHHUB_SIGNING_IDENTITY`. Identity-signed builds use the hardened runtime and
+carry a single entitlement, `com.apple.security.automation.apple-events`, which
+is required for media transport and the Focus toggle to drive other apps.
+
+With no certificate available the build still works, ad-hoc, and says so.
+
 ## Sandboxing and distribution
 
 NotchHub is **not App Sandboxed**. It needs Apple Events for media and Focus
