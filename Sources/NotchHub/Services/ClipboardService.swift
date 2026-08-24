@@ -188,6 +188,23 @@ final class ClipboardService: ObservableObject {
 
     // MARK: - Thumbnails
 
+    /// Whether the file can be read without macOS raising a folder-permission
+    /// dialog.
+    ///
+    /// With Full Disk Access there is nothing to avoid. Without it, the
+    /// protected locations are the ones worth stepping around — the user's
+    /// Desktop, Documents, Downloads, and iCloud Drive. Anywhere else (a temp
+    /// directory, an external volume, the app's own container) reads freely.
+    private func isReadableWithoutPrompting(_ url: URL) -> Bool {
+        guard !FullDiskAccess.isGranted() else { return true }
+
+        let home = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path
+        let guarded = ["Desktop", "Documents", "Downloads", "Library/Mobile Documents"]
+            .map { home + "/" + $0 }
+        let path = url.standardizedFileURL.path
+        return !guarded.contains { path == $0 || path.hasPrefix($0 + "/") }
+    }
+
     private func generateThumbnail(for clip: Clip) {
         switch clip.kind {
         case .text:
@@ -202,6 +219,15 @@ final class ClipboardService: ObservableObject {
     }
 
     private func generateFileThumbnail(_ url: URL, id: UUID) {
+        // QuickLook reads the file, which is exactly what makes macOS put up a
+        // "NotchHub would like to access files in your Desktop folder" dialog —
+        // once per protected folder, unprompted, just because something was
+        // copied. If the file sits somewhere protected and the app has not been
+        // granted Full Disk Access, skip the thumbnail rather than trigger that:
+        // the popup already has the file's icon, and a thumbnail is not worth
+        // interrupting the user to ask for.
+        guard isReadableWithoutPrompting(url) else { return }
+
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let request = QLThumbnailGenerator.Request(
             fileAt: url,

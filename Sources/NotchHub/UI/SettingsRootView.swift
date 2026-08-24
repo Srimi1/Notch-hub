@@ -21,6 +21,7 @@ struct SettingsRootView: View {
                 reminders: services.reminders,
                 calendar: services.calendar
             )
+            SystemAccessSection()
             GeneralSection(launchAtLogin: launchAtLogin)
         }
         .formStyle(.grouped)
@@ -78,6 +79,58 @@ private struct PopupSection: View {
         } footer: {
             Text("The popup only announces what was copied — hiding the Clipboard "
                 + "module stops pasteboard reading entirely, popup or not.")
+        }
+    }
+}
+
+// MARK: - System access
+
+/// Full Disk Access cannot be requested, only granted by hand — so the app's
+/// job is to say plainly whether it has it and open the right pane.
+private struct SystemAccessSection: View {
+    @State private var granted = FullDiskAccess.isGranted()
+    @State private var openFailed = false
+
+    private var statusTitle: String { granted ? "Granted" : "Not granted" }
+    private var statusSymbol: String {
+        granted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+    }
+
+    private var footerText: String {
+        if granted {
+            return "NotchHub can read files you copy without macOS asking folder by folder."
+        }
+        return "Without it, macOS asks separately for Desktop, Documents, Downloads, and "
+            + "iCloud Drive the first time you copy a file out of each one. Granting Full "
+            + "Disk Access answers all of them at once. Drag NotchHub into the list, or tick "
+            + "it if it is already there, then reopen this window."
+    }
+
+    var body: some View {
+        Section {
+            HStack {
+                Label(statusTitle, systemImage: statusSymbol)
+                    .foregroundStyle(granted ? Color.secondary : Color.orange)
+                Spacer()
+                Button(granted ? "Open Settings" : "Grant Access…") {
+                    openFailed = !FullDiskAccess.openSettingsPane()
+                }
+            }
+            if openFailed {
+                Text("System Settings could not be opened. Grant it under "
+                    + "Privacy & Security ▸ Full Disk Access.")
+                    .foregroundStyle(.red)
+            }
+        } header: {
+            Text("Full Disk Access")
+        } footer: {
+            Text(footerText)
+        }
+        // The switch lives in another app, so re-read whenever this one returns.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification
+        )) { _ in
+            granted = FullDiskAccess.isGranted()
         }
     }
 }

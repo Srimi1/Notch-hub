@@ -48,7 +48,20 @@ struct HudClipDetails: Equatable {
         return type.localizedDescription ?? type.preferredFilenameExtension?.uppercased()
     }
 
+    /// Reading a file's size in a protected folder is enough to make macOS ask
+    /// for access to that whole folder. The popup can do without a size — it
+    /// still has the name and the type — so when the read would prompt, skip it
+    /// and let the subtitle degrade instead of interrupting the user.
     private static func fileSize(of url: URL) -> Int? {
-        (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+        guard FullDiskAccess.isGranted() || !isInProtectedFolder(url) else { return nil }
+        return (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+    }
+
+    private static func isInProtectedFolder(_ url: URL) -> Bool {
+        let home = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path
+        let guarded = ["Desktop", "Documents", "Downloads", "Library/Mobile Documents"]
+            .map { home + "/" + $0 }
+        let path = url.standardizedFileURL.path
+        return guarded.contains { path == $0 || path.hasPrefix($0 + "/") }
     }
 }
