@@ -12,6 +12,11 @@ struct NotchHUDView: View {
             switch viewModel.hudContent {
             case .clip(let clip):
                 CopyHUDRow(clip: clip, thumbnail: clipboard.thumbnails[clip.id])
+            case .peek:
+                PeekRow(
+                    clips: Array(clipboard.clips.prefix(3)),
+                    thumbnails: clipboard.thumbnails
+                ) { viewModel.restoreFromPeek($0) }
             case nil:
                 EmptyView()
             }
@@ -88,6 +93,56 @@ private struct CopyHUDRow: View {
         } else {
             Image(systemName: clip.symbol)
                 .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(.white.opacity(0.8))
+        }
+    }
+}
+
+/// The hover peek: the last few clips as small cards. Click one to put it back
+/// on the pasteboard; keep hovering and the full dashboard takes over.
+private struct PeekRow: View {
+    let clips: [ClipboardService.Clip]
+    let thumbnails: [UUID: NSImage]
+    let onPick: (ClipboardService.Clip) -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(clips) { clip in
+                Button { onPick(clip) } label: {
+                    HStack(spacing: 6) {
+                        cardIcon(clip)
+                            .frame(width: 22, height: 22)
+                        Text(clip.preview)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(NotchTheme.subtleSurface))
+                }
+                .buttonStyle(.plain)
+                .help("Copy again: \(clip.preview)")
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .transition(.asymmetric(
+            insertion: .move(edge: .top).combined(with: .opacity),
+            removal: .opacity
+        ))
+    }
+
+    @ViewBuilder
+    private func cardIcon(_ clip: ClipboardService.Clip) -> some View {
+        if let thumbnail = thumbnails[clip.id] {
+            Image(nsImage: thumbnail)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+        } else {
+            Image(systemName: clip.symbol)
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.white.opacity(0.8))
         }
     }

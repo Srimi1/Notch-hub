@@ -9,6 +9,8 @@ import SwiftUI
 enum HudContent: Equatable {
     /// The copy popup: something new just landed on the pasteboard.
     case clip(ClipboardService.Clip)
+    /// The hover peek: the last few clips, shown before the full dashboard.
+    case peek
 }
 
 @MainActor
@@ -54,6 +56,9 @@ final class NotchViewModel: ObservableObject {
     /// How long a copy popup lingers before sliding away on its own.
     private let hudDismissDelay: TimeInterval = 4.0
     private var pendingHudDismiss: DispatchWorkItem?
+    /// Sustained hover on the peek promotes it to the full dashboard.
+    private let peekPromotionDelay: TimeInterval = 0.6
+    private var pendingPeekPromotion: DispatchWorkItem?
     /// Dismisses the popup the instant its content is pasted — but only when
     /// Accessibility was already granted for the Focus toggle. Never prompts.
     private let pasteMonitor = PasteEventMonitor()
@@ -118,6 +123,8 @@ final class NotchViewModel: ObservableObject {
         pasteMonitor.stop()
         pendingHudDismiss?.cancel()
         pendingHudDismiss = nil
+        pendingPeekPromotion?.cancel()
+        pendingPeekPromotion = nil
         guard hudContent != nil else { return }
         withAnimation(transitionAnimation) { hudContent = nil }
     }
@@ -143,6 +150,32 @@ final class NotchViewModel: ObservableObject {
         beginInteractiveIfNeeded()
         isManuallyPinned = true
         withAnimation(transitionAnimation) { isExpanded = true }
+    }
+
+    /// A peek needs something to show, and under Reduce Motion the two-stage
+    /// reveal is replaced by the old direct expansion.
+    private var canPeek: Bool {
+        !services.clipboard.clips.isEmpty
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    /// Clicking a peek card puts that clip back on the pasteboard.
+    func restoreFromPeek(_ clip: ClipboardService.Clip) {
+        services.clipboard.copy(clip)
+        dismissHUD()
+    }
+
+    private func armPeekPromotion() {
+        pendingPeekPromotion?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, case .peek = self.hudContent else { return }
+            self.pendingPeekPromotion = nil
+            self.hudContent = nil
+            self.presentCurrentActivity()
+            withAnimation(self.transitionAnimation) { self.isExpanded = true }
+        }
+        pendingPeekPromotion = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + peekPromotionDelay, execute: work)
     }
 
     private func armHudDismiss() {
@@ -184,9 +217,9 @@ final class NotchViewModel: ObservableObject {
         isHovering = hovering
         pendingCollapse?.cancel()
 
-        // While the popup is up, the window IS the popup — hover pauses its
-        // countdown instead of expanding, so it can be read and dragged from.
-        if hudContent != nil, !isExpanded {
+        // While the copy popup is up, the window IS the popup — hover pauses
+        // its countdown instead of expanding, so it can be read and dragged from.
+        if case .clip = hudContent, !isExpanded {
             setHudHover(hovering)
             return
         }
@@ -194,9 +227,22 @@ final class NotchViewModel: ObservableObject {
         if hovering {
             guard !isExpanded else { return }
             beginInteractiveIfNeeded()
-            presentCurrentActivity()
-            withAnimation(transitionAnimation) { isExpanded = true }
+            // Grazing the notch used to detonate the full 860pt dashboard.
+            // Show the peek first; dwelling (or clicking) still opens it all.
+            if hudContent == nil, canPeek {
+                withAnimation(transitionAnimation) { hudContent = .peek }
+                armPeekPromotion()
+            } else if hudContent == nil {
+                presentCurrentActivity()
+                withAnimation(transitionAnimation) { isExpanded = true }
+            }
         } else {
+            if case .peek = hudContent {
+                pendingPeekPromotion?.cancel()
+                pendingPeekPromotion = nil
+                withAnimation(transitionAnimation) { hudContent = nil }
+                return
+            }
             let work = DispatchWorkItem { [weak self] in
                 guard let self, !self.isManuallyPinned else { return }
                 withAnimation(self.transitionAnimation) { self.isExpanded = false }
