@@ -23,31 +23,45 @@ struct ExpandedDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             toggleBand
 
-            HStack(alignment: .top, spacing: 12) {
-                moduleHeader
-                    .frame(
-                        width: NotchTheme.moduleHeaderWidth,
-                        height: NotchTheme.contentHeight,
-                        alignment: .topLeading
-                    )
-                Divider().overlay(NotchTheme.divider)
-                moduleBody
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: NotchTheme.contentHeight,
-                        maxHeight: NotchTheme.contentHeight,
-                        alignment: .leading
-                    )
-                    .clipped()
+            if visibleModules.isEmpty {
+                // Hiding every module is a supported choice, so say what
+                // happened rather than rendering a module the user just hid.
+                EmptyHint(
+                    symbol: "square.grid.2x2",
+                    text: "Every module is hidden. Turn one back on in Settings ▸ Modules."
+                )
+                .frame(maxWidth: .infinity, minHeight: NotchTheme.contentHeight, alignment: .leading)
+            } else {
+                moduleRow
             }
-            .frame(
-                maxWidth: .infinity,
-                minHeight: NotchTheme.contentHeight,
-                maxHeight: NotchTheme.contentHeight,
-                alignment: .leading
-            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var moduleRow: some View {
+        HStack(alignment: .top, spacing: 12) {
+            moduleHeader
+                .frame(
+                    width: NotchTheme.moduleHeaderWidth,
+                    height: NotchTheme.contentHeight,
+                    alignment: .topLeading
+                )
+            Divider().overlay(NotchTheme.divider)
+            moduleBody
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: NotchTheme.contentHeight,
+                    maxHeight: NotchTheme.contentHeight,
+                    alignment: .leading
+                )
+                .clipped()
+        }
+        .frame(
+            maxWidth: .infinity,
+            minHeight: NotchTheme.contentHeight,
+            maxHeight: NotchTheme.contentHeight,
+            alignment: .leading
+        )
     }
 
     /// Module toggles split into two groups that flank the physical notch, with

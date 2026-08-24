@@ -55,11 +55,12 @@ final class NotchViewModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
-    init(preferences: ModulePreferences) {
+    /// The hub is injected rather than built here: `AppDelegate` owns it for the
+    /// whole app lifetime, so Settings can reach the live services even on a
+    /// launch where no display exists yet and no notch window was created.
+    init(preferences: ModulePreferences, services: ServiceHub) {
         self.preferences = preferences
-        // The hub needs the same preferences object so hiding a module really
-        // stops the service behind it, rather than only hiding its tab.
-        self.services = ServiceHub(modulePreferences: preferences)
+        self.services = services
         // Restore the last-viewed module, but only if it's still visible —
         // otherwise fall back to the first visible module (or dashboard).
         let restored = preferences.lastActiveModule
@@ -69,7 +70,6 @@ final class NotchViewModel: ObservableObject {
 
         observeLiveActivity()
         forwardPreferenceChanges()
-        services.startAmbient()
     }
 
     /// Re-emit preference changes (e.g. a module toggled from the status menu)

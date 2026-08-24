@@ -21,10 +21,6 @@ final class NotchWindowController {
         height: NotchTheme.expandedHeight
     )
 
-    /// The live service layer, exposed so `AppDelegate` can open the settings
-    /// window bound to the same services the notch is already using.
-    var services: ServiceHub { viewModel.services }
-
     /// Fails when no display is attached yet.
     ///
     /// `NSScreen.notchScreen` already falls back to `main` and then to the
@@ -33,9 +29,9 @@ final class NotchWindowController {
     /// same empty array and trapped. A headless launch is reachable in practice
     /// because NotchHub offers Launch at Login, which can fire before the
     /// displays wake.
-    init?(preferences: ModulePreferences) {
+    init?(preferences: ModulePreferences, services: ServiceHub) {
         guard let screen = NSScreen.notchScreen else { return nil }
-        self.viewModel = NotchViewModel(preferences: preferences)
+        self.viewModel = NotchViewModel(preferences: preferences, services: services)
         self.geometry = NotchGeometry(screen: screen)
 
         let collapsed = Self.topCentered(size: geometry.notchSize, on: geometry.screen)

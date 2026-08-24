@@ -13,6 +13,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsWindow: NSWindow?
     private let instanceCoordinator = AppInstanceCoordinator()
     private let preferences = ModulePreferences()
+    /// Owned here, not by the notch window, so Settings still has live services
+    /// on a launch where no display exists yet — Launch at Login can fire before
+    /// the displays wake, and `NotchWindowController.init` returns nil then.
+    private let services: ServiceHub
 
     /// Modules offered as visibility toggles in the status menu — the ones backed
     /// by real implementations today (the rest render placeholders, so toggling
@@ -20,6 +24,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let toggleableModules = ModulePreferences.defaultVisibleModules
 
     private static let loginItemTag = 100
+
+    override init() {
+        // The hub needs the same preferences object so hiding a module really
+        // stops the service behind it, rather than only hiding its tab.
+        services = ServiceHub(modulePreferences: preferences)
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard instanceCoordinator.shouldContinueLaunching() else {
@@ -31,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // first run; see `LegacyCredentialCleanup`.
         LegacyCredentialCleanup.runIfNeeded()
 
+        services.startAmbient()
         setUpStatusItem()
         installOverlayIfPossible()
 
@@ -49,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// only — and installs the overlay when a screen appears.
     private func installOverlayIfPossible() {
         guard notchController == nil else { return }
-        guard let controller = NotchWindowController(preferences: preferences) else {
+        guard let controller = NotchWindowController(preferences: preferences, services: services) else {
             NSLog("NotchHub: no display available yet; deferring the overlay.")
             return
         }
@@ -159,7 +171,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openSettings() {
-        guard let services = notchController?.services else { return }
         notchController?.collapse()
         if settingsWindow == nil {
             let view = SettingsRootView(services: services)
