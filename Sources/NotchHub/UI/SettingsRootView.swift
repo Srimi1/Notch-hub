@@ -17,7 +17,8 @@ struct SettingsRootView: View {
             ModuleVisibilitySection(preferences: preferences)
             NextUpSettingsSections(
                 preferences: services.activityPreferences,
-                reminders: services.reminders
+                reminders: services.reminders,
+                calendar: services.calendar
             )
             GeneralSection(launchAtLogin: launchAtLogin)
         }

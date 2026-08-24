@@ -234,7 +234,13 @@ private struct CalendarModuleView: View {
                 text: calendar.lastError ?? "Enable Calendar access in System Settings ▸ Privacy."
             )
         case .unknown:
-            EmptyHint(symbol: "calendar", text: "Requesting calendar access…")
+            // Nothing requests access on its own any more, so this state has to
+            // offer the action rather than narrate a request that is not happening.
+            HStack(spacing: 10) {
+                EmptyHint(symbol: "calendar", text: "Allow access to show upcoming events.")
+                Button("Enable Calendar") { calendar.requestAccess() }
+                    .buttonStyle(.borderedProminent)
+            }
         case .granted where calendar.events.isEmpty:
             EmptyHint(symbol: "calendar", text: "Nothing on the calendar for the next two days.")
         case .granted:

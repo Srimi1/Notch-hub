@@ -6,6 +6,8 @@ import SwiftUI
 struct NextUpSettingsSections: View {
     @Bindable var preferences: ActivityPreferences
     @Bindable var reminders: ReminderService
+    /// Combine-based, unlike the `@Observable` types above.
+    @ObservedObject var calendar: CalendarService
     @State private var settingsError: String?
 
     var body: some View {
@@ -20,6 +22,7 @@ struct NextUpSettingsSections: View {
                 Toggle("Urgent activities override media", isOn: $preferences.urgentOverridesMedia)
             }
             remindersSection
+            calendarSection
         }
     }
 
@@ -63,6 +66,34 @@ struct NextUpSettingsSections: View {
             if let settingsError {
                 Text(settingsError).foregroundStyle(.red)
             }
+        }
+    }
+
+    /// Calendar access is never requested automatically, so the only way to
+    /// grant it from a keyboard-reachable surface is this button.
+    private var calendarSection: some View {
+        Section("Calendar Access") {
+            HStack {
+                Text(calendarStatus)
+                    .foregroundStyle(calendar.access == .denied ? .red : .secondary)
+                Spacer()
+                switch calendar.access {
+                case .unknown:
+                    Button("Request Access") { calendar.requestAccess() }
+                case .denied:
+                    Button("Open System Settings") { openSystemSettings() }
+                case .granted:
+                    EmptyView()
+                }
+            }
+        }
+    }
+
+    private var calendarStatus: String {
+        switch calendar.access {
+        case .unknown: "Not requested"
+        case .granted: "Granted"
+        case .denied: calendar.lastError ?? "Denied in System Settings"
         }
     }
 
