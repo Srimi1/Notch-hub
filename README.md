@@ -1,288 +1,372 @@
+<div align="center">
+  <img src="docs/assets/notchhub-mark.png" width="144" height="144" alt="NotchHub app icon" />
+  <h1>NotchHub</h1>
+  <p><strong>The MacBook notch, put to work.</strong></p>
+  <p>A native, local-first productivity surface for meetings, reminders, timers, media, clipboard history, Focus, battery, and system status.</p>
+
+  <p>
+    <a href="https://github.com/Srimi1/Notch-hub/actions/workflows/ci.yml"><img src="https://github.com/Srimi1/Notch-hub/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" /></a>
+    <a href="https://github.com/Srimi1/Notch-hub/tags"><img src="https://img.shields.io/github/v/tag/Srimi1/Notch-hub?sort=semver&amp;label=version" alt="Latest version tag" /></a>
+    <img src="https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&amp;logoColor=white" alt="macOS 14 or later" />
+    <img src="https://img.shields.io/badge/Swift_tools-5.9-F05138?logo=swift&amp;logoColor=white" alt="Swift tools 5.9" />
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/Srimi1/Notch-hub" alt="Apache 2.0 license" /></a>
+  </p>
+</div>
+
 <p align="center">
-  <img src="Resources/AppIcon-1024.png" width="128" height="128" alt="NotchHub Icon" />
+  <img src="docs/assets/screenshots/dashboard-overview.png" width="100%" alt="NotchHub expanded Dashboard showing time, battery, CPU, memory, and module controls" />
 </p>
+<p align="center"><sub>NotchHub 0.2.0 running on a MacBook with a physical display notch.</sub></p>
 
-<h1 align="center">NotchHub</h1>
+NotchHub lives at the top edge of macOS. At rest, it blends into the camera notch and surfaces only the activity that matters next. Hover over it to open a compact dashboard, or use the menu-bar command to keep the dashboard open while you work.
 
-<p align="center">
-  <strong>Context-aware macOS Dynamic Island and Modular Dashboard for Apple Silicon Macs.</strong>
-</p>
+Everything runs on the Mac. There is no NotchHub account, backend, telemetry SDK, cloud sync, or in-app network client. On a display without a physical notch, the same interface appears as a small floating chip.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/macOS-14.0%2B-blue?logo=apple" alt="macOS 14+" />
-  <img src="https://img.shields.io/badge/Architecture-Apple%20Silicon%20(arm64)-informational" alt="Apple Silicon" />
-  <img src="https://img.shields.io/badge/Swift-5.9%20%7C%206.0-orange?logo=swift" alt="Swift" />
-  <img src="https://img.shields.io/badge/Tests-102%20Passed-brightgreen" alt="Tests" />
-  <img src="https://img.shields.io/badge/License-Apache%202.0-lightgrey" alt="License" />
-</p>
+## Contents
 
----
+- [Why NotchHub](#why-notchhub)
+- [Product tour](#product-tour)
+- [Modules](#modules)
+- [Next Up](#next-up)
+- [How it works](#how-it-works)
+- [Privacy and permissions](#privacy-and-permissions)
+- [Requirements](#requirements)
+- [Install](#install)
+- [First run](#first-run)
+- [Settings and defaults](#settings-and-defaults)
+- [Build, test, and package](#build-test-and-package)
+- [Upgrade from 0.1](#upgrade-from-01)
+- [Uninstall](#uninstall)
+- [Current boundaries](#current-boundaries)
+- [Contributing](#contributing)
 
-## What is NotchHub?
+## Why NotchHub
 
-**NotchHub** transforms the physical camera notch of modern MacBooks (and notchless external screens) into an interactive productivity surface. It combines an ambient, context-aware **Next Up activity strip** with a fast, lightweight **Expanded Dashboard** accessible on hover or via keyboard shortcut.
+The top edge of a MacBook is useful precisely because it is always visible. NotchHub turns that narrow strip into a calm layer for short-lived information, then expands only when you ask for more.
 
-Built natively in Swift using AppKit for windowing and SwiftUI for rendering, NotchHub runs as a lightweight menu-bar accessory (`LSUIElement`) with zero Dock presence, no third-party telemetry, and zero cloud lock-in.
+| Principle | What it means in the app |
+| --- | --- |
+| **Quiet by default** | Ambient information stays hidden until it becomes useful. Higher-priority activity can appear beside the notch without opening a window. |
+| **One glance, then back to work** | Meetings, due reminders, timers, battery warnings, playback, and Focus share one ranked Next Up queue. |
+| **Native behavior** | AppKit owns the top-edge panel and SwiftUI renders the interface. The app has no Dock icon and follows macOS Spaces and full-screen windows. |
+| **Local data** | Clipboard history stays in memory. Timer and preference state stays in `UserDefaults`. Calendar and reminder data remains on the Mac. |
+| **Useful on every display** | A physical MacBook notch is preferred. Notchless and external displays receive a compact fallback chip. |
 
----
+## Product tour
 
-## Key Highlights
+NotchHub has three presentation layers. Each one is sized for a different kind of interruption.
 
-- ⚡ **Zero Friction Overlay:** Floats at status level (`NSPanel.Floating`) without ever stealing active keyboard focus or disrupting your workflow.
-- 🎯 **Context-Aware Next Up Strip:** Intelligently arbitrates and surfaces imminent calendar meetings, running pomodoro/countdown timers, overdue reminders, media playback, focus modes, and critical battery warnings.
-- 🛠️ **Modular Dashboard:** Seven modules, every one backed by a live service — Mach-level system vitals, media transport, calendar, reminders, timers, in-memory clipboard history, and Focus.
-- 📋 **Copy Popup:** Copy anything and a Dynamic-Island-style box grows out of the notch — real file icon, name, and size. It slides away on its own, dismisses instantly on ⌘V when Accessibility is already granted, and file clips can be dragged straight out of it.
-- 🔋 **Live Battery Glyph:** A drawn battery whose fill tracks the real charge and whose colour follows the system's own language — green on power, red when low, yellow in Low Power Mode. Reacts the instant the cable goes in.
-- 🔒 **Asks Once:** Signed with a stable identity, so macOS privacy grants survive rebuilds. Nothing prompts on launch — every permission dialog traces to a button you pressed.
-- 🛡️ **Nothing To Leak:** No network requests, no stored credentials, and no privileged code path. All calendar strings and external URLs pass through Unicode sanitizers and hostile URL/SSRF blockers.
+| Layer | Purpose | How it appears | How it closes |
+| --- | --- | --- | --- |
+| **Collapsed** | A minimal notch with optional live activity wings | Always present on the chosen display; wings appear for ranked, non-ambient activity | Returns to the bare notch when no actionable activity remains |
+| **Transient HUD** | Copy feedback, power connection, or a clipboard preview | Triggered by the related local event; copy HUD lasts 4 seconds, power HUD lasts 2.5 seconds | Times out, closes when the pointer leaves, or promotes into the dashboard when selected |
+| **Expanded dashboard** | Full access to all visible modules | Hover over the notch, sustain a clipboard preview, or choose **Toggle Notch** from the menu bar | Move the pointer away, press <kbd>Esc</kbd> from an activity detail, or use **Toggle Notch** again |
 
----
+The expanded dashboard is 860 points wide when space permits and automatically shrinks to fit the display. Reduced Motion is respected: major transitions simplify, and the clipboard preview tier is skipped so the dashboard opens directly.
 
-## How It Works
+## Modules
 
-```mermaid
-flowchart TB
-    subgraph macOS ["macOS Services & OS Integration"]
-        EventKit["EventKit (Calendar & Reminders)"]
-        IOKit["IOKit (Battery & Power Stats)"]
-        MachBSD["Mach / BSD VM (CPU & Memory Counters)"]
-        Pasteboard["NSPasteboard (Clipboard History)"]
-        AppleEvents["Apple Events (Music / Spotify / Focus)"]
-    end
+Seven built-in modules cover the day-to-day information NotchHub can read locally. Module visibility and the last selected module persist between launches.
 
-    subgraph Core ["Core Service & State Graph"]
-        Hub["ServiceHub (Composition Root)"]
-        Factory["ActivitySnapshotFactory"]
-        Coord["ActivityCoordinator (Priority Ranking & Dwell)"]
-        VM["NotchViewModel (@MainActor)"]
-    end
+| Module | What it shows | What you can do | Important limits |
+| --- | --- | --- | --- |
+| **Dashboard** | Clock, date, battery on portable Macs, CPU load, and memory use | Read a compact system overview | Disk usage is sampled internally but is not displayed |
+| **Media** | Current title, artist, and player for Apple Music or Spotify | Previous, play or pause, and next | No artwork, album view, or support for other players |
+| **Calendar** | Up to six upcoming events from the next two days | Join a supported event URL, open a location in Apple Maps, or open Calendar | Full Calendar access is opt-in; all-day events do not enter Next Up |
+| **Todo** | Up to eight incomplete reminders, including undated reminders | Mark a reminder complete | No reminder creation or editing; undated reminders do not enter Next Up |
+| **Pomodoro** | Persistent 5, 15, 25, and 45 minute presets | Start, pause, resume, or dismiss a timer | Up to eight timer records; the current UI has no custom duration or name |
+| **Clipboard** | Up to 12 recent text, image, and file clips | Restore a clip, clear history, inspect thumbnails, or drag a copied file out of its HUD | Session-only memory; up to four files from one copy event |
+| **Focus** | Best-effort Do Not Disturb state | Toggle Do Not Disturb through Control Center | No named Focus profiles; toggling requires Accessibility permission |
 
-    subgraph Windowing ["AppKit Presentation Shell"]
-        NWC["NotchWindowController"]
-        Geom["NotchGeometry (Physical Notch & Fallback Chip)"]
-        Panel["NotchPanel (Non-activating NSPanel)"]
-        Hover["HoverView (Tracking Area & Shape Mask)"]
-    end
+### Clipboard and power HUDs
 
-    subgraph UI ["SwiftUI Content Layer"]
-        Container["NotchContainerView"]
-        Collapsed["Collapsed Activity Wings"]
-        Expanded["ExpandedDashboardView"]
-    end
+Copy feedback grows directly from the notch. Text, images, and file URLs receive a compact preview; file clips include the native icon, name, type, and size. Hover pauses dismissal, and selecting the HUD opens the Clipboard module. If Accessibility permission already exists, pressing <kbd>⌘V</kbd> can dismiss the visible copy HUD. NotchHub never requests Accessibility solely for this behavior.
 
-    macOS --> Hub
-    Hub --> Factory
-    Factory --> Coord
-    Coord --> VM
-    VM --> NWC
-    NWC --> Panel
-    Panel --> Hover
-    Hover --> Container
-    Container --> Collapsed
-    Container --> Expanded
-```
+Connecting power produces a separate 2.5-second charging HUD. A charging event does not replace a copy HUD already on screen. Both HUDs are enabled by default and can be disabled independently.
 
-### Architecture & Runtime Lifecycle
-1. **AppKit Shell & Window Management:** `NotchWindowController` anchors a non-activating `NotchPanel` right over the hardware camera notch. On notchless or external displays, `NotchGeometry` calculates a floating rounded translucent chip.
-2. **Two-Phase Service Activation:**
-   - **Ambient Phase:** Starts immediately at launch for zero-permission stats (clock, CPU/RAM, battery, timers, clipboard).
-   - **Interactive Phase:** Activated on first hover or menu toggle, deferring AppleScript or EventKit queries until needed to prevent premature permission popups.
-3. **Reactive Ranking Engine:** `ActivityCoordinator` samples candidates from `ActivitySnapshotFactory`, applying a 4-second dwell filter to avoid rapid layout shifting while ensuring high-priority alerts immediately preempt lower ones.
+## Next Up
 
----
-
-## All Functions & Modules
-
-```mermaid
-mindmap
-  root((NotchHub))
-    Next Up Strip
-      Calendar Events
-      Urgent Reminders
-      Persistent Timers
-      Media Playback
-      Low Battery Warnings
-      Focus Mode Indicators
-    Dashboard Modules
-      System Monitor CPU / RAM
-      Clipboard History
-      Pomodoro & Timers
-      Media Controls
-      Calendar & Reminders
-      Focus Mode Toggles
-    Security & Utilities
-      Unicode & URL Sanitizer
-      Single Instance Guard
-      Multi-Display Adaptation
-```
-
-### Implemented Feature Modules
-
-| Module | Concrete View & Service | Description & Capabilities |
-| :--- | :--- | :--- |
-| **Next Up Strip** | [`ActivityCoordinator`](Sources/NotchHub/Core/ActivityCoordinator.swift) | Real-time wings on either side of the notch displaying active countdowns, imminent meeting join buttons, media titles, and battery warnings. |
-| **Dashboard** | `DashboardModuleView` → [`SystemMonitorService`](Sources/NotchHub/Services/SystemMonitorService.swift) | Live Mach CPU load, memory-used percentage, clock, and a drawn [`BatteryGlyphView`](Sources/NotchHub/UI/BatteryGlyphView.swift) whose fill and colour track the real charge. |
-| **Calendar** | `CalendarModuleView` → [`CalendarService`](Sources/NotchHub/Services/CalendarService.swift) | Surfaces events across connected calendars, provides 1-click launch for verified Zoom/Teams/Meet URLs, and displays location map previews. |
-| **Todo & Reminders** | `ReminderModuleView` → [`ReminderService`](Sources/NotchHub/Services/ReminderService.swift) | Fetches reminders from EventKit with generation-token serialization and tombstone tracking to ensure completions never get undone by out-of-order responses. |
-| **Pomodoro & Timers** | `TimerModuleView` → [`ActivityTimerService`](Sources/NotchHub/Services/ActivityTimerService.swift) | Up to 8 concurrent persistent countdown and focus timers that survive app restarts and Mac sleep/wake cycles. |
-| **Media Player** | `MediaModuleView` → [`MediaService`](Sources/NotchHub/Services/MediaService.swift) | Full playback control and live track metadata for Apple Music and Spotify via non-intrusive AppleScript. |
-| **Clipboard History** | `ClipboardModuleView` → [`ClipboardService`](Sources/NotchHub/Services/ClipboardService.swift) | In-memory stack of the 12 most recent clips (text, images, files) with instant copy-back; automatically ignores sensitive/password entries. |
-| **Focus Controls** | `FocusModuleView` → [`FocusService`](Sources/NotchHub/Services/FocusService.swift) | Instant toggle and status display for macOS Do Not Disturb and Focus profiles via Control Center automation. |
-
----
-
-## Live-Activity Prioritization Pipeline
-
-```mermaid
-flowchart TD
-    Raw["Event Sources<br/>(Calendar, Reminders, Timers, Battery, Media, Focus)"] --> Factory["ActivitySnapshotFactory"]
-    Factory --> Filter{"Enabled in ActivityPreferences?"}
-    Filter -- No --> Exclude["Exclude"]
-    Filter -- Yes --> Rank["Rank by Priority:<br/>1. Low Battery (≤15%) / Urgent Timer<br/>2. Imminent Meeting (≤15 min)<br/>3. Due/Overdue Reminder<br/>4. Active Media<br/>5. Ambient Focus / Status"]
-    Rank --> Dwell{"Dwell Guard (4s)<br/>or higher priority arrival?"}
-    Dwell -- Stabilized --> Promote["Surface in Next Up Strip"]
-    Dwell -- Lower Priority --> Queue["Hold in Queue"]
-    Promote --> Action["User Action Router (Join URL, Pause/Play, Complete)"]
-```
-
----
-
-## Comprehensive Security & Privacy
+Next Up turns six local data sources into a single stable activity queue: Calendar, Reminders, Timers, Battery, Media, and Focus. The coordinator keeps one current item plus up to four queued items. A higher-priority event appears immediately; an equal or lower-priority event waits for the four-second dwell period so the notch does not constantly reshuffle.
 
 ```mermaid
 flowchart LR
-    subgraph Untrusted ["Untrusted Boundary"]
-        EK["Calendar & Reminder Text"]
-        URLs["Meeting & Map URLs"]
-    end
-
-    subgraph Defense ["Security Filters"]
-        Sanitize["DisplaySanitizer<br/>(Strips Bidi, Tags, ZWSP, Combining Stacks)"]
-        SafeURL["SafeExternalURL<br/>(Blocks loopback, private IPs, hex/octal IPs)"]
-    end
-
-    subgraph Output ["Safe Execution"]
-        SafeText["Notch Overlay Text"]
-        OpenURL["NSWorkspace.open"]
-    end
-
-    EK --> Sanitize --> SafeText
-    URLs --> SafeURL --> OpenURL
+    Inputs["Calendar · Reminders · Timers<br/>Battery · Media · Focus"] --> Snapshots["Create sanitized activity snapshots"]
+    Snapshots --> Enabled{"Activity type enabled?"}
+    Enabled -- No --> Drop["Ignore candidate"]
+    Enabled -- Yes --> Rank["Rank by priority,<br/>date, then stable ID"]
+    Rank --> Switch{"Higher priority<br/>or dwell elapsed?"}
+    Switch -- No --> Hold["Keep current item"]
+    Switch -- Yes --> Queue["Current item + up to 4 queued"]
+    Queue --> Ambient{"Ambient only?"}
+    Ambient -- Yes --> Quiet["Keep the notch quiet"]
+    Ambient -- No --> Surface["Show wings or activity detail"]
+    Surface --> Action["Run a validated user action"]
 ```
 
-1. **No Network, No Credentials:** NotchHub makes no outbound network requests and stores no secrets. The only URLs it opens are meeting and map links you activate yourself, and they go through the validator below.
-2. **Untrusted Input Sanitization ([`UntrustedInput.swift`](Sources/NotchHub/Core/UntrustedInput.swift)):**
-   - Strips Unicode bidirectional overrides (`U+202A`–`U+2069`), default-ignorable characters, and runaway combining marks before rendering text in the overlay.
-   - External URLs are strictly validated: non-HTTPS links and private/loopback IP addresses (including octal/hex variants) are rejected to prevent SSRF or arbitrary local handler execution.
-3. **No Privilege Escalation:** NotchHub never asks for an administrator password and installs nothing outside its own bundle. Earlier versions offered an opt-in passwordless `sudo` rule for the RAM cleaner; both the cleaner and the rule are gone — see *Upgrading from v0.1.x* if you enabled it.
+### Priority model
 
----
+| Level | Examples |
+| --- | --- |
+| **Critical** | A completed timer; battery at 10% or below |
+| **Urgent** | A running timer with one minute left; a meeting in progress or within five minutes; a reminder due within five minutes or recently overdue; battery at or below the configured warning threshold |
+| **Foreground** | Active media playback |
+| **Normal** | A paused timer or active Focus state |
+| **Ambient** | Ordinary battery or charging state that does not need a wing |
 
-## Installation
+Expanding a non-ambient item opens its detail view with up to two relevant actions. Calendar actions can open a validated meeting link, Apple Maps, or Calendar. Reminder completion and media controls run only after an explicit user action. <kbd>Enter</kbd> triggers the primary action; <kbd>Esc</kbd> returns to the dashboard.
 
-### Prerequisites
-- **macOS 14.0 (Sonoma) or later**
-- **Apple Silicon Mac** (M1/M2/M3/M4)
-- **Xcode or Swift Command Line Tools** (`xcode-select --install`)
+Default lead times are 15 minutes for Calendar and 30 minutes for Reminders. The battery warning threshold defaults to 20%. Each activity type, lead time, and the urgent-over-media rule can be changed in Settings.
 
-### Build and Run from Source
+## How it works
+
+### Presentation state
+
+```mermaid
+stateDiagram-v2
+    [*] --> Collapsed
+    Collapsed --> HUD: copy, power connection, or clipboard preview
+    HUD --> Collapsed: timeout or pointer leaves
+    HUD --> Expanded: select HUD or sustain preview
+    Collapsed --> Expanded: hover or menu Toggle Notch
+    Expanded --> Collapsed: pointer leaves or menu Toggle Notch
+
+    state Collapsed {
+        [*] --> BareNotch
+        BareNotch --> LiveWings: ranked non-ambient activity
+        LiveWings --> BareNotch: no actionable activity
+    }
+```
+
+### Runtime architecture
+
+```mermaid
+flowchart LR
+    subgraph macOS["macOS frameworks"]
+        EventKit["EventKit"]
+        Pasteboard["NSPasteboard"]
+        Hardware["IOKit + Mach/BSD"]
+        Automation["Apple Events + Accessibility"]
+        Notifications["Local notifications"]
+    end
+
+    App["AppDelegate<br/>composition root"] --> Hub["ServiceHub"]
+    App --> Window["NotchWindowController"]
+    Hub --> Services["Local services"]
+    EventKit --> Services
+    Pasteboard --> Services
+    Hardware --> Services
+    Automation --> Services
+    Services --> Factory["ActivitySnapshotFactory"]
+    Factory --> Coordinator["ActivityCoordinator"]
+    Coordinator --> Model["NotchViewModel"]
+    Window --> Model
+    Model --> UI["SwiftUI modules and activity detail"]
+    Window --> Panel["Status-level AppKit panel"]
+    UI --> Panel
+    Services --> Notifications
+    Preferences[("UserDefaults")] --> Hub
+    Preferences --> Model
+```
+
+`AppDelegate` owns the service graph, overlay controller, menu-bar item, Settings window, launch-at-login controller, and single-instance guard. `NotchWindowController` chooses the first display with a physical notch; if none exists, it uses the main or first available display and renders the fallback chip. It also handles displays that appear after a headless login launch.
+
+The window is a non-activating AppKit panel at status-bar level. It joins all Spaces, can accompany full-screen windows, and does not create a normal Dock presence. The interface itself is SwiftUI, driven by observable local services and the ranked activity coordinator.
+
+<details>
+<summary><strong>Service cadence and lifecycle</strong></summary>
+
+| Service | Cadence | Starts when | Stops when hidden |
+| --- | --- | --- | --- |
+| Time | Every second | App launch | No |
+| System CPU and memory | Every 2 seconds | App launch | No |
+| Battery | Every 30 seconds plus immediate power events | App launch | No |
+| Timers | Every second while needed | App launch | No |
+| Clipboard | Checks pasteboard changes every 0.25 seconds | App launch when the module is visible | Yes |
+| Reminders | Every 60 seconds | App launch when the module is visible; authorization checks do not prompt | Yes |
+| Calendar | Every 60 seconds plus EventKit changes | First interaction when the module is visible | Yes |
+| Media | Every 2 seconds | First interaction when the module is visible | Yes |
+| Focus | Best-effort initial read, then local changes | App launch | No |
+
+Hiding a sensitive-service module stops Clipboard, Calendar, Reminders, or Media polling. Battery, system, Focus, time, and timer services remain available because they also support the overlay and shared controls.
+
+</details>
+
+## Privacy and permissions
+
+NotchHub has no runtime backend, account system, analytics, advertising, remote configuration, or in-app HTTP client. The app can hand a user-selected meeting or map URL to the browser or Apple Maps; those external applications may then access the network.
+
+| Capability | Local data access | Persistence or write behavior | Permission behavior |
+| --- | --- | --- | --- |
+| **System and battery** | Time, CPU counters, virtual-memory counters, battery and power state | No history is stored | No permission required |
+| **Clipboard** | Text, image data, and up to four file URLs from a copy event | Maximum 12 entries in process memory; cleared when NotchHub quits | No macOS prompt; hiding Clipboard stops pasteboard reads |
+| **Calendar** | Up to eight events from now through the start of the day two days ahead | Read-only in NotchHub | Full Calendar access is requested only after **Enable Calendar** |
+| **Reminders** | Up to 50 incomplete reminders due through the next two days | Writes only when you choose to complete a reminder | Full Reminders access is requested only after **Enable Reminders** |
+| **Media** | Track title, artist, playback state, and player name from a running Music or Spotify app | Sends local previous, play or pause, and next commands | The first interactive scan of a running player can trigger the macOS Automation prompt |
+| **Focus** | Best-effort Do Not Disturb state | UI-scripts Control Center only when you request a toggle | Accessibility must be granted manually; optional Full Disk Access improves the initial status read but is never required |
+| **Timers** | Timer title, duration, phase, and dates | Up to eight records in `UserDefaults`; local notification on completion | Notification access is requested when the first timer is created |
+| **Launch at Login** | Login item registration status | Uses the macOS login-item service | Attempted once on first run, then controlled from Settings |
+
+Clipboard entries carrying macOS concealed, transient, or autogenerated markers are ignored. This reduces the chance of retaining password-manager content, but no clipboard monitor can identify every sensitive value. Clipboard history is never written to disk by NotchHub.
+
+Calendar, reminder, and timer strings pass through display sanitization before entering the overlay. External actions accept validated public HTTPS URLs and a small set of meeting-link schemes. Validation does not claim to verify the meeting provider or resolve every hostname before the selected URL is handed to macOS.
+
+The app is not App Sandbox enabled. Identity-signed builds use the hardened runtime and the Apple Events automation entitlement; ad-hoc local builds omit that entitlement path. NotchHub does not request administrator access.
+
+## Requirements
+
+- macOS 14 Sonoma or later
+- A Mac with a physical notch for the native placement; notchless and external displays use the fallback chip
+- Apple Silicon is the currently tested configuration. The source does not hard-code an architecture requirement
+- Git and Xcode, or the Swift command-line tools, when building from source
+
+Install the command-line tools if needed:
 
 ```bash
-# 1. Clone the repository
+xcode-select --install
+```
+
+## Install
+
+The current 0.2.0 code is available from `main` and the `v0.2.0` tag. The latest packaged GitHub Release is older, so building from source is the reliable way to use the version documented here.
+
+```bash
 git clone https://github.com/Srimi1/Notch-hub.git
 cd Notch-hub
 
-# 2. Build the release .app (signed with your Apple Development cert if you have one)
 ./scripts/build-app.sh release
-
-# 3. Copy to Applications and launch
 cp -R NotchHub.app /Applications/
 open /Applications/NotchHub.app
 ```
 
-> **Signing and permissions**
-> `build-app.sh` signs with the first Apple Development or Developer ID
-> certificate in your keychain, falling back to ad-hoc if you have none. This
-> matters more than it sounds: an ad-hoc signature is regenerated on every
-> build, so macOS treats each rebuild as a brand-new app and throws away your
-> Calendar and Reminders grants — which is what makes an app seem to ask for
-> permission endlessly. A stable identity makes each grant a one-time answer.
-> Override with `export NOTCHHUB_SIGNING_IDENTITY="…"`.
+The build script uses the first suitable Apple Development or Developer ID certificate in your keychain. If none is available, it falls back to ad-hoc signing. A stable signing identity helps macOS keep Calendar, Reminders, Automation, and Accessibility decisions across rebuilds.
 
-> **Why distributed as source?**  
-> NotchHub is distributed as source for full auditability and provenance. When built locally on your machine, macOS will run the resulting binary without Gatekeeper quarantine blocks.
-
-### Build Drag-to-Applications DMG
+To select an identity explicitly:
 
 ```bash
-# Build and verify a release disk image
+export NOTCHHUB_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)"
+./scripts/build-app.sh release
+```
+
+## First run
+
+1. Launch NotchHub. It appears in the menu bar and does not add a Dock icon.
+2. Hover over the notch, or open the menu-bar item and choose **Toggle Notch**.
+3. Open Settings with the menu command or <kbd>⌘,</kbd> while the menu is active.
+4. Keep all seven modules, or hide the ones you do not want. Calendar, Reminders, Media, and Clipboard stop their local polling when hidden.
+5. Enable Calendar and Reminders from their explicit access controls if you want those modules.
+6. Starting the first timer can request Notifications. Interacting with Media while Music or Spotify is running can request Automation.
+7. Grant Accessibility manually only if you want the Focus toggle. NotchHub does not ask for it automatically.
+
+The menu also provides **Toggle Notch** with <kbd>⌘T</kbd> and **Quit NotchHub** with <kbd>⌘Q</kbd>. These are application menu equivalents, not system-wide global shortcuts. Inside the interactive dashboard, <kbd>⌘1</kbd> through <kbd>⌘9</kbd> select visible modules.
+
+## Settings and defaults
+
+<p align="center">
+  <img src="docs/assets/screenshots/settings.png" width="520" alt="NotchHub Settings showing module visibility and popup controls" />
+</p>
+<p align="center"><sub>The screenshot is a direct capture from the repository build. No Calendar, Reminders, Media, or clipboard content is shown.</sub></p>
+
+| Setting | Default |
+| --- | --- |
+| Visible modules | Dashboard, Media, Calendar, Todo, Pomodoro, Clipboard, Focus |
+| Next Up activity types | Calendar, Reminders, Timers, Battery, Media, Focus |
+| Calendar lead time | 15 minutes, configurable from 5 to 60 |
+| Reminder lead time | 30 minutes, configurable from 5 to 240 |
+| Battery warning | 20%, configurable from 5% to 50% |
+| Urgent activity over media | Enabled |
+| Copy popup | Enabled |
+| Power-connection popup | Enabled |
+| Launch at Login | Registration is attempted once on first run, then remains user-controlled |
+
+Preferences include module visibility, the last selected module, activity types and thresholds, popup choices, and launch-at-login state. Timer records also persist in `UserDefaults`. Clipboard content, media metadata, events, and reminder lists are not persisted by NotchHub.
+
+## Build, test, and package
+
+NotchHub is a Swift Package Manager executable. AppKit provides the application lifecycle and overlay window; SwiftUI provides the modules and activity surfaces. EventKit, IOKit, Security, ServiceManagement, SQLite3, Quick Look, User Notifications, Combine, and Observation provide the system integrations. SwiftFormat and SwiftLint are tooling dependencies only; the app has no third-party runtime package.
+
+### Development commands
+
+```bash
+swift build
+swift test
+./scripts/check.sh
+```
+
+The full check builds the app and test targets, checks SwiftFormat, and reports strict-concurrency findings. With full Xcode selected, it also runs SwiftLint and the test suite; those two steps are skipped in a command-line-tools-only environment. Continuous integration repeats build, test compilation, formatting, linting, and tests on `macos-latest`.
+
+Format the Swift sources:
+
+```bash
+swift package \
+  --disable-sandbox \
+  --allow-writing-to-package-directory \
+  swiftformat Sources Tests
+```
+
+### Project map
+
+```text
+Notch-hub/
+├── Sources/NotchHub/
+│   ├── Core/          overlay state, geometry, activities, preferences
+│   ├── Services/      Calendar, Reminders, Media, Clipboard, battery, timers
+│   ├── UI/            dashboard modules, HUDs, activity detail, settings
+│   ├── AppDelegate.swift
+│   └── main.swift
+├── Tests/NotchHubTests/
+├── Resources/         app icon, bundle metadata, signing entitlement
+├── scripts/           app, DMG, quality, and pre-push helpers
+├── docs/
+└── Package.swift
+```
+
+### Build a DMG
+
+```bash
 ./scripts/build-dmg.sh release
 ```
 
----
+The result is written to `dist/NotchHub-<version>-<arch>.dmg`. The script also supports `--output PATH` and `--skip-build`. Maintainers can provide `NOTCHHUB_SIGNING_IDENTITY` and `NOTCHHUB_NOTARY_PROFILE` to sign, submit, staple, validate, and checksum a distribution build.
 
-## Upgrading from v0.1.x
+## Upgrade from 0.1
 
-The RAM cleaner, the AI coding monitor, and the AI credit tracker were removed.
-NotchHub clears the API keys the credit tracker stored the first time the new
-version launches, so there is nothing to do there.
+NotchHub 0.2 removes the RAM cleaner, AI coding monitor, and AI credit tracker that existed in 0.1. On first launch, the current app performs a one-time cleanup of legacy API-key entries from Keychain.
 
-The one thing it **cannot** remove for you is the optional passwordless `sudo`
-rule the RAM cleaner offered, because deleting a root-owned file needs an
-administrator password — and a release whose point is removing the privileged
-code path should not ask you for one. If you enabled it, remove it yourself:
+Version 0.1 also offered an optional passwordless `sudo` rule for the former RAM cleaner. The current app cannot delete a root-owned rule without asking for administrator access, which it deliberately avoids. If you enabled that option, remove the old rule yourself:
 
 ```bash
-# Check whether the old rule is still installed (prints the path if it is)
-sudo --non-interactive --list /usr/sbin/purge
-
-# Remove it
 sudo rm -f /etc/sudoers.d/notchhub
 ```
-
----
 
 ## Uninstall
 
-To cleanly and completely uninstall NotchHub:
+1. Open NotchHub Settings and turn off **Launch at Login**.
+2. Choose **Quit NotchHub** from the menu bar.
+3. Move `/Applications/NotchHub.app` to the Trash.
+4. Optionally remove saved preferences and timer state:
 
-```bash
-# 1. Quit NotchHub and delete application
-rm -rf /Applications/NotchHub.app
+   ```bash
+   defaults delete com.notchhub.app
+   ```
 
-# 2. Remove application preferences
-defaults delete com.notchhub.app
+5. If you used version 0.1, remove the legacy `sudo` rule shown above. The 0.2 migration normally removes old Keychain entries; the optional manual fallback is:
 
-# 3. Remove the passwordless purge rule left by v0.1.x (if you enabled it)
-sudo rm -f /etc/sudoers.d/notchhub
+   ```bash
+   security delete-generic-password -s com.notchhub.apikeys
+   ```
 
-# 4. Remove any API keys left by the v0.1.x credit tracker
-security delete-generic-password -s com.notchhub.apikeys 2>/dev/null
-```
+## Current boundaries
 
----
+- The app chooses the first physical-notch display. It does not yet include a screen picker or follow whichever display is active.
+- Apple Music and Spotify are the only media players supported today. Artwork and album presentation are not part of the current UI.
+- Focus controls Do Not Disturb only. Without existing Full Disk Access, the initial state and changes made outside NotchHub can be stale.
+- Calendar links are syntax-validated and user-initiated. NotchHub does not show map previews or certify that a link belongs to a particular meeting provider.
+- Clipboard history lasts for the current process and clears on quit. Sensitive-content markers are honored when the source application supplies them.
+- Timer presets are fixed at 5, 15, 25, and 45 minutes in the current UI.
+- The current build has been tested on Apple Silicon. The scripts recognize native arm64, x86_64, and universal bundle metadata, but this repository does not currently publish a verified Intel artifact.
 
-## Development & Quality Gate
+## Contributing
 
-NotchHub uses SwiftPM, SwiftTesting (`import Testing`), SwiftLint, and SwiftFormat.
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request and follow the [Code of Conduct](CODE_OF_CONDUCT.md). Please report vulnerabilities through the process in [SECURITY.md](SECURITY.md), not through a public issue.
 
-```bash
-# Run debug build
-swift build
-
-# Run unit tests (102 tests across 24 suites)
-swift test
-
-# Run full repository quality gate (build, test compile, format, lint, concurrency)
-./scripts/check.sh
-
-# Apply code formatting
-swift package --disable-sandbox --allow-writing-to-package-directory swiftformat Sources Tests
-```
-
----
-
-## License
-
-This project is licensed under the [Apache License 2.0](LICENSE).
-
+NotchHub is available under the [Apache License 2.0](LICENSE).
