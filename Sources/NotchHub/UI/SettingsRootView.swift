@@ -15,6 +15,7 @@ struct SettingsRootView: View {
     var body: some View {
         Form {
             ModuleVisibilitySection(preferences: preferences)
+            PopupSection(preferences: services.hudPreferences)
             NextUpSettingsSections(
                 preferences: services.activityPreferences,
                 reminders: services.reminders,
@@ -60,6 +61,23 @@ private struct ModuleVisibilitySection: View {
             get: { preferences.isVisible(module) },
             set: { preferences.setModule(module, visible: $0) }
         )
+    }
+}
+
+// MARK: - Popups
+
+private struct PopupSection: View {
+    @Bindable var preferences: HudPreferences
+
+    var body: some View {
+        Section {
+            Toggle("Show a popup when you copy", isOn: $preferences.copyPopup)
+        } header: {
+            Text("Popups")
+        } footer: {
+            Text("The popup only announces what was copied — hiding the Clipboard "
+                + "module stops pasteboard reading entirely, popup or not.")
+        }
     }
 }
 

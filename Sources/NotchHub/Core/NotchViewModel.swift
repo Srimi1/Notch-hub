@@ -5,10 +5,19 @@ import SwiftUI
 /// Reactive state for the notch overlay. `isExpanded` drives both the SwiftUI
 /// content (via this `ObservableObject`) and the window-frame animation (the
 /// window controller subscribes to the published value).
+/// What the transient HUD tier is showing, when it is showing anything.
+enum HudContent: Equatable {
+    /// The copy popup: something new just landed on the pasteboard.
+    case clip(ClipboardService.Clip)
+}
+
 @MainActor
 final class NotchViewModel: ObservableObject {
 
     @Published private(set) var isExpanded = false
+    /// The middle presentation tier: bigger than the collapsed pill, far
+    /// smaller than the dashboard. `isExpanded` always wins over it.
+    @Published private(set) var hudContent: HudContent?
     @Published var activeModule: FeatureModule = .dashboard
     @Published private(set) var presentedActivityID: String?
     @Published private(set) var actionError: String?
@@ -42,6 +51,10 @@ final class NotchViewModel: ObservableObject {
     private let collapseDelay: TimeInterval = 0.15
     private var pendingCollapse: DispatchWorkItem?
 
+    /// How long a copy popup lingers before sliding away on its own.
+    private let hudDismissDelay: TimeInterval = 4.0
+    private var pendingHudDismiss: DispatchWorkItem?
+
     /// Tracks live hover so we know whether to collapse once a pin is released.
     private var isHovering = false
     /// The menu-bar "Toggle Notch" action is intentional, not hover-driven. Keep
@@ -70,6 +83,65 @@ final class NotchViewModel: ObservableObject {
 
         observeLiveActivity()
         forwardPreferenceChanges()
+
+        services.clipboard.onCopy = { [weak self] clip in
+            self?.showCopyHUD(clip)
+        }
+    }
+
+    // MARK: - HUD tier
+
+    /// Whether a fresh copy should raise the popup right now. Static so the
+    /// rule is testable without building the service graph.
+    static func shouldShowCopyHUD(popupEnabled: Bool, isExpanded: Bool) -> Bool {
+        popupEnabled && !isExpanded
+    }
+
+    func showCopyHUD(_ clip: ClipboardService.Clip) {
+        guard Self.shouldShowCopyHUD(
+            popupEnabled: services.hudPreferences.copyPopup,
+            isExpanded: isExpanded
+        ) else { return }
+        pendingHudDismiss?.cancel()
+        withAnimation(transitionAnimation) { hudContent = .clip(clip) }
+        armHudDismiss()
+    }
+
+    func dismissHUD() {
+        pendingHudDismiss?.cancel()
+        pendingHudDismiss = nil
+        guard hudContent != nil else { return }
+        withAnimation(transitionAnimation) { hudContent = nil }
+    }
+
+    /// Hovering the popup pauses the countdown so it can be read or dragged
+    /// from; leaving re-arms it.
+    func setHudHover(_ hovering: Bool) {
+        guard hudContent != nil else { return }
+        if hovering {
+            pendingHudDismiss?.cancel()
+            pendingHudDismiss = nil
+        } else {
+            armHudDismiss()
+        }
+    }
+
+    /// Clicking the popup opens the full dashboard on the Clipboard module.
+    func expandFromHUD() {
+        pendingHudDismiss?.cancel()
+        pendingHudDismiss = nil
+        hudContent = nil
+        if preferences.isVisible(.clipboard) { select(.clipboard) }
+        beginInteractiveIfNeeded()
+        isManuallyPinned = true
+        withAnimation(transitionAnimation) { isExpanded = true }
+    }
+
+    private func armHudDismiss() {
+        pendingHudDismiss?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.dismissHUD() }
+        pendingHudDismiss = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + hudDismissDelay, execute: work)
     }
 
     /// Re-emit preference changes (e.g. a module toggled from the status menu)
@@ -104,6 +176,13 @@ final class NotchViewModel: ObservableObject {
         isHovering = hovering
         pendingCollapse?.cancel()
 
+        // While the popup is up, the window IS the popup — hover pauses its
+        // countdown instead of expanding, so it can be read and dragged from.
+        if hudContent != nil, !isExpanded {
+            setHudHover(hovering)
+            return
+        }
+
         if hovering {
             guard !isExpanded else { return }
             beginInteractiveIfNeeded()
@@ -121,6 +200,7 @@ final class NotchViewModel: ObservableObject {
 
     func toggle() {
         pendingCollapse?.cancel()
+        dismissHUD()
         beginInteractiveIfNeeded()
         if !isExpanded { presentCurrentActivity() }
         isManuallyPinned = !isExpanded
@@ -129,6 +209,7 @@ final class NotchViewModel: ObservableObject {
 
     func collapse() {
         pendingCollapse?.cancel()
+        dismissHUD()
         isManuallyPinned = false
         presentedActivityID = nil
         actionError = nil

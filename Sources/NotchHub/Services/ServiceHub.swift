@@ -42,6 +42,7 @@ final class ServiceHub: ObservableObject {
     let reminders = ReminderService()
     let timers = ActivityTimerService()
     let activityPreferences = ActivityPreferences()
+    let hudPreferences = HudPreferences()
     let activityCoordinator: ActivityCoordinator
 
     private var started = false

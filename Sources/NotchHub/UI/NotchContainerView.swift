@@ -14,6 +14,9 @@ struct NotchContainerView: View {
                     .padding(.horizontal, NotchTheme.horizontalPadding)
                     .padding(.vertical, NotchTheme.verticalPadding)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+            } else if viewModel.hudContent != nil {
+                NotchHUDView(viewModel: viewModel, clipboard: viewModel.services.clipboard)
+                    .transition(.opacity)
             } else if viewModel.showCollapsedWings {
                 CollapsedStripView(
                     time: viewModel.services.time,

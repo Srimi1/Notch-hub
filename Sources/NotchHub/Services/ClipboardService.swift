@@ -11,6 +11,10 @@ import UniformTypeIdentifiers
 /// Privacy: clips marked transient or concealed (password managers, OTP
 /// fields) are ignored, and nothing is persisted to disk — history lives in
 /// memory only and clears on quit.
+///
+/// Main-actor isolated: the poll timer runs on the main run loop and every
+/// consumer is a SwiftUI view, the hub, or the notch view model.
+@MainActor
 final class ClipboardService: ObservableObject {
 
     struct Clip: Identifiable, Equatable {
@@ -89,7 +93,7 @@ final class ClipboardService: ObservableObject {
         // integer compare until something is actually copied, and the copy HUD
         // should appear while the ⌘C is still in the user's fingers.
         let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            self?.sample()
+            MainActor.assumeIsolated { self?.sample() }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
@@ -208,7 +212,7 @@ final class ClipboardService: ObservableObject {
         QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] rep, _ in
             guard let rep else { return }
             let image = rep.nsImage
-            DispatchQueue.main.async {
+            Task { @MainActor [weak self] in
                 // Only keep it if the clip is still in history.
                 guard let self, self.clips.contains(where: { $0.id == id }) else { return }
                 self.thumbnails[id] = image
