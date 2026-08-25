@@ -4,6 +4,19 @@ Notable user-facing changes are recorded here. NotchHub follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while the public API
 and interface continue to mature before 1.0.
 
+## [0.3.1] - 2026-08-25
+
+A packaging release. The app is unchanged; how it is built and shipped is not.
+
+### Fixed
+
+- Fixed the published app being Apple Silicon only. Release builds are now
+  universal (`arm64` + `x86_64`), so NotchHub runs on Intel Macs. SwiftPM cannot
+  build both slices in one pass in this package, so `scripts/build-app.sh` builds
+  each and joins them with `lipo`.
+- Fixed a SwiftPM warning about an unhandled file by excluding the stray
+  `ruvector.db` from the target again.
+
 ## [0.3.0] - 2026-08-25
 
 ### Added
@@ -121,7 +134,8 @@ and interface continue to mature before 1.0.
 
 - Published the first public NotchHub release.
 
-[Unreleased]: https://github.com/Srimi1/Notch-hub/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Srimi1/Notch-hub/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Srimi1/Notch-hub/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Srimi1/Notch-hub/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Srimi1/Notch-hub/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Srimi1/Notch-hub/compare/v0.1.0...v0.2.0

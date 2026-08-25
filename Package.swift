@@ -35,7 +35,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "NotchHub",
-            path: "Sources/NotchHub"
+            path: "Sources/NotchHub",
+            // A stray vector database sits in the source tree and is gitignored;
+            // without this SwiftPM warns about an unhandled file on every build.
+            exclude: ["ruvector.db"]
         ),
         .testTarget(
             name: "NotchHubTests",

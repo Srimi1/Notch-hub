@@ -68,9 +68,28 @@ validate_publish_target() {
 
 echo "▸ Building ($CONFIG)…"
 cd "$ROOT"
-swift build -c "$CONFIG"
 
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/NotchHub"
+# Release builds ship universal, so the app runs on Intel Macs as well as Apple
+# Silicon. SwiftPM cannot take `--arch arm64 --arch x86_64` in one pass in this
+# package — the SwiftFormat plugin dependency trips a duplicate-module error — so
+# each slice is built on its own and lipo joins them. Debug builds stay native;
+# nobody needs a cross-compile to iterate. Set NOTCHHUB_UNIVERSAL=0 to opt out.
+build_slice() {
+  local -r arch="$1"
+  swift build -c "$CONFIG" --arch "$arch" >&2
+  swift build -c "$CONFIG" --arch "$arch" --show-bin-path
+}
+
+if [[ "$CONFIG" == "release" && "${NOTCHHUB_UNIVERSAL:-1}" == "1" ]]; then
+  ARM_BIN="$(build_slice arm64)/NotchHub"
+  INTEL_BIN="$(build_slice x86_64)/NotchHub"
+  BIN="$TMP_DIR/NotchHub-universal"
+  lipo -create "$ARM_BIN" "$INTEL_BIN" -output "$BIN"
+  echo "▸ Universal binary: $(lipo -archs "$BIN")"
+else
+  swift build -c "$CONFIG"
+  BIN="$(swift build -c "$CONFIG" --show-bin-path)/NotchHub"
+fi
 
 echo "▸ Assembling ${APP}…"
 mkdir -p "$TMP_APP/Contents/MacOS"

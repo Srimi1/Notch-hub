@@ -317,7 +317,7 @@ sudo rm -f /etc/sudoers.d/notchhub
 - Calendar links are syntax-validated and user-initiated. NotchHub does not show map previews or certify that a link belongs to a particular meeting provider.
 - Clipboard history lasts for the current process and clears on quit. Sensitive-content markers are honored when the source application supplies them.
 - Timer presets are fixed at 5, 15, 25, and 45 minutes in the current UI.
-- The current build has been tested on Apple Silicon. The scripts recognize native arm64, x86_64, and universal bundle metadata, but this repository does not currently publish a verified Intel artifact.
+- Published builds are universal (`arm64` + `x86_64`). Apple Silicon is what the app is developed and tested on; the Intel slice is built and signed but has not been exercised on Intel hardware.
 
 ## Contributing
 
