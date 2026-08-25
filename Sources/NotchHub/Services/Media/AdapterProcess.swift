@@ -39,6 +39,10 @@ extension AdapterLaunching {
 /// Runs `/usr/bin/perl <script> <framework> <arguments…>`.
 struct AdapterProcessLauncher: AdapterLaunching {
 
+    /// How many reads the exit drain will make before giving up, so a writer
+    /// that outlives the process cannot block termination forever.
+    static let drainReadLimit = 64
+
     let paths: AdapterLocator.Paths
 
     func launch(arguments: [String]) throws -> AdapterSession {
@@ -73,7 +77,20 @@ struct AdapterProcessLauncher: AdapterLaunching {
         process.terminationHandler = { finished in
             output.fileHandleForReading.readabilityHandler = nil
             errors.fileHandleForReading.readabilityHandler = nil
+
+            // Drain what is still in the pipe before closing it. A process that
+            // writes and exits immediately can be gone before the readability
+            // handler ever runs, and tearing the pipe down here would discard
+            // its output entirely — the last thing a crashing adapter said is
+            // exactly the thing worth keeping. Bounded rather than
+            // `readToEnd()`, so a lingering writer cannot wedge this thread.
+            for _ in 0 ..< Self.drainReadLimit {
+                let remaining = output.fileHandleForReading.availableData
+                if remaining.isEmpty { break }
+                for line in accumulator.append(remaining) { sink.yield(.line(line)) }
+            }
             if let last = accumulator.flush() { sink.yield(.line(last)) }
+
             try? output.fileHandleForReading.close()
             try? errors.fileHandleForReading.close()
             sink.yield(.exited(status: finished.terminationStatus))

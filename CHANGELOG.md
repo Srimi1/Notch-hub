@@ -4,6 +4,20 @@ Notable user-facing changes are recorded here. NotchHub follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while the public API
 and interface continue to mature before 1.0.
 
+## [0.3.3] - 2026-08-26
+
+### Fixed
+
+- Fixed NotchHub starting two media adapter processes instead of one. Reaping
+  strays from an earlier run waits on `pkill`, and waiting spins the run loop,
+  so work already queued on the main actor ran inside that wait and reached
+  `start()` again before the first launch had recorded itself. Both processes
+  then streamed the same data for the life of the session.
+- Fixed output being dropped when an adapter process wrote and exited
+  immediately. The termination handler tore down the pipe before the read
+  handler had run, discarding whatever the process had said on its way out —
+  which is the case where its output matters most.
+
 ## [0.3.2] - 2026-08-25
 
 ### Changed
@@ -148,7 +162,8 @@ A packaging release. The app is unchanged; how it is built and shipped is not.
 
 - Published the first public NotchHub release.
 
-[Unreleased]: https://github.com/Srimi1/Notch-hub/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/Srimi1/Notch-hub/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/Srimi1/Notch-hub/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/Srimi1/Notch-hub/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Srimi1/Notch-hub/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Srimi1/Notch-hub/compare/v0.2.1...v0.3.0

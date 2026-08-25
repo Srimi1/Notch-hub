@@ -49,6 +49,17 @@ final class MediaRemoteAdapterSource: MediaSource {
     private var isStopping = false
     private var consecutiveFailures = 0
     private var hasReapedStrays = false
+    /// Guards the window between deciding to start and having something to show
+    /// for it.
+    ///
+    /// `readTask` cannot be set until the process is launched, and launching is
+    /// preceded by reaping strays — which waits on `pkill`, and waiting spins
+    /// the run loop. Anything already queued on the main actor runs *inside*
+    /// that wait, sees `readTask` still nil, and starts a second adapter. That
+    /// is not hypothetical: the module-visibility subscriber fires on
+    /// subscribe, and its work landed in exactly this gap, leaving two perl
+    /// processes streaming the same data.
+    private var isStarting = false
 
     init(
         launcher: AdapterLaunching,
@@ -74,8 +85,12 @@ final class MediaRemoteAdapterSource: MediaSource {
     // MARK: - Lifecycle
 
     func start() {
-        guard !isUnavailable, readTask == nil else { return }
+        guard !isUnavailable, readTask == nil, !isStarting else { return }
+        isStarting = true
+        defer { isStarting = false }
         isStopping = false
+        // Before the first launch only, and before it rather than after: the
+        // pattern it kills matches our own child too.
         if !hasReapedStrays {
             hasReapedStrays = true
             launcher.reapStrays()
