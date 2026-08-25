@@ -35,6 +35,6 @@
     <key>NSRemindersFullAccessUsageDescription</key>
     <string>NotchHub reads and completes reminders only when you choose an action.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>NotchHub controls Music and Spotify playback when you use media controls.</string>
+    <string>NotchHub controls your music player when you use the media controls, and Control Center when you toggle Do Not Disturb.</string>
 </dict>
 </plist>

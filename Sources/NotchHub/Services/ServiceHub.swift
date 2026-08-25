@@ -148,6 +148,22 @@ final class ServiceHub: ObservableObject {
         refreshActivities()
     }
 
+    /// Stops everything that holds a resource beyond this process.
+    ///
+    /// The media adapter runs a real child process; nothing reaps it if the app
+    /// exits without terminating it, so a quit would leave a stray
+    /// `mediaremote-adapter` behind for every launch.
+    func shutDown() {
+        media.stop()
+        clipboard.stop()
+        calendar.stop()
+        reminders.stop()
+        timers.stop()
+        battery.stop()
+        system.stop()
+        time.stop()
+    }
+
     func startInteractive() {
         startedInteractive = true
         if isVisible(.media) { media.start() }
@@ -198,7 +214,9 @@ final class ServiceHub: ObservableObject {
         if let media = ActivitySnapshotFactory.media(media.nowPlaying, isPlaying: media.isPlaying) {
             candidates.append(media)
         }
-        if let focus = ActivitySnapshotFactory.focus(isOn: focus.isOn) {
+        // Only when the state was really read: a guessed "on" put a persistent
+        // "Focus is on" pill in the notch on Macs where it was off.
+        if let focus = ActivitySnapshotFactory.focus(isOn: focus.isStateKnown && focus.isOn) {
             candidates.append(focus)
         }
 

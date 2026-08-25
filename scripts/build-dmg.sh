@@ -165,12 +165,36 @@ validate_app_bundle() {
   [[ -f "$APP_PATH/Contents/MacOS/NotchHub" ]] || \
     fail "App bundle is missing a regular executable: $APP_PATH/Contents/MacOS/NotchHub"
 
-  # NotchHub's bundle is flat — it legitimately contains no symlinks at all, so
-  # any link found anywhere inside it is a tampering signal.
-  local stray_links
-  stray_links="$(find "$APP_PATH" -type l -print -quit)"
-  [[ -z "$stray_links" ]] || \
-    fail "Refusing to package an app bundle containing a symlink: $stray_links"
+  # The bundle used to be flat, and any link at all was treated as tampering.
+  # It is not flat any more: MediaRemoteAdapter.framework is a versioned
+  # framework, and a versioned framework bundle is *made* of symlinks
+  # (Versions/Current, and the three shortcuts beside it). Banning them outright
+  # aborted every DMG build.
+  #
+  # The property that actually matters is unchanged, so it is checked directly
+  # instead: a link may only live inside a bundled framework, must be relative,
+  # and must resolve to something still inside the app. Anything else could let
+  # `ditto` follow a link out of the project and stage arbitrary content into a
+  # signed, published disk image.
+  local bundle_root link target link_dir resolved
+  bundle_root="$(cd "$APP_PATH" && pwd -P)"
+  while IFS= read -r -d '' link; do
+    case "$link" in
+      "$APP_PATH"/Contents/Frameworks/*.framework/*) ;;
+      *) fail "Refusing to package an app bundle containing a symlink: $link" ;;
+    esac
+
+    target="$(readlink "$link")"
+    [[ "$target" != /* ]] || \
+      fail "Refusing to package an absolute symlink inside the app bundle: $link -> $target"
+
+    link_dir="$(dirname "$link")"
+    resolved="$( (cd "$link_dir" && cd "$(dirname "$target")" && printf '%s/%s' "$(pwd -P)" "$(basename "$target")") 2>/dev/null || true )"
+    case "$resolved" in
+      "$bundle_root"/*) ;;
+      *) fail "Refusing to package a symlink that does not resolve inside the app bundle: $link -> $target" ;;
+    esac
+  done < <(find "$APP_PATH" -type l -print0)
 }
 
 read_app_version() {
@@ -300,7 +324,10 @@ verify_mounted_image() {
 # not.
 read_signing_authority() {
   local authority=""
-  authority="$(codesign -dvvv "$APP_PATH" 2>&1 | awk -F'=' '/^Authority=/ { print $2; exit }')" || true
+  # No `exit` in the awk program: quitting early closes the pipe, codesign dies
+  # of SIGPIPE, and the ERR trap prints "DMG packaging failed (exit 141)" over a
+  # build that in fact succeeded.
+  authority="$(codesign -dvvv "$APP_PATH" 2>&1 | awk -F'=' '/^Authority=/ && !seen { print $2; seen = 1 }')" || true
   printf '%s' "${authority:-ad-hoc (no Developer ID)}"
 }
 

@@ -170,7 +170,7 @@ enum ActivitySnapshotFactory {
 
     static func media(_ nowPlaying: MediaService.NowPlaying?, isPlaying: Bool) -> ActivitySnapshot? {
         guard let nowPlaying else { return nil }
-        let artist = nowPlaying.artist.isEmpty ? nowPlaying.app.rawValue : nowPlaying.artist
+        let artist = nowPlaying.artist.isEmpty ? nowPlaying.app.name : nowPlaying.artist
         return ActivitySnapshot(
             id: "media.current",
             kind: .media,

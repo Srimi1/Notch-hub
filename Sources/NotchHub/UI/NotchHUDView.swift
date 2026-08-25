@@ -20,17 +20,45 @@ struct NotchHUDView: View {
                 ) { viewModel.restoreFromPeek($0) }
             case .charging:
                 ChargingRow(battery: battery)
+            case .clipPicker:
+                ClipPickerView(viewModel: viewModel, clipboard: clipboard)
             case nil:
                 EmptyView()
             }
         }
-        .padding(.horizontal, NotchTheme.horizontalPadding)
-        .padding(.top, 8)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .contentShape(Rectangle())
-        .onTapGesture { viewModel.expandFromHUD() }
-        .onHover { viewModel.setHudHover($0) }
+        .modifier(HUDChrome(viewModel: viewModel, isPicker: viewModel.hudContent == .clipPicker))
+    }
+}
+
+/// Padding, hover, and expand-on-tap — shared by every popup tier.
+///
+/// The picker opts out of both gestures: it is opened deliberately by a
+/// shortcut and closed deliberately by a key, so a stray hover must not
+/// promote it to the dashboard and a click in its margin must not expand it.
+private struct HUDChrome: ViewModifier {
+    @ObservedObject var viewModel: NotchViewModel
+    let isPicker: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, isPicker ? 0 : NotchTheme.horizontalPadding)
+            .padding(.top, isPicker ? 0 : 8)
+            .padding(.bottom, isPicker ? 0 : 12)
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: isPicker ? .top : .bottom
+            )
+            // Expand-on-tap sits behind the content rather than over it, so peek
+            // cards win the click and only genuinely empty space expands.
+            .background {
+                if !isPicker {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { viewModel.expandFromHUD() }
+                }
+            }
+            .onHover { if !isPicker { viewModel.setHudHover($0) } }
     }
 }
 
@@ -163,6 +191,10 @@ private struct PeekRow: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .background(RoundedRectangle(cornerRadius: 8).fill(NotchTheme.subtleSurface))
+                    // The whole card picks, padding included — a click that
+                    // lands a pixel off the text must not fall through to the
+                    // container's expand gesture.
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
                 .help("Copy again: \(clip.preview)")

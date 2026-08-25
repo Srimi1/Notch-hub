@@ -8,14 +8,31 @@ import Testing
 @Suite("Full Disk Access")
 struct FullDiskAccessTests {
 
-    /// A missing probe says nothing about the TCC grant. The safe answer is
-    /// denied so an optional file read cannot trigger a folder prompt.
+    /// With no probe file at all the grant cannot be established either way.
+    ///
+    /// This used to report "granted" so the settings row would not nag someone
+    /// with nothing to fix. But the prompt-avoidance guard reads the same
+    /// answer, and acting as though access were granted is what raised the
+    /// per-folder dialogs that guard exists to prevent. The state is now its
+    /// own case: the UI can stay gentle about it, the guards cannot.
     @Test
-    func aMissingProbeFileCountsAsUnavailable() {
+    func aMissingProbeFileIsIndeterminateNotGranted() {
         final class NoFilesManager: FileManager, @unchecked Sendable {
             override func fileExists(atPath path: String) -> Bool { false }
         }
-        #expect(!FullDiskAccess.isGranted(fileManager: NoFilesManager()))
+        let manager = NoFilesManager()
+        #expect(FullDiskAccess.status(fileManager: manager) == .indeterminate)
+        #expect(FullDiskAccess.isGranted(fileManager: manager) == false)
+    }
+
+    /// An unestablished grant must not be mistaken for one when deciding
+    /// whether it is safe to read a file in a protected folder.
+    @Test
+    func anIndeterminateGrantDoesNotUnlockProtectedFolderReads() {
+        final class NoFilesManager: FileManager, @unchecked Sendable {
+            override func fileExists(atPath path: String) -> Bool { false }
+        }
+        #expect(FullDiskAccess.isGranted(fileManager: NoFilesManager()) == false)
     }
 
     /// Reading the real probe must never throw or hang, whatever the grant
@@ -25,6 +42,41 @@ struct FullDiskAccessTests {
         let first = FullDiskAccess.isGranted()
         let second = FullDiskAccess.isGranted()
         #expect(first == second)
+    }
+
+    /// The regression this list exists to prevent: the Focus assertions file
+    /// only appears once someone has used a Focus mode, so a Mac that never has
+    /// answered "indeterminate" forever — the settings row could not be
+    /// satisfied by granting the permission it was asking for. `TCC.db` exists
+    /// on every account, so the probe now has something to read.
+    @Test
+    func theProbeDoesNotDependOnHavingUsedAFocusMode() {
+        #expect(FullDiskAccess.probePaths.first?.contains("com.apple.TCC") == true)
+        #expect(FullDiskAccess.probePaths.count > 1)
+
+        final class OnlyTCC: FileManager, @unchecked Sendable {
+            override func fileExists(atPath path: String) -> Bool {
+                path.contains("com.apple.TCC")
+            }
+        }
+        // The probe resolves to a real answer even with no Focus history: it
+        // reads (or fails to read) TCC.db rather than giving up.
+        #expect(FullDiskAccess.status(fileManager: OnlyTCC()) != .indeterminate)
+    }
+
+    /// A probe file that is simply absent says nothing about the grant, so it
+    /// must be skipped rather than reported as a denial.
+    @Test
+    func anAbsentProbeIsSkippedRatherThanCountedAsDenied() {
+        final class OnlyLastProbe: FileManager, @unchecked Sendable {
+            override func fileExists(atPath path: String) -> Bool {
+                path.hasSuffix(FullDiskAccess.probePaths[2])
+            }
+        }
+        // The first two probes do not exist; the third decides, and since the
+        // fake path is not readable the honest answer is "denied", not
+        // "indeterminate".
+        #expect(FullDiskAccess.status(fileManager: OnlyLastProbe(), home: "/nonexistent") == .denied)
     }
 
     /// The details builder degrades rather than prompting: no size, but the

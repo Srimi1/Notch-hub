@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notchController: NotchWindowController?
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
+    private var onboardingWindow: NSWindow?
+    private let permissions: PermissionCenter
     private let instanceCoordinator = AppInstanceCoordinator()
     private let preferences = ModulePreferences()
     /// Owned here, not by the notch window, so Settings still has live services
@@ -17,11 +19,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the displays wake, and `NotchWindowController.init` returns nil then.
     private let services: ServiceHub
     private let launchAtLogin = LaunchAtLoginController()
+    private let hotKeyPreferences = HotKeyPreferences()
+    private let hotKeys = HotKeyCenter()
 
     override init() {
         // The hub needs the same preferences object so hiding a module really
         // stops the service behind it, rather than only hiding its tab.
-        services = ServiceHub(modulePreferences: preferences)
+        let hub = ServiceHub(modulePreferences: preferences)
+        services = hub
+        permissions = PermissionCenter(requests: .live(services: hub))
         super.init()
     }
 
@@ -42,6 +48,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         services.startAmbient()
         setUpStatusItem()
         installOverlayIfPossible()
+        installClipPickerHotKey()
+        showOnboardingIfNeeded()
 
         NotificationCenter.default.addObserver(
             self,
@@ -49,6 +57,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        services.shutDown()
     }
 
     /// Creates the overlay once a display exists.
@@ -123,14 +135,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notchController?.toggle()
     }
 
+    /// The clipboard picker is the one feature worth reaching without going to
+    /// the notch first, so it gets a system-wide chord. Carbon registration
+    /// needs no permission, so this works on a fresh install.
+    private func installClipPickerHotKey() {
+        hotKeys.onHotKey = { [weak self] in
+            self?.notchController?.showClipPicker()
+        }
+        applyHotKeyPreference()
+    }
+
+    /// Keeps the live registration in step with the Settings choice.
+    func applyHotKeyPreference() {
+        guard hotKeyPreferences.clipPickerEnabled else {
+            hotKeys.stop()
+            return
+        }
+        hotKeys.setSpec(hotKeyPreferences.clipPickerSpec)
+        hotKeys.start()
+    }
+
+    /// First launch is the one moment the user expects to be asked for things,
+    /// so every permission NotchHub uses gets offered at once instead of
+    /// ambushing them the first time each module is opened.
+    private func showOnboardingIfNeeded() {
+        guard permissions.shouldShowOnboarding else { return }
+        let view = OnboardingView(permissions: permissions) { [weak self] in
+            self?.permissions.markOnboardingComplete()
+            self?.onboardingWindow?.close()
+        }
+        let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+        window.title = "Welcome to NotchHub"
+        window.styleMask = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        window.center()
+        onboardingWindow = window
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        // Closing with the red button is as final as pressing Done — either way
+        // the user has seen the list and should not be shown it again.
+        permissions.markOnboardingComplete()
+    }
+
     @objc private func openSettings() {
         notchController?.collapse()
         if settingsWindow == nil {
             let view = SettingsRootView(
                 preferences: preferences,
                 launchAtLogin: launchAtLogin,
+                permissions: permissions,
+                hotKeys: hotKeyPreferences,
                 services: services
-            )
+            ) { [weak self] in
+                self?.applyHotKeyPreference()
+            }
             let window = NSWindow(contentViewController: NSHostingController(rootView: view))
             window.title = "NotchHub Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]

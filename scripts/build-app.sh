@@ -80,8 +80,28 @@ cp "$ROOT/Resources/Info.plist" "$TMP_APP/Contents/Info.plist"
 if [[ -f "$ROOT/Resources/AppIcon.icns" ]]; then
   cp "$ROOT/Resources/AppIcon.icns" "$TMP_APP/Contents/Resources/AppIcon.icns"
 fi
+
+# MediaRemote adapter
+# -------------------
+# The script and the framework it loads are *bundled, never linked*: NotchHub
+# passes the framework's path to /usr/bin/perl and reads JSON back. This is the
+# only way to see players that expose no AppleScript dictionary — a YouTube
+# Music tab, an Electron client — since macOS 15.4 closed MediaRemote to
+# ordinary apps. Without these two files the app still runs; it just falls back
+# to scripting Music and Spotify (see AdapterLocator).
+echo "▸ Bundling the MediaRemote adapter…"
+mkdir -p "$TMP_APP/Contents/Frameworks"
+cp "$ROOT/Vendor/mediaremote-adapter/bin/mediaremote-adapter.pl" \
+  "$TMP_APP/Contents/Resources/mediaremote-adapter.pl"
+"$ROOT/scripts/build-adapter.sh" "$TMP_APP/Contents/Frameworks" "$SIGNING_IDENTITY"
+
 xattr -cr "$TMP_APP"
 
+# Note on `--deep`: it re-signs nested code (now including
+# MediaRemoteAdapter.framework) with the same options, entitlements included.
+# Frameworks ignore entitlements at runtime, but a notarisation service may
+# flag them. If notarisation ever complains about the nested framework, sign it
+# first (build-adapter.sh already does) and drop `--deep` here.
 sign_bundle() {
   local -r target="$1"
   xattr -cr "$target" 2>/dev/null || true

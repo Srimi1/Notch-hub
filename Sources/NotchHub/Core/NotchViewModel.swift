@@ -13,6 +13,9 @@ enum HudContent: Equatable {
     case peek
     /// Power just connected — the charge moment.
     case charging
+    /// The clipboard picker, opened by the global shortcut: the full history,
+    /// keyboard-selectable, over whatever the user is working in.
+    case clipPicker
 }
 
 @MainActor
@@ -70,6 +73,13 @@ final class NotchViewModel: ObservableObject {
     /// Dismisses the popup the instant its content is pasted — but only when
     /// Accessibility was already granted for the Focus toggle. Never prompts.
     let pasteMonitor = PasteEventMonitor()
+    /// Types the ⌘V for the user after they pick a clip, where allowed.
+    let pasteSynthesizer = PasteSynthesizer()
+    /// Digit and Escape handling while the clipboard picker is up. Local, so it
+    /// needs no permission and can swallow the keys it uses.
+    let pickerKeyMonitor = LocalKeyMonitor()
+    /// Explains, once per session, why picking a clip only copied it.
+    @Published var pasteHint: String?
 
     /// Tracks live hover so we know whether to collapse once a pin is released.
     private var isHovering = false
@@ -105,6 +115,12 @@ final class NotchViewModel: ObservableObject {
         }
         pasteMonitor.onPaste = { [weak self] in
             self?.dismissHUD()
+        }
+        pickerKeyMonitor.onKeyDown = { [weak self] event in
+            self?.handlePickerKey(
+                code: event.keyCode,
+                characters: event.charactersIgnoringModifiers
+            ) ?? false
         }
         observeCharging()
     }
@@ -174,6 +190,16 @@ final class NotchViewModel: ObservableObject {
             pendingCollapse = work
             DispatchQueue.main.asyncAfter(deadline: .now() + collapseDelay, execute: work)
         }
+    }
+
+    /// Drop a queued hover-out collapse.
+    ///
+    /// Anything that takes the window somewhere deliberate has to cancel it, or
+    /// a stale work item fires up to `collapseDelay` later and flips
+    /// `isExpanded` out from under the new state.
+    func cancelPendingCollapse() {
+        pendingCollapse?.cancel()
+        pendingCollapse = nil
     }
 
     func toggle() {

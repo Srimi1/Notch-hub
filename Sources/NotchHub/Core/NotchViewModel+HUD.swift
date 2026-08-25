@@ -11,14 +11,25 @@ extension NotchViewModel {
 
     /// Whether a fresh copy should raise the popup right now. Static so the
     /// rule is testable without building the service graph.
-    static func shouldShowCopyHUD(popupEnabled: Bool, isExpanded: Bool) -> Bool {
-        popupEnabled && !isExpanded
+    ///
+    /// The clip picker is the one popup the user deliberately opened, so it
+    /// outranks anything that announces itself: a copy landing mid-selection
+    /// used to replace the list with a notice and lose their place.
+    static func shouldShowCopyHUD(
+        popupEnabled: Bool,
+        isExpanded: Bool,
+        hudContent: HudContent?
+    ) -> Bool {
+        guard popupEnabled, !isExpanded else { return false }
+        if case .clipPicker = hudContent { return false }
+        return true
     }
 
     func showCopyHUD(_ clip: ClipboardService.Clip) {
         guard Self.shouldShowCopyHUD(
             popupEnabled: services.hudPreferences.copyPopup,
-            isExpanded: isExpanded
+            isExpanded: isExpanded,
+            hudContent: hudContent
         ) else { return }
         pendingHudDismiss?.cancel()
         withAnimation(transitionAnimation) { hudContent = .clip(clip) }
@@ -28,6 +39,7 @@ extension NotchViewModel {
 
     func dismissHUD() {
         pasteMonitor.stop()
+        pickerKeyMonitor.stop()
         pendingHudDismiss?.cancel()
         pendingHudDismiss = nil
         pendingPeekPromotion?.cancel()
@@ -84,8 +96,118 @@ extension NotchViewModel {
 
     /// Clicking a peek card puts that clip back on the pasteboard.
     func restoreFromPeek(_ clip: ClipboardService.Clip) {
-        services.clipboard.copy(clip)
+        pick(clip)
         dismissHUD()
+    }
+
+    /// The one path every clip picker goes through: put the clip back on the
+    /// pasteboard, and — when the user wants it and Accessibility allows —
+    /// finish the job by typing the ⌘V into whatever they were working in.
+    ///
+    /// Without the grant the clip is still copied; the hint says so once rather
+    /// than leaving the pick looking like it did nothing.
+    func pick(
+        _ clip: ClipboardService.Clip,
+        pasteAfter delay: TimeInterval = PasteSynthesizer.defaultDelay
+    ) {
+        services.clipboard.copy(clip)
+        guard services.hudPreferences.autoPaste else { return }
+        if pasteSynthesizer.pasteToFrontmostApp(after: delay) {
+            pasteHint = nil
+        } else if pasteHint == nil {
+            pasteHint = "Copied. Grant Accessibility to paste automatically."
+        }
+    }
+
+    // MARK: - Clipboard picker
+
+    /// What a key press means while the picker is up.
+    enum PickerAction: Equatable {
+        case select(Int) // 1-based, matching the badge on each row
+        case dismiss
+    }
+
+    /// Pure so the key mapping is testable without an event or a window.
+    ///
+    /// Digits pick; Escape closes. Everything else is ignored rather than
+    /// swallowed, since the picker sits over whatever the user was doing.
+    static func pickerAction(forKeyCode keyCode: UInt16, characters: String?) -> PickerAction? {
+        if keyCode == 53 { return .dismiss } // kVK_Escape
+        guard let digit = characters.flatMap(Int.init), (1 ... 9).contains(digit) else { return nil }
+        return .select(digit)
+    }
+
+    /// The global shortcut is a toggle: pressing it again closes the picker
+    /// rather than doing nothing, which is what the same key press means
+    /// everywhere else in macOS.
+    func toggleClipPicker() {
+        if case .clipPicker = hudContent {
+            dismissHUD()
+        } else {
+            showClipPicker()
+        }
+    }
+
+    /// The two presentation flags the clip picker needs, set together.
+    ///
+    /// They are separately `@Published` and the window tier map reads both,
+    /// with `isExpanded` outranking `hudContent`. Setting only `hudContent`
+    /// showed nothing at all while the dashboard was open, and then dropped the
+    /// picker out of the notch unasked the moment the dashboard collapsed.
+    struct Presentation: Equatable {
+        var isExpanded: Bool
+        var hudContent: HudContent?
+    }
+
+    static let clipPickerPresentation = Presentation(isExpanded: false, hudContent: .clipPicker)
+
+    func showClipPicker() {
+        pendingHudDismiss?.cancel()
+        pendingHudDismiss = nil
+        pendingPeekPromotion?.cancel()
+        pendingPeekPromotion = nil
+        cancelPendingCollapse()
+        pasteMonitor.stop()
+        // The chord is global, so it has to work while the dashboard happens to
+        // be open — and `isExpanded` outranks `hudContent` in the tier map. Set
+        // both in one animation: leaving `isExpanded` true showed nothing at
+        // all, and then dropped the picker out of the notch unasked the moment
+        // something else collapsed the dashboard. Unpinning matters for the
+        // same reason — a dashboard pinned open by the menu would otherwise
+        // keep the hover-out collapse from ever running.
+        isManuallyPinned = false
+        // No auto-dismiss timer: unlike the copy popup, this one is waiting for
+        // the user to choose something.
+        withAnimation(transitionAnimation) {
+            isExpanded = Self.clipPickerPresentation.isExpanded
+            hudContent = Self.clipPickerPresentation.hudContent
+        }
+        pickerKeyMonitor.start()
+    }
+
+    /// Act on a key press while the picker is showing.
+    func handlePickerKey(code: UInt16, characters: String?) -> Bool {
+        guard case .clipPicker = hudContent else { return false }
+        switch Self.pickerAction(forKeyCode: code, characters: characters) {
+        case .dismiss:
+            dismissHUD()
+            return true
+        case .select(let index):
+            let clips = services.clipboard.clips
+            guard index <= clips.count else { return true }
+            pickAndDismiss(clips[index - 1])
+            return true
+        case nil:
+            return false
+        }
+    }
+
+    /// Choosing from the picker: close first, then paste. Dismissing hands the
+    /// keyboard back to the app the user was working in, and the longer delay
+    /// gives that hand-off time to land before the ⌘V is typed.
+    func pickAndDismiss(_ clip: ClipboardService.Clip) {
+        dismissHUD()
+        pick(clip, pasteAfter: PasteSynthesizer.focusHandoffDelay)
     }
 
     /// See the ordering note on `expandFromHUD` — `isExpanded` must flip
@@ -131,8 +253,10 @@ extension NotchViewModel {
 
     func showChargingHUD() {
         guard services.hudPreferences.chargingPopup, !isExpanded else { return }
-        // A copy popup is more actionable than a charge notice; don't replace it.
+        // A copy popup is more actionable than a charge notice, and the clip
+        // picker is something the user is actively reading; don't replace either.
         if case .clip = hudContent { return }
+        if case .clipPicker = hudContent { return }
         pendingHudDismiss?.cancel()
         withAnimation(transitionAnimation) { hudContent = .charging }
         let work = DispatchWorkItem { [weak self] in self?.dismissHUD() }

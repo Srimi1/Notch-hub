@@ -106,6 +106,9 @@ final class ClipboardService: ObservableObject {
 
     // MARK: - Restore to clipboard
 
+    /// Puts a history entry back on the pasteboard. History order is left
+    /// alone: reordering under the pointer makes the next click land on a
+    /// different clip than the one it appears to target.
     func copy(_ clip: Clip) {
         pasteboard.clearContents()
         switch clip.kind {
@@ -120,7 +123,6 @@ final class ClipboardService: ObservableObject {
         }
         // Don't re-ingest our own write on the next tick.
         lastChangeCount = pasteboard.changeCount
-        promote(clip)
     }
 
     func clear() {
@@ -163,8 +165,11 @@ final class ClipboardService: ObservableObject {
 
     // MARK: - History management
 
-    private func add(_ kind: Clip.Kind) {
-        clips.removeAll { $0.kind == kind }
+    /// Records newly-copied content at the head of the history. Internal rather
+    /// than private so tests can seed history without driving the real
+    /// pasteboard.
+    func add(_ kind: Clip.Kind) {
+        removeClips { $0.kind == kind }
         let clip = Clip(id: UUID(), kind: kind, date: Date())
         clips.insert(clip, at: 0)
         trim()
@@ -172,12 +177,11 @@ final class ClipboardService: ObservableObject {
         onCopy?(clip)
     }
 
-    private func promote(_ clip: Clip) {
-        clips.removeAll { $0.kind == clip.kind }
-        let fresh = Clip(id: UUID(), kind: clip.kind, date: Date())
-        clips.insert(fresh, at: 0)
-        trim()
-        generateThumbnail(for: fresh)
+    /// Drops clips and their thumbnails together — a clip removed without its
+    /// thumbnail leaks an entry keyed by an id nothing renders any more.
+    private func removeClips(where shouldRemove: (Clip) -> Bool) {
+        for clip in clips where shouldRemove(clip) { thumbnails[clip.id] = nil }
+        clips.removeAll(where: shouldRemove)
     }
 
     private func trim() {

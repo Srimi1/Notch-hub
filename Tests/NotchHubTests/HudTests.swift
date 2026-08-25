@@ -9,11 +9,11 @@ struct HudTests {
 
     @Test
     func popupShowsOnlyWhenEnabledAndCollapsed() {
-        #expect(NotchViewModel.shouldShowCopyHUD(popupEnabled: true, isExpanded: false))
+        #expect(NotchViewModel.shouldShowCopyHUD(popupEnabled: true, isExpanded: false, hudContent: nil))
         // The dashboard already shows the clipboard — a popup over it is noise.
-        #expect(!NotchViewModel.shouldShowCopyHUD(popupEnabled: true, isExpanded: true))
-        #expect(!NotchViewModel.shouldShowCopyHUD(popupEnabled: false, isExpanded: false))
-        #expect(!NotchViewModel.shouldShowCopyHUD(popupEnabled: false, isExpanded: true))
+        #expect(!NotchViewModel.shouldShowCopyHUD(popupEnabled: true, isExpanded: true, hudContent: nil))
+        #expect(!NotchViewModel.shouldShowCopyHUD(popupEnabled: false, isExpanded: false, hudContent: nil))
+        #expect(!NotchViewModel.shouldShowCopyHUD(popupEnabled: false, isExpanded: true, hudContent: nil))
     }
 
     @Test

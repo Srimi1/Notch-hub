@@ -156,7 +156,10 @@ struct ExpandedDashboardView: View {
         case .todo:
             ReminderModuleView(reminders: services.reminders)
         case .clipboard:
-            ClipboardModuleView(clipboard: services.clipboard)
+            ClipboardModuleView(
+                clipboard: services.clipboard,
+                hint: viewModel.pasteHint
+            ) { viewModel.pick($0) }
         case .focus:
             FocusModuleView(focus: services.focus)
         }
@@ -175,7 +178,7 @@ private struct MediaModuleView: View {
                     Text(np.title)
                         .font(.system(size: 12, weight: .semibold))
                         .lineLimit(1)
-                    Text(np.artist.isEmpty ? np.app.rawValue : np.artist)
+                    Text(np.artist.isEmpty ? np.app.name : np.artist)
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.6))
                         .lineLimit(1)
@@ -195,7 +198,7 @@ private struct MediaModuleView: View {
             // user has no way to diagnose — macOS never re-prompts.
             EmptyHint(symbol: "hand.raised.fill", text: reason)
         } else {
-            EmptyHint(symbol: "play.slash", text: "Play something in Music or Spotify.")
+            EmptyHint(symbol: "play.slash", text: media.emptyHint)
         }
     }
 }
@@ -278,36 +281,88 @@ private struct FocusModuleView: View {
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button {
-                focus.toggle()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "moon.fill")
-                    Text(focus.isOn ? "Turn Off" : "Turn On")
+            if let pane = focus.lastError?.settingsPane {
+                Button("Fix…") {
+                    if pane == .accessibility {
+                        focus.requestAccessibility()
+                    }
+                    pane.open()
                 }
+                .buttonStyle(.plain)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(focus.isOn ? .black : .white)
+                .foregroundStyle(.white)
                 .padding(.horizontal, 12)
                 .frame(height: 32)
-                .background(
-                    Capsule().fill(focus.isOn ? Color.purple.opacity(0.9) : Color.white.opacity(0.12))
-                )
+                .background(Capsule().fill(Color.white.opacity(0.12)))
             }
-            .buttonStyle(.plain)
+
+            toggleButton
         }
         .onAppear { focus.refreshAccessibility() }
     }
 
+    private var toggleButton: some View {
+        Button {
+            focus.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "moon.fill")
+                Text(toggleTitle)
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(isShowingOn ? .black : .white)
+            .padding(.horizontal, 12)
+            .frame(height: 32)
+            .background(
+                Capsule().fill(isShowingOn ? Color.purple.opacity(0.9) : Color.white.opacity(0.12))
+            )
+            .opacity(focus.isToggling ? 0.5 : 1)
+        }
+        .buttonStyle(.plain)
+        .disabled(focus.isToggling)
+    }
+
+    /// Only claim "on" when the state was actually read; otherwise the button
+    /// would promise the opposite of what the click does.
+    private var isShowingOn: Bool { focus.isStateKnown && focus.isOn }
+
+    private var toggleTitle: String {
+        guard focus.isStateKnown else { return "Toggle" }
+        return focus.isOn ? "Turn Off" : "Turn On"
+    }
+
     private var statusTitle: String {
-        if !focus.accessibilityGranted { return "Accessibility permission needed" }
-        return focus.isOn ? "Do Not Disturb is on" : "Do Not Disturb is off"
+        if focus.isToggling { return "Switching Do Not Disturb…" }
+        switch focus.lastError {
+        case .accessibilityDenied: return "Accessibility permission needed"
+        case .automationDenied: return "Automation permission needed"
+        case .controlNotFound: return "Could not find the Focus control"
+        case .scriptFailed: return "Could not switch Do Not Disturb"
+        case nil:
+            guard focus.isStateKnown else { return "Do Not Disturb" }
+            return focus.isOn ? "Do Not Disturb is on" : "Do Not Disturb is off"
+        }
     }
 
     private var statusSubtitle: String {
-        if !focus.accessibilityGranted || focus.lastToggleFailed {
-            return "Enable NotchHub in System Settings ▸ Privacy ▸ Accessibility to toggle Focus."
+        switch focus.lastError {
+        case .accessibilityDenied:
+            return "Allow NotchHub in \(SystemSettingsPane.accessibility.settingsPath), then try again."
+        case .automationDenied:
+            return "Allow NotchHub to control System Events in "
+                + "\(SystemSettingsPane.automation.settingsPath), then try again."
+        case .controlNotFound:
+            return "Control Center did not show a Do Not Disturb control. "
+                + "On a Mac that isn't set to English, macOS may name it differently."
+        case .scriptFailed:
+            return "macOS refused the request. Try again in a moment."
+        case nil:
+            guard focus.isStateKnown else {
+                return "Silences notifications across your Mac. Reading whether it's already on "
+                    + "needs \(SystemSettingsPane.fullDiskAccess.settingsPath)."
+            }
+            return "Silences notifications across your Mac."
         }
-        return "Silences notifications across your Mac."
     }
 }
 
@@ -315,36 +370,50 @@ private struct FocusModuleView: View {
 
 private struct ClipboardModuleView: View {
     @ObservedObject var clipboard: ClipboardService
+    let hint: String?
+    let onPick: (ClipboardService.Clip) -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             if clipboard.clips.isEmpty {
                 EmptyHint(symbol: "doc.on.clipboard", text: "Copy text, an image, or a file to collect it here.")
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(clipboard.clips) { clip in
-                            Button {
-                                clipboard.copy(clip)
-                            } label: {
-                                ClipTile(clip: clip, thumbnail: clipboard.thumbnails[clip.id])
-                            }
-                            .buttonStyle(.plain)
+                clipRow
+                if let hint {
+                    Text(hint)
+                        .font(.system(size: 10))
+                        .foregroundStyle(NotchTheme.secondaryText)
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+
+    private var clipRow: some View {
+        HStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(clipboard.clips) { clip in
+                        Button {
+                            onPick(clip)
+                        } label: {
+                            ClipTile(clip: clip, thumbnail: clipboard.thumbnails[clip.id])
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-
-                Button {
-                    clipboard.clear()
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.75))
-                        .frame(width: 30, height: 30)
-                        .background(Circle().fill(Color.white.opacity(0.08)))
-                }
-                .buttonStyle(.plain)
             }
+
+            Button {
+                clipboard.clear()
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(Color.white.opacity(0.08)))
+            }
+            .buttonStyle(.plain)
         }
     }
 }
@@ -373,6 +442,9 @@ private struct ClipTile: View {
         .frame(width: clip.isVisual ? 150 : 136, height: 38, alignment: .leading)
         .padding(6)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.07)))
+        // Without this the plain button style only hit-tests the drawn text, so
+        // clicks in the padding fall through and miss the tile entirely.
+        .contentShape(RoundedRectangle(cornerRadius: 8))
     }
 
     @ViewBuilder

@@ -25,11 +25,27 @@ final class NotchWindowController {
     /// dashboard — the "medium black box" the copy HUD lives in.
     static let hudSize = CGSize(width: 520, height: 104)
 
-    /// The three window sizes the overlay animates between.
+    /// The clipboard picker: taller than the popup, because it lists the whole
+    /// history rather than the last few.
+    static let pickerSize = CGSize(width: 560, height: 360)
+
+    /// The window sizes the overlay animates between.
     enum Tier: Equatable {
         case collapsed
         case hud
+        case picker
         case expanded
+    }
+
+    /// Which window size a given presentation state needs. Pure so the mapping
+    /// is testable without a window.
+    static func tier(isExpanded: Bool, hudContent: HudContent?) -> Tier {
+        if isExpanded { return .expanded }
+        switch hudContent {
+        case .none: return .collapsed
+        case .clipPicker: return .picker
+        case .clip, .peek, .charging: return .hud
+        }
     }
 
     /// Fails when no display is attached yet.
@@ -79,13 +95,29 @@ final class NotchWindowController {
 
     private func bind() {
         Publishers.CombineLatest(viewModel.$isExpanded, viewModel.$hudContent)
-            .map { expanded, hud -> Tier in
-                if expanded { return .expanded }
-                return hud == nil ? .collapsed : .hud
-            }
+            .map { expanded, hud in Self.tier(isExpanded: expanded, hudContent: hud) }
             .removeDuplicates()
             .sink { [weak self] tier in
                 self?.animateFrame(tier: tier)
+            }
+            .store(in: &cancellables)
+
+        // Losing the keyboard closes the picker.
+        //
+        // The picker is opaque, sits at status-bar level across every Space,
+        // and has no auto-dismiss — it waits for a choice. When the user makes
+        // that choice by clicking back into their document instead, nothing was
+        // left to close it: the panel simply stayed on screen over the top of
+        // the frontmost window, swallowing clicks, with Escape no longer
+        // reaching it because local key monitors only see NotchHub's own events.
+        NotificationCenter.default
+            .publisher(for: NSWindow.didResignKeyNotification, object: panel)
+            .sink { [weak self] _ in
+                guard let self, self.viewModel.hudContent == .clipPicker else { return }
+                // The keyboard has already gone somewhere the user chose, so
+                // drop the borrow rather than dragging them back to it.
+                self.panel.forgetBorrowedKeyFocus()
+                self.viewModel.dismissHUD()
             }
             .store(in: &cancellables)
 
@@ -118,6 +150,12 @@ final class NotchWindowController {
         viewModel.collapse()
     }
 
+    /// Drop the clipboard picker out of the notch. Driven by the global
+    /// shortcut, which can fire while any app is frontmost.
+    func showClipPicker() {
+        viewModel.toggleClipPicker()
+    }
+
     /// Recompute geometry for the current active screen (display changes).
     func repositionForActiveScreen() {
         guard let screen = NSScreen.notchScreen else { return }
@@ -126,8 +164,9 @@ final class NotchWindowController {
         // Moving between a notched laptop display and an external monitor
         // changes how the overlay must be drawn, not just where it sits.
         hoverView?.hasPhysicalNotch = geometry.hasPhysicalNotch
-        let tier: Tier = viewModel.isExpanded ? .expanded : (viewModel.hudContent == nil ? .collapsed : .hud)
-        animateFrame(tier: tier)
+        animateFrame(
+            tier: Self.tier(isExpanded: viewModel.isExpanded, hudContent: viewModel.hudContent)
+        )
     }
 
     // MARK: - Frame animation
@@ -137,15 +176,23 @@ final class NotchWindowController {
         switch tier {
         case .collapsed: target = collapsedFrame()
         case .hud: target = hudFrame()
+        case .picker: target = pickerFrame()
         case .expanded: target = expandedFrame()
         }
         // The popup takes clicks and drags, so it needs the interaction layer
         // exactly like the dashboard does.
         if tier != .collapsed { panel.claimInteractionLayer() }
+        // The picker is keyboard-driven, so it borrows key status the other
+        // tiers do not need — and gives it straight back on the way out. The
+        // panel is non-activating, so the app the user was typing in stays
+        // frontmost throughout; but frontmost is not the same as key, and while
+        // the panel held the keyboard the synthesized ⌘V was delivered to the
+        // notch instead of to their document.
+        if tier == .picker { panel.takeKeyFocus() } else { panel.releaseKeyFocus() }
         hoverView?.bottomRadius = switch tier {
         case .collapsed: 10
         case .hud: 18
-        case .expanded: 24
+        case .picker, .expanded: 24
         }
         resizeContent(to: target.size)
         NSAnimationContext.runAnimationGroup { context in
@@ -181,6 +228,14 @@ final class NotchWindowController {
         let size = CGSize(
             width: min(Self.hudSize.width, max(0, geometry.screen.frame.width - 40)),
             height: Self.hudSize.height
+        )
+        return Self.topCentered(size: size, on: geometry.screen)
+    }
+
+    private func pickerFrame() -> NSRect {
+        let size = CGSize(
+            width: min(Self.pickerSize.width, max(0, geometry.screen.frame.width - 40)),
+            height: min(Self.pickerSize.height, max(0, geometry.screen.frame.height - 80))
         )
         return Self.topCentered(size: size, on: geometry.screen)
     }
