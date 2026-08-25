@@ -88,20 +88,13 @@ Connecting power produces a separate 2.5-second charging HUD. A charging event d
 
 Next Up turns six local data sources into a single stable activity queue: Calendar, Reminders, Timers, Battery, Media, and Focus. The coordinator keeps one current item plus up to four queued items. A higher-priority event appears immediately; an equal or lower-priority event waits for the four-second dwell period so the notch does not constantly reshuffle.
 
-```mermaid
-flowchart LR
-    Inputs["Calendar · Reminders · Timers<br/>Battery · Media · Focus"] --> Snapshots["Create sanitized activity snapshots"]
-    Snapshots --> Enabled{"Activity type enabled?"}
-    Enabled -- No --> Drop["Ignore candidate"]
-    Enabled -- Yes --> Rank["Rank by priority,<br/>date, then stable ID"]
-    Rank --> Switch{"Higher priority<br/>or dwell elapsed?"}
-    Switch -- No --> Hold["Keep current item"]
-    Switch -- Yes --> Queue["Current item + up to 4 queued"]
-    Queue --> Ambient{"Ambient only?"}
-    Ambient -- Yes --> Quiet["Keep the notch quiet"]
-    Ambient -- No --> Surface["Show wings or activity detail"]
-    Surface --> Action["Run a validated user action"]
-```
+The decision path is short:
+
+1. Each service publishes its current local state.
+2. NotchHub sanitizes display text and turns useful changes into comparable activity candidates.
+3. Your settings remove disabled activity types.
+4. The remaining candidates are ordered by priority, date, and a stable identifier.
+5. A candidate above the current item can preempt it. Equal or lower priority respects the dwell period.
 
 ### Priority model
 
@@ -119,56 +112,17 @@ Default lead times are 15 minutes for Calendar and 30 minutes for Reminders. The
 
 ## How it works
 
-### Presentation state
+A launch creates one local service hub and one top-edge window. From there, five steps shape the experience:
 
-```mermaid
-stateDiagram-v2
-    [*] --> Collapsed
-    Collapsed --> HUD: copy, power connection, or clipboard preview
-    HUD --> Collapsed: timeout or pointer leaves
-    HUD --> Expanded: select HUD or sustain preview
-    Collapsed --> Expanded: hover or menu Toggle Notch
-    Expanded --> Collapsed: pointer leaves or menu Toggle Notch
+1. **Place the surface.** NotchHub chooses the first display with a physical notch. If none exists, it places a compact fallback chip on the main or first available display. It can also attach the overlay when a display appears after a headless login launch.
+2. **Start the right services.** Time, system, battery, Focus, and timer services begin with the app. Clipboard and Reminders run only while their modules are visible. Calendar and Media wait until the first interaction.
+3. **Choose what matters.** Calendar events, reminders, timers, battery state, playback, and Focus become activity candidates. Preferences filter them; priority and dwell rules choose the current item.
+4. **Use the smallest useful surface.** Ranked activity appears beside the collapsed notch. Copy and power events use the temporary HUD. Hover or the menu command opens the full dashboard.
+5. **Act only on request.** Completing a reminder, controlling playback, toggling Focus, or opening a meeting, map, or calendar link requires a user action.
 
-    state Collapsed {
-        [*] --> BareNotch
-        BareNotch --> LiveWings: ranked non-ambient activity
-        LiveWings --> BareNotch: no actionable activity
-    }
-```
+### Under the hood
 
-### Runtime architecture
-
-```mermaid
-flowchart LR
-    subgraph macOS["macOS frameworks"]
-        EventKit["EventKit"]
-        Pasteboard["NSPasteboard"]
-        Hardware["IOKit + Mach/BSD"]
-        Automation["Apple Events + Accessibility"]
-        Notifications["Local notifications"]
-    end
-
-    App["AppDelegate<br/>composition root"] --> Hub["ServiceHub"]
-    App --> Window["NotchWindowController"]
-    Hub --> Services["Local services"]
-    EventKit --> Services
-    Pasteboard --> Services
-    Hardware --> Services
-    Automation --> Services
-    Services --> Factory["ActivitySnapshotFactory"]
-    Factory --> Coordinator["ActivityCoordinator"]
-    Coordinator --> Model["NotchViewModel"]
-    Window --> Model
-    Model --> UI["SwiftUI modules and activity detail"]
-    Window --> Panel["Status-level AppKit panel"]
-    UI --> Panel
-    Services --> Notifications
-    Preferences[("UserDefaults")] --> Hub
-    Preferences --> Model
-```
-
-`AppDelegate` owns the service graph, overlay controller, menu-bar item, Settings window, launch-at-login controller, and single-instance guard. `NotchWindowController` chooses the first display with a physical notch; if none exists, it uses the main or first available display and renders the fallback chip. It also handles displays that appear after a headless login launch.
+`AppDelegate` owns the local services, overlay controller, menu-bar item, Settings window, launch-at-login controller, and single-instance guard. `NotchWindowController` owns the placement and size of the overlay.
 
 The window is a non-activating AppKit panel at status-bar level. It joins all Spaces, can accompany full-screen windows, and does not create a normal Dock presence. The interface itself is SwiftUI, driven by observable local services and the ranked activity coordinator.
 
