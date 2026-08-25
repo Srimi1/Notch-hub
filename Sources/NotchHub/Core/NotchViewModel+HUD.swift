@@ -64,7 +64,11 @@ extension NotchViewModel {
         pendingHudDismiss = nil
         if preferences.isVisible(.clipboard) { select(.clipboard) }
         beginInteractiveIfNeeded()
-        isManuallyPinned = true
+        // Deliberately NOT pinned. Clicking the popup means "show me the
+        // clipboard", not "keep this open forever" — pinning it here left the
+        // dashboard stuck open, since the hover-out collapse refuses to run
+        // while `isManuallyPinned` is set. Only the menu's Toggle Notch pins;
+        // this expands like a hover and collapses when the pointer leaves.
         withAnimation(transitionAnimation) {
             isExpanded = true
             hudContent = nil
