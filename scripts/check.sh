@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 #
-# NotchHub quality gate — runs the CLAUDE.md "Definition of Done" checks that are
-# runnable in the current toolchain. Exits non-zero if any hard gate fails.
+# NotchHub repository quality gate. Exits non-zero if any hard gate fails.
 #
 # Gates:
 #   1. Build (debug)                 — must compile with zero errors
 #   2. Build tests                   — test code must compile
 #   3. SwiftFormat (--lint)          — formatting must be clean
-#   4. Strict-concurrency report     — informational (legacy debt, see CLAUDE.md)
+#   4. Strict-concurrency report     — informational during the Swift 6 migration
 #   5. SwiftLint                      — only when full Xcode is available*
 #   6. swift test                     — only when full Xcode is available*
 #
@@ -41,13 +40,13 @@ if $SF Sources Tests --lint; then echo "✓ formatting clean"; else echo "✗ fo
 
 hr "4/6 Strict-concurrency (informational — legacy debt)"
 swift package clean >/dev/null 2>&1 || true
-SC=$(swift build -Xswiftc -strict-concurrency=complete 2>&1 | grep -c "warning:")
-echo "  $SC strict-concurrency warnings (target: 0 — see CLAUDE.md Swift 6 migration)"
+SC=$(swift build -Xswiftc -strict-concurrency=complete 2>&1 | grep -c "warning:" || true)
+echo "  $SC strict-concurrency warnings (target: 0)"
 
 hr "5/6 SwiftLint"
 if [[ "$HAS_XCODE" == "1" ]]; then
   if swift package --disable-sandbox --allow-writing-to-package-directory swiftlint; then
-    echo "✓ lint clean"; else echo "✗ lint issues"; FAIL=1; fi
+    echo "✓ SwiftLint completed"; else echo "✗ lint issues"; FAIL=1; fi
 else
   echo "⊘ skipped — needs full Xcode (SourceKit). Command Line Tools only."
 fi

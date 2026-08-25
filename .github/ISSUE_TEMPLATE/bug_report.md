@@ -8,27 +8,34 @@ assignees: ''
 
 ## What happened
 
-A clear description of the bug.
+<!-- Describe the problem and what you were doing when it appeared. -->
 
 ## Steps to reproduce
 
-1. …
-2. …
-3. …
+1.
+2.
+3.
 
 ## Expected behavior
 
-What you expected instead.
+<!-- What should NotchHub have done? -->
 
 ## Environment
 
 - macOS version:
-- Mac model (notch / no notch):
+- Mac model and architecture:
+- Display setup (physical notch / external / notchless):
 - NotchHub version or commit:
-- Install method (built from source / downloaded .app):
+- Install method (source build / GitHub Release):
+
+## Relevant permissions
+
+<!-- List only permissions related to the bug. Examples: Calendar, Reminders,
+Automation, Accessibility, Notifications, or Full Disk Access. -->
 
 ## Logs / screenshots
 
-Console output (`Console.app`, filter "NotchHub") or screenshots, if any.
+<!-- Add a screenshot or Console.app output filtered to "NotchHub". Remove
+calendar titles, reminders, clipboard contents, file paths, and other private data. -->
 
-> For **security** issues, do not file here — see [SECURITY.md](../../SECURITY.md).
+> For security issues, use the private process in [SECURITY.md](../../SECURITY.md).

@@ -1,353 +1,208 @@
 # NotchHub architecture
 
-This document describes the code that exists in the repository today. NotchHub is a single-process macOS 14 accessory app built as a Swift Package executable. AppKit owns the application, menu bar item, overlay panel, and window geometry; SwiftUI renders the overlay and settings; a shared service graph supplies live state.
+NotchHub is a single-process macOS 14 accessory app built as a Swift Package
+executable. AppKit owns the process lifecycle, menu-bar item, overlay panel, and
+display geometry. SwiftUI renders the overlay and Settings. A shared `ServiceHub`
+supplies local state to both interfaces.
 
-The most useful source-of-truth entry points are:
+## Source map
 
-- [`Package.swift`](../Package.swift) — package, platform, targets, and build-tool plugins.
-- [`main.swift`](../Sources/NotchHub/main.swift) and [`AppDelegate.swift`](../Sources/NotchHub/AppDelegate.swift) — process and application lifecycle.
-- [`NotchWindowController.swift`](../Sources/NotchHub/Core/NotchWindowController.swift) and [`NotchViewModel.swift`](../Sources/NotchHub/Core/NotchViewModel.swift) — overlay composition and interaction state.
-- [`ServiceHub.swift`](../Sources/NotchHub/Services/ServiceHub.swift) — live-service composition root.
-- [`ExpandedDashboardView.swift`](../Sources/NotchHub/UI/ExpandedDashboardView.swift) — compile-time feature-module dispatch.
-- [`UntrustedInput.swift`](../Sources/NotchHub/Core/UntrustedInput.swift) — the single gate for text and URLs authored outside the app.
-
-## Runtime component map
-
-```mermaid
-flowchart TB
-    Entry["main.swift<br/>NSApplication accessory process"] --> Delegate["AppDelegate<br/>lifecycle and status menu"]
-    Delegate --> Instance["AppInstanceCoordinator<br/>single-instance selection"]
-    Delegate --> Status["NSStatusItem and module menu"]
-    Delegate --> Window["NotchWindowController"]
-    Delegate --> Settings["SettingsRootView<br/>separate NSWindow"]
-
-    Window --> Geometry["NotchGeometry and NSScreen extension"]
-    Window --> Panel["NotchPanel<br/>borderless status-level NSPanel"]
-    Window --> Hover["HoverView<br/>tracking and shape mask"]
-    Window --> VM["NotchViewModel<br/>overlay state and action router"]
-    Hover --> Host["NSHostingView"]
-    Host --> Container["NotchContainerView"]
-    Container --> Collapsed["Collapsed live-activity strip"]
-    Container --> Expanded["ExpandedDashboardView"]
-
-    VM --> ModulePrefs["ModulePreferences"]
-    VM --> Hub["ServiceHub<br/>service composition root"]
-    Status --> ModulePrefs
-    Settings --> Hub
-    Hub --> LocalServices["Time, system, battery,<br/>clipboard, focus, timers"]
-    Hub --> PermissionServices["Calendar, reminders, media"]
-    Hub --> Activity["ActivitySnapshotFactory<br/>and ActivityCoordinator"]
-
-    ModulePrefs --> Defaults[("UserDefaults")]
-    LocalServices --> OS["macOS APIs and local integration files"]
-    PermissionServices --> OS
-```
-
-### Layer responsibilities
-
-| Layer | Main types | Responsibility |
-| --- | --- | --- |
-| Process lifecycle | `main.swift`, `AppDelegate`, `AppInstanceCoordinator`, `LaunchAtLoginController` | Starts an accessory app, prevents duplicate overlays, owns `ServiceHub` so settings work before any display exists, builds a three-item menu, and reacts to display changes. |
-| AppKit shell | `NotchWindowController`, `NotchPanel`, `HoverView`, `NotchGeometry` | Hosts SwiftUI in a non-activating, always-on-top panel; computes physical-notch or fallback dimensions; tracks hover; animates between collapsed and expanded frames. |
-| Presentation state | `NotchViewModel`, `ModulePreferences`, activity model types | Owns expansion, selected module, live-activity presentation, user actions, and persisted module layout. |
-| SwiftUI | `NotchContainerView`, `ExpandedDashboardView`, module/detail/settings views | Renders collapsed wings, the selected dashboard module, activity actions, and preferences. Views receive state and call explicit service/view-model operations. |
-| Service graph | `ServiceHub` and `Services/*` | Owns polling and OS integrations, republishes child changes, and converts raw service state into activity candidates. |
-| Hostile-input boundary | `DisplaySanitizer`, `SafeExternalURL` (`Core/UntrustedInput.swift`) | Normalizes text that arrives from other applications before it reaches the overlay, and classifies external URLs before they reach `NSWorkspace.open`. |
-| Permission state | `EventKitAccessDecision` (`Core/EventKitAccess.swift`) | Single testable mapping from `EKAuthorizationStatus` to grant/deny/prompt, shared by `CalendarService` and `ReminderService`. |
-
-## Startup and overlay lifecycle
-
-There is no SwiftUI `App` entry point. `main.swift` creates `NSApplication`, selects `.accessory` activation, assigns `AppDelegate`, and enters the AppKit run loop. `LSUIElement` is also set in `Resources/Info.plist`, so the app has no normal Dock presence.
-
-```mermaid
-sequenceDiagram
-    participant Main as main.swift
-    participant App as AppDelegate
-    participant IC as AppInstanceCoordinator
-    participant WC as NotchWindowController
-    participant VM as NotchViewModel
-    participant Hub as ServiceHub
-    participant Panel as NotchPanel / SwiftUI
-
-    Main->>App: applicationDidFinishLaunching
-    App->>IC: shouldContinueLaunching()
-    alt another canonical instance wins
-        IC-->>App: false
-        App->>Main: terminate
-    else this process is primary
-        IC-->>App: true
-        App->>App: create NSStatusItem and menu
-        App->>WC: init(shared ModulePreferences)
-        WC->>VM: init(preferences)
-        VM->>Hub: startAmbient()
-        WC->>Panel: install HoverView and NSHostingView
-        WC->>Panel: show collapsed frame
-    end
-
-    Note over Panel,VM: First hover or explicit Toggle Notch
-    Panel->>VM: setHover(true) or toggle()
-    VM->>Hub: startInteractive() once
-    VM-->>WC: publish isExpanded = true
-    WC->>Panel: resize and animate expanded frame
-    Panel->>VM: module selection or activity action
-```
-
-`AppInstanceCoordinator` prefers a running canonical `NotchHub.app`, then compares bundle versions, modification dates, and process IDs. The primary process retires duplicate processes with the same bundle identifier; a losing process exits before creating UI.
-
-`NotchWindowController` keeps the actual panel no larger than its visible content. On a notched display, `NotchGeometry` derives the camera width from the two auxiliary menu-bar areas and uses the safe-area inset as height. Notchless/external displays use a 190 × at-least-32 point fallback. Expanded width is capped to the screen width minus 40 points.
-
-## Service lifecycle and observation
-
-`NotchViewModel` creates one `ServiceHub`. The hub creates every service once, wires their change callbacks, and separates startup into two phases:
-
-- **Ambient:** starts during `NotchViewModel.init` and does not wait for the panel to expand.
-- **Interactive:** starts once, on the first hover expansion or explicit menu toggle, because media automation and Calendar can trigger permission prompts.
-
-| Service | Phase / cadence | Data source and output |
-| --- | --- | --- |
-| `TimeService` | Ambient, 1 second | Current time/date for the dashboard and collapsed clock. |
-| `SystemMonitorService` | Ambient, 2 seconds | Mach/BSD CPU and VM counters plus home-volume capacity. |
-| `BatteryService` | Ambient, 30 seconds | IOKit power-source state and estimates. |
-| `ClipboardService` | Ambient, 1 second | `NSPasteboard`; holds up to 12 text/image/file entries in memory and ignores concealed/transient markers. |
-| `FocusService` | Ambient initial read; actions on demand | Accessibility-driven Control Center AppleScript, with a best-effort read of the TCC-protected DND assertions file. |
-| `ActivityTimerService` | Ambient, 1 second | Up to eight timers, JSON-encoded in `UserDefaults`, with `UNUserNotificationCenter` completion notifications. |
-| `ReminderService` | Ambient, 60 seconds when already authorized | EventKit reminders. It re-reads authorization each tick (and on app activation) without prompting; `requestAccess()` is an explicit user action. Reloads are generation-guarded and completions are tombstoned by generation. |
-| `MediaService` | Interactive, 2 seconds | Apple Events/AppleScript against Music or Spotify; transport actions use the same channel. |
-| `CalendarService` | Interactive, 60 seconds plus EventKit notifications | Requests EventKit Calendar access, re-reads the status each tick and on app activation, then publishes up to eight events over the next two days. |
-
-Most existing services expose Combine `ObservableObject` / `@Published` state. Newer activity, reminder, timer, and launch-at-login types use Observation's `@Observable`. `NotchViewModel`, `ServiceHub`, activity coordination, and the timer/reminder stores are main-actor isolated.
-
-The package intentionally remains at Swift tools version 5.9 while legacy strict-concurrency diagnostics are migrated. New isolation should follow the existing main-actor/actor boundaries rather than assuming the whole target is already Swift 6 clean.
-
-## State and data flow
-
-```mermaid
-flowchart LR
-    subgraph Inputs["Inputs and integration boundaries"]
-        Timers["RunLoop timers"]
-        EventKit["EventKit"]
-        Pasteboard["NSPasteboard"]
-        IOKit["IOKit and Mach/BSD"]
-        AppleEvents["Apple Events and Accessibility"]
-    end
-
-    Timers --> Services["Observable services"]
-    EventKit --> Services
-    Pasteboard --> Services
-    IOKit --> Services
-    AppleEvents --> Services
-    Services -->|published changes / callbacks| Hub["ServiceHub"]
-    Hub -->|objectWillChange| Views["SwiftUI module views"]
-    Hub -->|raw service values| Factory["ActivitySnapshotFactory"]
-    Factory --> Coordinator["ActivityCoordinator"]
-    ActivityPrefs[("ActivityPreferences<br/>UserDefaults")] --> Coordinator
-    Coordinator -->|current plus queue| VM["NotchViewModel"]
-    VM --> Collapsed["Collapsed activity wing"]
-    VM --> Detail["Expanded ActivityDetailView"]
-
-    ModulePrefs[("ModulePreferences<br/>UserDefaults")] <--> VM
-    TimerDefaults[("Timer records<br/>UserDefaults JSON")] <--> Services
-    Services --> Responses["Published values, errors,<br/>and user-action results"]
-    Responses --> Views
-```
-
-`ServiceHub` subscribes to its Combine-based child publishers. A child change republishes the hub and recomputes activity candidates. Timer and reminder Observation services use explicit `onChange` callbacks for the same purpose. Activity preferences also trigger re-ranking immediately.
-
-### Live-activity pipeline
-
-```mermaid
-flowchart LR
-    Raw["Calendar events, reminders, timers,<br/>battery, media, focus"] --> Factory["ActivitySnapshotFactory"]
-    Factory --> Candidates["ActivitySnapshot candidates<br/>with priority, relevance, and at most 2 actions"]
-    Candidates --> Enabled{"Kind enabled in<br/>ActivityPreferences?"}
-    Enabled -->|no| Drop["Exclude"]
-    Enabled -->|yes| Rank["Rank by effective priority,<br/>then relevance date, then stable ID"]
-    Rank --> Dwell["Preserve current item for 4 seconds<br/>unless a higher priority arrives"]
-    Dwell --> Queue["Current plus up to 4 queued items"]
-    Queue --> Ambient{"Current priority<br/>is ambient?"}
-    Ambient -->|yes| Hidden["No collapsed wings / auto detail"]
-    Ambient -->|no| Wing["Collapsed activity wing"]
-    Ambient -->|no| Detail["Expanded activity detail"]
-    Detail --> Router["NotchViewModel.perform(action)"]
-    Router --> Services["Timer, reminder, media, navigation,<br/>or validated external URL operation"]
-```
-
-By default, urgent activities can replace media. If `urgentOverridesMedia` is disabled, media receives an effective pinned priority. Calendar titles/locations and reminder titles are sanitized before display. Meeting URLs allow only HTTPS public hosts and a small allowlist of meeting schemes; map searches are length-bounded and constructed with `URLComponents`.
-
-## Feature modules (not runtime plugins)
-
-The product calls dashboard sections **modules**, but there is no plugin protocol, bundle discovery, dynamic library loading, JavaScript runtime, or out-of-process extension host. Every module is an enum case in `FeatureModule` and is compiled into the executable. Adding a real module currently requires source changes and a rebuild.
-
-The fresh-install visible set and status-menu toggles are these nine implemented routes:
-
-| Module | Concrete view / service path |
+| Area | Primary files |
 | --- | --- |
-| Dashboard | `DashboardModuleView` → time, battery, system monitor |
-| Media | `MediaModuleView` → `MediaService` |
-| Calendar | `CalendarModuleView` → `CalendarService` |
-| Todo | `ReminderModuleView` → `ReminderService` |
-| Pomodoro | `TimerModuleView` → `ActivityTimerService` |
-| Clipboard | `ClipboardModuleView` → `ClipboardService` |
-| Focus | `FocusModuleView` → `FocusService` |
+| Process lifecycle | [`main.swift`](../Sources/NotchHub/main.swift), [`AppDelegate.swift`](../Sources/NotchHub/AppDelegate.swift) |
+| Overlay window | [`NotchWindowController.swift`](../Sources/NotchHub/Core/NotchWindowController.swift), [`NotchPanel.swift`](../Sources/NotchHub/Core/NotchPanel.swift), [`NotchGeometry.swift`](../Sources/NotchHub/Core/NotchGeometry.swift) |
+| Presentation state | [`NotchViewModel.swift`](../Sources/NotchHub/Core/NotchViewModel.swift), [`NotchViewModel+HUD.swift`](../Sources/NotchHub/Core/NotchViewModel+HUD.swift) |
+| Service composition | [`ServiceHub.swift`](../Sources/NotchHub/Services/ServiceHub.swift) and `Sources/NotchHub/Services/*` |
+| Activity ranking | [`ActivitySnapshotFactory.swift`](../Sources/NotchHub/Core/ActivitySnapshotFactory.swift), [`ActivityCoordinator.swift`](../Sources/NotchHub/Core/ActivityCoordinator.swift) |
+| Dashboard and Settings | [`ExpandedDashboardView.swift`](../Sources/NotchHub/UI/ExpandedDashboardView.swift), [`SettingsRootView.swift`](../Sources/NotchHub/UI/SettingsRootView.swift) |
+| External-input checks | [`UntrustedInput.swift`](../Sources/NotchHub/Core/UntrustedInput.swift), [`EventKitAccess.swift`](../Sources/NotchHub/Core/EventKitAccess.swift) |
 
-`FeatureModule` has exactly these seven cases and `ExpandedDashboardView.moduleBody` switches over them without a `default:` arm, so a new case fails to compile until it renders something real. The enum previously carried sixteen further cases that fell through to a placeholder view labelling them "Planned"; they were unreachable as toggles and have been removed.
+## Runtime ownership
 
-```mermaid
-flowchart TD
-    Menu["Status menu module checkbox"] --> Prefs["ModulePreferences.setModule"]
-    Prefs --> Defaults[("visibleModules in UserDefaults")]
-    Prefs --> Publish["objectWillChange forwarded by NotchViewModel"]
-    Publish --> Band["ExpandedDashboardView toggle band"]
-    Band --> Chip["User selects ModuleChip or numeric shortcut"]
-    Chip --> Select["NotchViewModel.select(module)"]
-    Select --> Last[("lastActiveModule in UserDefaults")]
-    Select --> Switch{"Compile-time switch on<br/>activeModule"}
-    Switch -->|exhaustive, 7 cases| Real["Concrete module view"]
-    Real --> Existing["Existing ServiceHub instance"]
+| Owner | Responsibility |
+| --- | --- |
+| `main.swift` | Creates `NSApplication`, selects accessory activation, installs `AppDelegate`, and enters the AppKit run loop. |
+| `AppDelegate` | Owns the single-instance guard, shared module preferences, `ServiceHub`, launch-at-login controller, status item, overlay controller, and Settings window. |
+| `ServiceHub` | Constructs each service once, forwards observable changes, applies module-visibility lifecycle rules, and refreshes activity candidates. |
+| `NotchWindowController` | Chooses display geometry, owns the panel, hosts SwiftUI, and animates between collapsed, HUD, and expanded frames. |
+| `NotchViewModel` | Owns interaction state, selected module, activity presentation, HUD timing, and action routing. It receives the shared preferences and service hub. |
+| `ModulePreferences` | Persists visible modules and the last active module, validating stored enum identifiers on load. |
 
-    Note["Service startup is expansion-driven,<br/>not module-selection-driven"] -.-> Existing
-```
+`LSUIElement` is enabled in `Resources/Info.plist`, so NotchHub has no normal Dock
+presence. `NotchPanel` is a non-activating panel at status-bar level. It joins all
+Spaces, can accompany full-screen windows, and yields behind peer overlays while
+collapsed.
 
-Module IDs are persisted as enum raw strings and validated when loaded. Unknown or renamed IDs are discarded. A **stored** empty list means the user hid everything and is honoured; only a missing key, or a stored list in which no ID still resolves, falls back to the defaults. The selected module is also validated against visibility on view-model creation.
+## Startup
 
-## Untrusted input boundary
+1. `AppDelegate` runs the single-instance check. A losing duplicate exits before
+   creating UI.
+2. The delegate performs one-time legacy credential cleanup and the first-run
+   Launch at Login attempt.
+3. `ServiceHub.startAmbient()` starts the non-interactive service set.
+4. The delegate creates the status menu with **Toggle Notch**, **Settings**, and
+   **Quit NotchHub**.
+5. If a display is available, `NotchWindowController` creates a `NotchViewModel`
+   with the existing preferences and service hub, then shows the collapsed panel.
+6. The first hover expansion or menu toggle calls `ServiceHub.startInteractive()`
+   once. Media and Calendar then start only if their modules are visible.
 
-Calendar and reminder content is authored elsewhere — by a meeting organiser, a shared calendar, or a synced account — and NotchHub renders it in an always-on-top panel the user cannot easily inspect. `Core/UntrustedInput.swift` is the single choke point for that data.
+A Launch at Login process can start before a display wakes. In that case the app
+keeps its services and status item alive, then installs the overlay after macOS
+reports a display change.
 
-```mermaid
-flowchart LR
-    subgraph Untrusted["Untrusted sources"]
-        EK["EventKit events<br/>and reminders"]
-        Loc["Event locations"]
-        Link["Event URLs"]
-    end
+## Display and presentation
 
-    EK --> San["DisplaySanitizer.text"]
-    Loc --> San
-    San --> Strip{"Strip"}
-    Strip --> S1["C0/C1 controls and Cf format<br/>(bidi overrides and isolates)"]
-    Strip --> S2["default-ignorable scalars<br/>(Hangul fillers, ZWSP, BOM)"]
-    Strip --> S3["Tags block and non-characters"]
-    Strip --> S4["combining runs beyond 2 marks"]
-    Strip --> Keep["Keep ZWJ and variation<br/>selectors so emoji still render"]
-    Keep --> UI["Overlay text, length-bounded"]
+`NSScreen.notchScreen` chooses the first display with a physical notch. If none
+exists, it uses the main screen and then the first available screen. There is no
+active-display follower or screen picker.
 
-    Link --> Safe["SafeExternalURL.meetingURL"]
-    Loc --> Maps["SafeExternalURL.mapsURL<br/>(constructed, never concatenated)"]
-    Safe --> Scheme{"https or an<br/>allowlisted meeting scheme?"}
-    Scheme -- no --> Drop["No action offered"]
-    Scheme -- yes --> Host{"public host?"}
-    Host -- "loopback, private, link-local,<br/>CGNAT, ULA, multicast,<br/>reserved TLD, octal/hex/dword IP" --> Drop
-    Host -- yes --> Open["NSWorkspace.open"]
-    Maps --> Open
-```
+| Tier | Size and role |
+| --- | --- |
+| Collapsed | Matches the physical camera area. Notchless displays use a chip 190 points wide and at least 32 points tall. Non-ambient activity can add symmetric wings. |
+| HUD | A 520 × 104 point temporary surface for copy feedback, clipboard preview, or a charging event. |
+| Expanded | An 860 × 136 point dashboard, with width clamped to the display width minus 40 points. |
 
-Host classification deliberately does **not** use `inet_pton` for IPv4. macOS's `inet_pton` reads `0177.0.0.1` as decimal `177.0.0.1` while the system resolver reads it as octal `127.0.0.1`; a check that disagrees with the resolver is worse than no check. Instead, anything that *looks* numeric must parse as a canonical dotted quad (four decimal labels, no leading zeros, each ≤ 255) or it is refused outright. IPv6 literals are parsed with `inet_pton`, and IPv4-mapped forms are judged by their embedded IPv4 address.
+Hover expands the interface and pointer exit schedules collapse after 0.15
+seconds. **Toggle Notch** pins the expanded tier until toggled again. A clipboard
+preview promotes after 0.6 seconds; Reduce Motion skips that intermediate reveal.
 
-## Permission recovery
+## Service lifecycle
 
-macOS posts no notification when a user changes an app's Calendar or Reminders switch in System Settings. Both services therefore re-read `EKAuthorizationStatus` on their 60-second tick and on `NSApplication.didBecomeActiveNotification` (wired once in `ServiceHub`), mapping it through the shared `EventKitAccessDecision`. Granting access mid-session recovers the feature without relaunching; revoking it clears the now-unauthorized data instead of leaving a stale list on screen.
+`ServiceHub` starts services according to both interaction phase and module
+visibility. Hiding Clipboard, Todo, Calendar, or Media stops the corresponding
+service instead of merely hiding its view.
 
-`ReminderService` additionally guards against a completion being undone by an older query. Each reload takes a monotonic generation token, and only the newest may publish — an older in-flight fetch that lands late is discarded rather than allowed to rewind the list.
+| Service | Starts | Cadence and source | Stops when hidden |
+| --- | --- | --- | --- |
+| Time | App launch | Every second from the system clock | No |
+| System monitor | App launch | Every 2 seconds from Mach/BSD and volume-capacity APIs | No |
+| Battery | App launch | Every 30 seconds plus IOKit power-source changes | No |
+| Timers | App launch | Every second | No |
+| Focus | App launch | Best-effort initial read; toggle runs only on user action | No |
+| Clipboard | App launch when Clipboard is visible | Pasteboard `changeCount` every 0.25 seconds | Yes |
+| Reminders | App launch when Todo is visible | Authorization check and EventKit refresh every 60 seconds | Yes |
+| Calendar | First interaction when Calendar is visible | EventKit every 60 seconds plus store-change notifications | Yes |
+| Media | First interaction when Media is visible | AppleScript query of running Music or Spotify every 2 seconds | Yes |
 
-Completions are tombstoned by generation. Completing a reminder records the reload generation current at that moment, and a fetch suppresses the id **only** when the completion was recorded at or after that fetch began, i.e. when the query provably predates the write. Once a later fetch has run, the tombstone is pruned.
+Calendar and Reminder refreshes re-read authorization without prompting. Their
+access requests are separate operations invoked only from explicit **Enable**
+actions. A first interactive Media query can trigger an Automation prompt when a
+supported player is running.
 
-That narrowness is deliberate. Suppressing an id "until the store stops reporting it" looks equivalent and is not: if the user un-completes the reminder in Reminders.app, every subsequent fetch lists it and every subsequent filter removes it, hiding the reminder permanently. The tombstone map is insertion-ordered and hard-capped so a long stretch of failing reloads — which never prune — cannot grow it without bound.
+## Feature modules
 
-## Persistence and trust boundaries
+Modules are compile-time routes, not plugins. `FeatureModule` has seven cases and
+`ExpandedDashboardView` switches over them exhaustively.
 
-| Boundary | Stored/read data | Notes |
+| Module | View and service path |
+| --- | --- |
+| Dashboard | `DashboardModuleView` with time, battery, CPU, and memory state |
+| Media | `MediaModuleView` with `MediaService` |
+| Calendar | `CalendarModuleView` with `CalendarService` |
+| Todo | `ReminderModuleView` with `ReminderService` |
+| Pomodoro | `TimerModuleView` with `ActivityTimerService` |
+| Clipboard | `ClipboardModuleView` with `ClipboardService` |
+| Focus | `FocusModuleView` with `FocusService` |
+
+Visibility is configured in Settings. The dashboard shows visible modules in
+canonical enum order. Module chips and <kbd>⌘1</kbd> through <kbd>⌘9</kbd> select a
+visible route while the panel is interactive. The last selection is persisted and
+validated at the next launch. A stored empty module list is respected.
+
+## Activity pipeline
+
+`ServiceHub.refreshActivities()` converts current Calendar, Reminder, Timer,
+Battery, Media, and Focus state through `ActivitySnapshotFactory`. The factory
+assigns a kind, priority, relevance date, stable identifier, and at most two
+actions to each candidate.
+
+`ActivityCoordinator` then:
+
+1. removes activity kinds disabled in `ActivityPreferences`;
+2. ranks the remainder by effective priority, relevance date, and stable ID;
+3. lets a higher-priority candidate preempt immediately;
+4. preserves the current item for four seconds before an equal or lower-priority
+   switch; and
+5. publishes the current item plus up to four queued items.
+
+Ambient activity stays out of the collapsed wings and automatic detail view.
+Activity actions are routed through `NotchViewModel` to the relevant local service
+or a validated external Calendar action.
+
+## State and persistence
+
+| Store | Data | Lifetime and bounds |
 | --- | --- | --- |
-| `UserDefaults` | Visible/active modules, activity preferences, timer JSON (`nextUp.timers.v1`) | Module IDs are validated and unknown ones dropped; a stored empty module list is honoured rather than reset; numeric activity preferences are bounded; restored timers are capped at eight. |
-| Process memory | Clipboard history and thumbnails | Limited to 12 entries, not persisted, cleared on quit; concealed/transient pasteboard types are ignored. |
-| EventKit | Calendar events and incomplete reminders | OS permission controlled. Calendar prompts on first interactive start; reminder prompting is explicit. Status is re-read on the refresh tick and on app activation so a grant or revocation outside the app takes effect without a relaunch. External strings are sanitized before UI use. Completions are tombstoned by reload generation so an older in-flight fetch cannot undo them, while a later fetch stays authoritative if the reminder is un-completed elsewhere. |
-| Remote HTTPS APIs | xAI balance, Anthropic cost/rate limit, OpenAI organization cost | The shared client requires TLS 1.3, refuses cross-origin redirects so a credential header cannot be replayed to another host, and caps streamed bodies at 2 MiB. Secrets are sent only as provider-required auth headers. Google returns an honest unsupported state without a request. There is no certificate pinning — the system trust store is relied upon, and that limitation is stated in `SECURITY.md` rather than claimed away. |
-| External URLs | Meeting and map actions | Meeting URLs reject embedded credentials, non-allowlisted schemes, and every non-public host: loopback, private, link-local, CGNAT, unique-local, multicast, reserved/special-use TLDs, and octal/hex/dword IP spellings. Map URLs are constructed from sanitized text rather than concatenated. |
-| Overlay text | Calendar/reminder titles, locations, timer labels | Passed through `DisplaySanitizer` before display: control and Unicode format characters, default-ignorable scalars, the Tags block, non-characters, and combining-mark stacks beyond two marks are removed, and the result is length-bounded. |
+| `UserDefaults` | Module layout, activity settings, popup settings, timer JSON, migration flags | Persists across launches; identifiers and numeric preferences are validated; timer records are capped at eight |
+| Process memory | Clipboard text, raw images, file URLs, and thumbnails | Capped at 12 entries and cleared on quit; up to four files are accepted from one copy event |
+| EventKit | Upcoming events and incomplete reminders | Owned by macOS; NotchHub reads after an explicit grant and writes only reminder completion requested by the user |
+| Login Keychain | Legacy provider keys only | Current code stores no secrets and performs a one-time deletion of keys written by the removed v0.1 credit tracker |
 
-The current bundle is not sandboxed and carries no entitlements. It is ad-hoc signed for local use. NotchHub stores no secrets: the Keychain wrapper and the credit tracker that used it were removed, and a one-shot cleanup deletes the keys earlier versions saved.
+`ServiceHub` forwards Combine publishers from its observable child services.
+Observation-based Timer and Reminder services use explicit change callbacks. Any
+relevant service or preference change rebuilds and re-ranks the activity set.
 
-## Build, verification, and distribution
+## Permission and input boundaries
 
-`Package.swift` defines one macOS 14 executable target (`NotchHub`) and one `NotchHubTests` target. SQLite is imported from the system SDK. SwiftLint and SwiftFormat arrive as SwiftPM build-tool plugin dependencies; `Sources/NotchHub/ruvector.db` is explicitly excluded from the executable target.
+`EventKitAccessDecision` gives Calendar and Reminders one testable mapping from
+macOS authorization status to granted, denied, or needs-prompt. Both services
+re-check status on their refresh tick and when the app becomes active. Granting or
+revoking access in System Settings therefore updates the running app without a
+relaunch.
 
-```mermaid
-flowchart TD
-    Source["Swift sources, Package.swift,<br/>Resources/Info.plist and AppIcon.icns"]
+`DisplaySanitizer` handles Calendar titles, Calendar locations, Reminder titles,
+and timer labels. It removes characters that can hide or reorder overlay text,
+bounds combining marks, and limits output length. Clipboard and Media content use
+separate display paths and are not part of this sanitizer boundary.
 
-    Source --> Check["scripts/check.sh"]
-    Check --> Build["swift build"]
-    Check --> BuildTests["swift build --build-tests"]
-    Check --> Format["SwiftFormat --lint"]
-    Check --> Concurrency["strict-concurrency diagnostic count<br/>informational"]
-    Check --> Lint["SwiftLint when full Xcode is selected"]
-    Check --> Tests["swift test when full Xcode is selected"]
+`SafeExternalURL` validates user-selected Calendar actions before
+`NSWorkspace.open`:
 
-    Source --> DMG["scripts/build-dmg.sh release"]
-    DMG --> AppScript["scripts/build-app.sh release"]
-    AppScript --> SwiftPM["swift build -c release"]
-    SwiftPM --> TempApp["Assemble temporary NotchHub.app<br/>binary + Info.plist + icon"]
-    TempApp --> Clean["Remove extended attributes"]
-    Clean --> Sign{"NOTCHHUB_SIGNING_IDENTITY set?"}
-    Sign -- no --> AdHoc["Ad-hoc codesign<br/>(local use only)"]
-    Sign -- yes --> DevID["Developer ID codesign<br/>hardened runtime + timestamp"]
-    AdHoc --> Canonical["Publish canonical NotchHub.app"]
-    DevID --> Canonical
-    Canonical --> Validate["Reject any symlink in the bundle<br/>(root, Contents, executable, anywhere)"]
-    Validate --> Stage["Stage app + /Applications symlink<br/>+ optional volume icon"]
-    Stage --> Image["hdiutil UDZO compressed HFS+ image"]
-    Image --> Verify["Verify image, mount read-only,<br/>verify contents and app signature"]
-    Verify --> Notary{"NOTCHHUB_NOTARY_PROFILE set?"}
-    Notary -- yes --> Submit["notarytool submit --wait<br/>then stapler staple + validate"]
-    Notary -- no --> Skip["Report 'not notarized'"]
-    Submit --> Artifact["dist/NotchHub-VERSION-ARCH.dmg<br/>SHA-256 + signing authority<br/>+ Gatekeeper assessment"]
-    Skip --> Artifact
+- meeting links reject embedded credentials and non-allowlisted schemes;
+- HTTPS links reject malformed hosts, known local or special-use names,
+  non-public literal IP ranges, and non-canonical numeric address spellings;
+- hostname validation is syntactic and does not perform DNS resolution; and
+- Apple Maps URLs are constructed with `URLComponents` from sanitized,
+  length-bounded location text.
 
-    Source --> CI["GitHub Actions on main pushes and PRs"]
-    CI --> CIBuild["build + build-tests + SwiftFormat<br/>+ SwiftLint + tests"]
-```
+Clipboard history stays in memory. Concealed, transient, and autogenerated
+pasteboard items are ignored. Without Full Disk Access, NotchHub avoids metadata
+and Quick Look reads for file URLs inside Desktop, Documents, Downloads, and
+iCloud Drive.
 
-### Local commands
+Focus toggles Do Not Disturb through Accessibility-driven Control Center scripting.
+Its state begins with a best-effort read of the protected Do Not Disturb assertions
+file, so it can be stale when Full Disk Access is unavailable or another app
+changes Focus later.
+
+See [`SECURITY.md`](../SECURITY.md) for the complete access and reporting policy.
+
+## Build and verification
+
+`Package.swift` defines one macOS 14 executable target and one test target. The
+manifest uses Swift tools 5.9 while strict-concurrency migration remains in
+progress. SwiftFormat and SwiftLint are development dependencies; the executable
+has no third-party runtime package.
 
 ```bash
-# Full repository quality gate (currently reports known legacy lint/concurrency debt)
+swift build
+swift test
 ./scripts/check.sh
-
-# Build and verify the local application bundle
 ./scripts/build-app.sh release
-
-# Build the app and a drag-to-Applications disk image
-./scripts/build-dmg.sh release
 ```
 
-The DMG script defaults to `dist/NotchHub-<CFBundleShortVersionString>-<architecture>.dmg`, where the architecture is `arm64`, `x86_64`, or `universal` as reported by `lipo`. It supports `--output` and `--skip-build`, verifies the disk image and the packaged app, and prints SHA-256. It publishes through a temporary directory so an interrupted copy does not replace an earlier output with a partial image.
+The full check builds the app and tests, verifies SwiftFormat, and reports strict
+concurrency diagnostics. With full Xcode selected, it also runs SwiftLint and the
+test suite. GitHub Actions runs build, test compilation, formatting, linting, and
+tests for pushes and pull requests targeting `main`.
 
-With `--skip-build` the bundle on disk is an *input* rather than something the script just produced, so it is validated before packaging: the bundle root, `Contents`, `Info.plist`, `MacOS`, the executable, and `Resources` must all be real paths, and because NotchHub's bundle legitimately contains no symlinks at all, a link found anywhere inside it aborts the build. Without that check a symlinked path component would let `ditto` follow a link out of the project and stage arbitrary content into a signed, published image.
-
-### Signing and notarization
-
-| Environment | Result |
-| --- | --- |
-| Neither variable set | Ad-hoc signature. Runs locally; **Gatekeeper refuses it on any other Mac**. The script says so and prints the `spctl` assessment. |
-| `NOTCHHUB_SIGNING_IDENTITY` | Developer ID signature with hardened runtime and a secure timestamp (optionally `NOTCHHUB_ENTITLEMENTS`). |
-| Both, plus `NOTCHHUB_NOTARY_PROFILE` | The finished image is submitted with `notarytool --wait`, stapled, and validated. The SHA-256 is computed **after** stapling, so the published checksum matches the downloaded file. |
-
-### Distribution limits
-
-- The releases published from this repository today are **ad-hoc signed and not notarized**, because the project has no Apple Developer Program identity yet. That is stated plainly in `README.md` and `SECURITY.md`; building from source is the recommended install path.
-- `build-app.sh` performs a native SwiftPM build, so its ordinary output follows the build host/flags (the current local bundle is arm64). `build-dmg.sh` detects and labels arm64, x86_64, or a pre-existing universal binary; it does not itself combine architectures.
-- GitHub Actions runs build, test compilation, SwiftFormat, SwiftLint, and tests, but does not currently package or publish releases. Existing warning-level lint debt is visible without failing the workflow; error-level violations still fail it.
-- The app is not sandboxed and carries no entitlements file. Apple Events (media and Focus control) is now the only remaining blocker — the `purge` helper and the out-of-container read were removed with the RAM cleaner and the coding monitor.
-
-## Change map
-
-Use this checklist when extending the system:
+## Change checklist
 
 | Change | Required touch points |
 | --- | --- |
-| Add a compiled feature module | Add/adjust `FeatureModule`, provide a concrete SwiftUI view, add the `ExpandedDashboardView.moduleBody` case, decide default visibility, and add tests for preference restoration/dispatch behavior. |
-| Add a live service | Define its isolation and lifecycle, construct it in `ServiceHub`, wire publication/callbacks, expose typed errors to UI, and stop or cancel owned timers/tasks where appropriate. |
-| Add a live-activity source | Extend `ActivityKind`, create sanitized snapshots in `ActivitySnapshotFactory`, include them in `ServiceHub.refreshActivities`, add action routing, preferences, tint/UI, and ranking tests. |
-| Accept new external text or URLs | Route it through `DisplaySanitizer`/`SafeExternalURL` rather than adding a local check, and add hostile-input cases to `UntrustedInputTests`. A host check that disagrees with the system resolver is a bug, not a partial defence. |
-| Add a real plugin system | This is an architectural change, not a new enum case: define discovery, versioned interfaces, process/isolation boundaries, signing/trust policy, failure containment, and migration from static module dispatch before loading third-party code. |
-| Change packaging | Preserve the quality gate, strict signature/image verification, deterministic versioned output, checksum reporting, and explicit documentation of signing/notarization status. |
+| Add a module | Extend `FeatureModule`, add a concrete SwiftUI view and exhaustive dispatch case, decide default visibility, and test preference restoration. |
+| Add a service | Define isolation and lifecycle, construct it in `ServiceHub`, forward changes, stop owned work, and surface typed errors. |
+| Add an activity source | Extend `ActivityKind`, create bounded snapshots, wire refresh and action routing, expose preferences, and add ranking tests. |
+| Accept external text or URLs | Define the exact trust boundary, reuse or extend the central validation types, and add hostile-input tests. |
+| Add a permission | Keep prompting behind an explicit user action where macOS permits it, provide recovery guidance, and update `SECURITY.md`. |

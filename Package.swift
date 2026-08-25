@@ -2,10 +2,6 @@
 import Foundation
 import PackageDescription
 
-// swift-testing's framework lives under Command Line Tools when full Xcode is not
-// installed; SwiftPM does not add that search path automatically. Add it only when
-// it actually exists, so full-Xcode machines (where `Testing` resolves natively)
-// are unaffected.
 // swift-testing ships under Command Line Tools when full Xcode is absent. Both the
 // framework and its private interop dylib must be locatable at compile, link, and
 // run time; SwiftPM does not add these paths automatically.
@@ -22,11 +18,9 @@ let testLinkFlags: [String] = hasCLTTesting
        "-Xlinker", "-rpath", "-Xlinker", cltUsrLib]
     : []
 
-// NOTE: Kept on tools-version 5.9 deliberately. The existing code produces 456
-// strict-concurrency diagnostics that become hard errors under the Swift 6
-// language mode (see CLAUDE.md "Swift 6 migration" tracking). Flipping the mode
-// now would break the build, violating the "never break compilation" rule.
-// Migrate incrementally, then bump to 6.0 with `.swiftLanguageMode(.v6)`.
+// Swift 5.9 remains the declared tools version while legacy strict-concurrency
+// warnings are migrated. New code should stay clean under
+// `-strict-concurrency=complete` before the package moves to Swift 6 mode.
 
 let package = Package(
     name: "NotchHub",
@@ -41,8 +35,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "NotchHub",
-            path: "Sources/NotchHub",
-            exclude: ["ruvector.db"]
+            path: "Sources/NotchHub"
         ),
         .testTarget(
             name: "NotchHubTests",

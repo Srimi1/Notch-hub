@@ -7,7 +7,6 @@
 # (SwiftFormat otherwise enables many opinionated rules by default.)
 
 --swiftversion 5.9
---exclude .build,Sources/NotchHub/.claude-flow,Sources/NotchHub/Services/.claude-flow
 
 # Layout
 --indent 4

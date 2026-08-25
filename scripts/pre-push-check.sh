@@ -2,7 +2,7 @@
 
 # github-secrets-guard: Pre-Push Check Script
 # Run this before every git push to catch risky files.
-# Usage: bash pre_push_check.sh
+# Usage: ./scripts/pre-push-check.sh
 
 echo ""
 echo "============================="

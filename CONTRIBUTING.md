@@ -1,52 +1,62 @@
 # Contributing to NotchHub
 
-Thanks for your interest! NotchHub is a small, personal macOS app, but
-contributions are welcome.
+NotchHub is an independently maintained native macOS app. Focused contributions
+are welcome.
 
 ## Prerequisites
 
-- macOS with a Swift toolchain (Xcode or Command Line Tools).
-- It's a **Swift Package** (`Package.swift`), not an Xcode project — everything
-  runs through `swift` / `swift package`.
+- macOS 14 or later
+- Git
+- Xcode or the Swift Command Line Tools
+
+NotchHub uses Swift Package Manager and has no Xcode project. Build and tooling
+commands run through `swift` and `swift package`. The Command Line Tools can build
+the app and compile its tests. Full Xcode is required to run SwiftLint and the
+test suite locally.
 
 ## Development loop
 
 ```bash
-swift build                  # debug build
-swift test                   # run the test suite (swift-testing)
-./scripts/build-app.sh       # build the release NotchHub.app (ad-hoc signed)
-open NotchHub.app            # run it
-./scripts/check.sh           # full quality gate (run before opening a PR)
+swift build
+swift test
+./scripts/build-app.sh release
+open NotchHub.app
+./scripts/check.sh
 ```
 
-`./scripts/check.sh` runs: build, build-tests, SwiftFormat (lint),
-strict-concurrency report, SwiftLint, and `swift test`. It auto-detects whether
-full Xcode is installed and skips Xcode-only gates otherwise.
+The app build uses an available Apple Development or Developer ID certificate
+and falls back to ad-hoc signing when no identity is available.
+
+`./scripts/check.sh` builds the app and tests, checks SwiftFormat, and reports
+strict-concurrency warnings. With full Xcode selected, it also runs SwiftLint
+and the test suite. The Xcode-only checks are skipped when only the Command Line
+Tools are installed.
 
 ## Code standards
 
-- **Format with SwiftFormat** — `swift package --disable-sandbox --allow-writing-to-package-directory swiftformat Sources Tests`. CI lints formatting.
+- **Format with SwiftFormat:**
+  `swift package --disable-sandbox --allow-writing-to-package-directory swiftformat Sources Tests`.
+  CI checks formatting.
 - **New code must be Swift 6 strict-concurrency clean.** The package is pinned to
   `swift-tools-version: 5.9` while legacy concurrency debt is migrated incrementally
-  — don't add new warnings.
-- **No silent failures** — avoid empty `catch {}` and silent `try?`; log errors.
+  so new warnings must not be added.
+- **Do not hide failures.** Avoid empty `catch {}` blocks and silent `try?` calls;
+  log errors or surface them in the interface.
 - **Keep files focused** (aim < 500 lines) and SwiftUI `body` blocks small.
 - **Add tests** for new logic where practical (see `Tests/NotchHubTests`).
-
-### Known accepted debt
-
-- ~168 strict-concurrency warnings in legacy files (Swift 6 migration in progress).
-
-SwiftLint is currently green: 6 warnings, no errors. Every file is under the
-500-line `file_length` cap.
+- **Keep public claims current.** Update the README, security policy, architecture
+  guide, and [changelog](CHANGELOG.md) when behavior, permissions, or local data
+  handling changes.
 
 ## Pull requests
 
 1. Branch off `main`.
-2. Make focused changes; run `./scripts/check.sh` and ensure tests pass.
-3. Fill in the PR template. CI must be green before merge.
+2. Make one focused change and add tests where the behavior can be isolated.
+3. Run `./scripts/check.sh`. Record any Xcode-only check you could not run.
+4. Include a screenshot or short recording for visible interface changes.
+5. Fill in the pull request template. CI must pass before merge.
 
 ## Reporting bugs / requesting features
 
-Use the issue templates. For **security** issues, follow [SECURITY.md](SECURITY.md)
-instead of opening a public issue.
+Use the issue templates for bugs and feature requests. Report security issues
+through the private process in [SECURITY.md](SECURITY.md).

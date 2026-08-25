@@ -1,5 +1,5 @@
 # SwiftLint configuration for NotchHub
-# Enforces the CLAUDE.md quality bar. Run: swift package plugin swiftlint
+# Run: swift package --disable-sandbox --allow-writing-to-package-directory swiftlint
 
 included:
   - Sources
@@ -7,16 +7,13 @@ included:
 
 excluded:
   - .build
-  - Sources/NotchHub/ruvector.db
-  - Sources/NotchHub/.claude-flow
-  - Sources/NotchHub/Services/.claude-flow
 
-# Opt-in rules that align with the CLAUDE.md standards.
+# Opt-in rules that catch common correctness and maintenance problems.
 opt_in_rules:
   - empty_count
   - explicit_init
   - first_where
-  - force_unwrapping            # CLAUDE.md: no unsafe unwraps at boundaries
+  - force_unwrapping
   - implicitly_unwrapped_optional
   - overridden_super_call
   - prohibited_super_call
@@ -28,7 +25,7 @@ opt_in_rules:
 disabled_rules:
   - todo                        # allow TODO/FIXME markers during development
 
-# CLAUDE.md frontend rule: body properties stay small and modular.
+# Keep views and supporting types small enough to review in one pass.
 type_body_length:
   warning: 300
   error: 450
@@ -38,7 +35,7 @@ function_body_length:
   error: 120
 
 file_length:
-  warning: 500                  # CLAUDE.md: keep files under 500 lines
+  warning: 500
   error: 700
 
 line_length:

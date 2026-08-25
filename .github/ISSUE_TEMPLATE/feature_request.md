@@ -8,17 +8,21 @@ assignees: ''
 
 ## Problem / motivation
 
-What's missing or annoying today?
+<!-- Describe the job you want NotchHub to handle. -->
 
 ## Proposed solution
 
-What you'd like NotchHub to do.
+<!-- Describe the smallest useful version of the feature. -->
 
 ## Alternatives considered
 
-Other approaches, if any.
+<!-- Note any existing macOS feature or workaround you tried. -->
 
 ## Scope notes
 
-NotchHub is a focused personal-driver app. Is this a core module or an optional
-extra? Any macOS APIs / permissions it would need?
+<!-- Does this belong in an existing module or require a new one? List any macOS
+API, permission, background service, persistence, or network access it needs. -->
+
+## Mockup or example
+
+<!-- Optional: attach a compact sketch, screenshot, or interaction example. -->

@@ -8,19 +8,18 @@ import Testing
 @Suite("Full Disk Access")
 struct FullDiskAccessTests {
 
-    /// A Mac that has never used a Focus mode has no probe file. That must read
-    /// as granted, not denied, or the settings row nags about a permission the
-    /// user has no reason to give.
+    /// A missing probe says nothing about the TCC grant. The safe answer is
+    /// denied so an optional file read cannot trigger a folder prompt.
     @Test
-    func aMissingProbeFileCountsAsGranted() {
+    func aMissingProbeFileCountsAsUnavailable() {
         final class NoFilesManager: FileManager, @unchecked Sendable {
             override func fileExists(atPath path: String) -> Bool { false }
         }
-        #expect(FullDiskAccess.isGranted(fileManager: NoFilesManager()))
+        #expect(!FullDiskAccess.isGranted(fileManager: NoFilesManager()))
     }
 
     /// Reading the real probe must never throw or hang, whatever the grant
-    /// state — it runs when the settings window appears.
+    /// state. Clipboard presentation can consult it for protected files.
     @Test
     func probingIsSafeRegardlessOfGrantState() {
         let first = FullDiskAccess.isGranted()

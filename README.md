@@ -16,7 +16,7 @@
 <p align="center">
   <img src="docs/assets/screenshots/dashboard-overview.png" width="100%" alt="NotchHub expanded Dashboard showing time, battery, CPU, memory, and module controls" />
 </p>
-<p align="center"><sub>NotchHub 0.2.0 running on a MacBook with a physical display notch.</sub></p>
+<p align="center"><sub>NotchHub running on a MacBook with a physical display notch.</sub></p>
 
 NotchHub lives at the top edge of macOS. At rest, it blends into the camera notch and surfaces only the activity that matters next. Hover over it to open a compact dashboard, or use the menu-bar command to keep the dashboard open while you work.
 
@@ -156,7 +156,7 @@ NotchHub has no runtime backend, account system, analytics, advertising, remote 
 | **Calendar** | Up to eight events from now through the start of the day two days ahead | Read-only in NotchHub | Full Calendar access is requested only after **Enable Calendar** |
 | **Reminders** | Up to 50 incomplete reminders due through the next two days | Writes only when you choose to complete a reminder | Full Reminders access is requested only after **Enable Reminders** |
 | **Media** | Track title, artist, playback state, and player name from a running Music or Spotify app | Sends local previous, play or pause, and next commands | The first interactive scan of a running player can trigger the macOS Automation prompt |
-| **Focus** | Best-effort Do Not Disturb state | UI-scripts Control Center only when you request a toggle | Accessibility must be granted manually; optional Full Disk Access improves the initial status read but is never required |
+| **Focus** | Best-effort Do Not Disturb state | UI-scripts Control Center only when you request a toggle | Accessibility must be granted manually; no named Focus profiles |
 | **Timers** | Timer title, duration, phase, and dates | Up to eight records in `UserDefaults`; local notification on completion | Notification access is requested when the first timer is created |
 | **Launch at Login** | Login item registration status | Uses the macOS login-item service | Attempted once on first run, then controlled from Settings |
 
@@ -181,7 +181,7 @@ xcode-select --install
 
 ## Install
 
-The current 0.2.0 code is available from `main` and the `v0.2.0` tag. The latest packaged GitHub Release is older, so building from source is the reliable way to use the version documented here.
+Download the current Apple Silicon build from [GitHub Releases](https://github.com/Srimi1/Notch-hub/releases/latest), or build the latest source locally. The published app uses an Apple Development signature and is not notarized, so Gatekeeper may ask you to approve it manually. A local build uses a signing identity from your keychain when one is available.
 
 ```bash
 git clone https://github.com/Srimi1/Notch-hub.git
@@ -321,6 +321,6 @@ sudo rm -f /etc/sudoers.d/notchhub
 
 ## Contributing
 
-Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request and follow the [Code of Conduct](CODE_OF_CONDUCT.md). Please report vulnerabilities through the process in [SECURITY.md](SECURITY.md), not through a public issue.
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, review the [changelog](CHANGELOG.md), and follow the [Code of Conduct](CODE_OF_CONDUCT.md). Please report vulnerabilities through the process in [SECURITY.md](SECURITY.md), not through a public issue.
 
 NotchHub is available under the [Apache License 2.0](LICENSE).
