@@ -4,13 +4,72 @@ Notable user-facing changes are recorded here. NotchHub follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while the public API
 and interface continue to mature before 1.0.
 
-## [Unreleased]
+## [0.3.0] - 2026-08-25
+
+### Added
+
+- Added now-playing support for every player, not just Apple Music and Spotify.
+  A bundled copy of [mediaremote-adapter](https://github.com/ungive/mediaremote-adapter)
+  reads the system's own now-playing state, so a YouTube Music tab, a web app, or
+  an Electron client appears in the notch with working transport controls.
+  Transport is routed back to whichever source produced the track.
+- Added a global clipboard shortcut. `⌘⇧Space` from any app drops the clip
+  history out of the notch; digits `1`–`9` pick and `Esc` closes. `⌃⌥V` and
+  `⌘⇧V` are offered in Settings; `⌘Space` is not, because Spotlight owns it.
+- Added automatic pasting. Picking a clip types the `⌘V` into whatever you were
+  working in when Accessibility is granted, and says so once when it is not.
+- Added a permissions walkthrough on first launch and a Permissions section in
+  Settings, covering Accessibility, Automation, Calendar, Reminders,
+  Notifications, and Full Disk Access — what each one buys, its current state,
+  and the control that moves it forward.
+- Added `scripts/build-adapter.sh`, which builds the adapter framework with
+  plain `clang` and no CMake dependency.
+
+### Fixed
+
+- Fixed picking a clip pasting the wrong one. Restoring a clip re-ordered the
+  history under the cursor, so the next click landed on a different tile.
+- Fixed Do Not Disturb reporting the opposite of the truth. The state was never
+  actually read, so on a Mac where it was already on the button offered "Turn
+  On", turned it off, and then showed a "Focus is on" pill for the rest of the
+  session. The state is now read back from Control Center after a toggle, and
+  shown as unknown rather than guessed when nothing can read it.
+- Fixed the Focus toggle blaming the wrong permission. A denied Apple Event was
+  reported as a missing Accessibility grant, sending people to a list where
+  NotchHub was already ticked.
+- Fixed Calendar, Reminders, and Notifications opening the Accessibility pane,
+  which has no switch for any of them.
+- Fixed Full Disk Access never being satisfiable on a Mac that had never used a
+  Focus mode, where the only probe file did not exist.
+- Fixed the clipboard picker being invisible while the dashboard was open, then
+  dropping out of the notch unasked a moment later.
+- Fixed the picker keeping the keyboard after it closed, which sent the
+  synthesized `⌘V` to the notch instead of the document and stranded later
+  keystrokes.
+- Fixed the picker sticking on screen as a click-blocking overlay after it lost
+  the keyboard.
+- Fixed copy and charging popups replacing the picker mid-selection.
+- Fixed clipboard thumbnails leaking when entries were replaced or trimmed.
+- Fixed peek-card clicks expanding the dashboard instead of picking, and tile
+  padding not being clickable.
+- Fixed hiding the Media module leaving the last track pinned in the notch for
+  the rest of the session.
+- Fixed the media adapter surviving quit when its `SIGTERM` was swallowed, and
+  added cleanup for a process orphaned by a force-quit.
+- Fixed `scripts/build-dmg.sh` refusing to package the app once it contained a
+  framework, because it rejected every symlink.
 
 ### Changed
 
-- Removed the Full Disk Access prompt from Settings. NotchHub now treats an
-  inconclusive access check as unavailable and skips optional protected-file
-  reads without asking for a broad permission.
+- Changed `NowPlaying.app` from a two-case enum to a display name plus bundle
+  identifier. Browser playback is labelled with the app macOS reports, so a
+  YouTube Music tab in Safari reads as "Safari" while the installed web app
+  reads as "YouTube Music".
+- Changed an inconclusive Full Disk Access check to read as unavailable, so
+  optional protected-file reads are skipped rather than risking a folder prompt.
+  The probe no longer depends on the user having used a Focus mode.
+- Moved the media stack to `Sources/NotchHub/Services/Media/`, split into a
+  coordinator over two interchangeable sources.
 
 ## [0.2.1] - 2026-08-25
 
@@ -62,7 +121,8 @@ and interface continue to mature before 1.0.
 
 - Published the first public NotchHub release.
 
-[Unreleased]: https://github.com/Srimi1/Notch-hub/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Srimi1/Notch-hub/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Srimi1/Notch-hub/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Srimi1/Notch-hub/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Srimi1/Notch-hub/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Srimi1/Notch-hub/releases/tag/v0.1.0

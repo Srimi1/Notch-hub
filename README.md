@@ -71,12 +71,12 @@ Seven built-in modules cover the day-to-day information NotchHub can read locall
 | Module | What it shows | What you can do | Important limits |
 | --- | --- | --- | --- |
 | **Dashboard** | Clock, date, battery on portable Macs, CPU load, and memory use | Read a compact system overview | Disk usage is sampled internally but is not displayed |
-| **Media** | Current title, artist, and player for Apple Music or Spotify | Previous, play or pause, and next | No artwork, album view, or support for other players |
+| **Media** | Current title, artist, and player for whatever is playing, including browser tabs and web apps such as YouTube Music | Previous, play or pause, and next | No artwork or album view |
 | **Calendar** | Up to six upcoming events from the next two days | Join a supported event URL, open a location in Apple Maps, or open Calendar | Full Calendar access is opt-in; all-day events do not enter Next Up |
 | **Todo** | Up to eight incomplete reminders, including undated reminders | Mark a reminder complete | No reminder creation or editing; undated reminders do not enter Next Up |
 | **Pomodoro** | Persistent 5, 15, 25, and 45 minute presets | Start, pause, resume, or dismiss a timer | Up to eight timer records; the current UI has no custom duration or name |
-| **Clipboard** | Up to 12 recent text, image, and file clips | Restore a clip, clear history, inspect thumbnails, or drag a copied file out of its HUD | Session-only memory; up to four files from one copy event |
-| **Focus** | Best-effort Do Not Disturb state | Toggle Do Not Disturb through Control Center | No named Focus profiles; toggling requires Accessibility permission |
+| **Clipboard** | Up to 12 recent text, image, and file clips | Restore a clip (pasted straight into the app you were using when Accessibility is granted), open the picker with a global shortcut, clear history, inspect thumbnails, or drag a copied file out of its HUD | Session-only memory; up to four files from one copy event |
+| **Focus** | Do Not Disturb state when it can be read | Toggle Do Not Disturb through Control Center | No named Focus profiles; toggling requires Accessibility permission, and the state reads as unknown until Control Center or Full Disk Access supplies it |
 
 ### Clipboard and power HUDs
 
@@ -155,8 +155,8 @@ NotchHub has no runtime backend, account system, analytics, advertising, remote 
 | **Clipboard** | Text, image data, and up to four file URLs from a copy event | Maximum 12 entries in process memory; cleared when NotchHub quits | No macOS prompt; hiding Clipboard stops pasteboard reads |
 | **Calendar** | Up to eight events from now through the start of the day two days ahead | Read-only in NotchHub | Full Calendar access is requested only after **Enable Calendar** |
 | **Reminders** | Up to 50 incomplete reminders due through the next two days | Writes only when you choose to complete a reminder | Full Reminders access is requested only after **Enable Reminders** |
-| **Media** | Track title, artist, playback state, and player name from a running Music or Spotify app | Sends local previous, play or pause, and next commands | The first interactive scan of a running player can trigger the macOS Automation prompt |
-| **Focus** | Best-effort Do Not Disturb state | UI-scripts Control Center only when you request a toggle | Accessibility must be granted manually; no named Focus profiles |
+| **Media** | Track title, artist, playback state, and player name — from Music and Spotify over Apple Events, and from the system's own now-playing state for every other player | Sends local previous, play or pause, and next commands | The first interactive scan of a running Music or Spotify app can trigger the macOS Automation prompt; the system-wide reader needs no permission |
+| **Focus** | Best-effort Do Not Disturb state | UI-scripts Control Center only when you request a toggle | Accessibility must be granted manually; no named Focus profiles, and the state reads as unknown until a toggle or Full Disk Access supplies it |
 | **Timers** | Timer title, duration, phase, and dates | Up to eight records in `UserDefaults`; local notification on completion | Notification access is requested when the first timer is created |
 | **Launch at Login** | Login item registration status | Uses the macOS login-item service | Attempted once on first run, then controlled from Settings |
 
@@ -209,9 +209,9 @@ export NOTCHHUB_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)"
 4. Keep all seven modules, or hide the ones you do not want. Calendar, Reminders, Media, and Clipboard stop their local polling when hidden.
 5. Enable Calendar and Reminders from their explicit access controls if you want those modules.
 6. Starting the first timer can request Notifications. Interacting with Media while Music or Spotify is running can request Automation.
-7. Grant Accessibility manually only if you want the Focus toggle. NotchHub does not ask for it automatically.
+7. The first launch offers a permissions walkthrough, and Settings ▸ Permissions shows the same rows afterwards. Accessibility is what the Focus toggle and automatic pasting need; macOS grants it only by hand.
 
-The menu also provides **Toggle Notch** with <kbd>⌘T</kbd> and **Quit NotchHub** with <kbd>⌘Q</kbd>. These are application menu equivalents, not system-wide global shortcuts. Inside the interactive dashboard, <kbd>⌘1</kbd> through <kbd>⌘9</kbd> select visible modules.
+The menu also provides **Toggle Notch** with <kbd>⌘T</kbd> and **Quit NotchHub** with <kbd>⌘Q</kbd>. Those are application menu equivalents. The one system-wide shortcut is the clipboard picker, <kbd>⌘⇧Space</kbd> by default, which drops the clip list out of the notch from any app; Settings offers <kbd>⌃⌥V</kbd> and <kbd>⌘⇧V</kbd> instead, and <kbd>⌘Space</kbd> is unavailable because Spotlight owns it. Digits <kbd>1</kbd>–<kbd>9</kbd> pick from the picker and <kbd>Esc</kbd> closes it. Inside the interactive dashboard, <kbd>⌘1</kbd> through <kbd>⌘9</kbd> select visible modules.
 
 ## Settings and defaults
 
@@ -312,8 +312,8 @@ sudo rm -f /etc/sudoers.d/notchhub
 ## Current boundaries
 
 - The app chooses the first physical-notch display. It does not yet include a screen picker or follow whichever display is active.
-- Apple Music and Spotify are the only media players supported today. Artwork and album presentation are not part of the current UI.
-- Focus controls Do Not Disturb only. Without existing Full Disk Access, the initial state and changes made outside NotchHub can be stale.
+- Media reads Apple Music and Spotify over Apple Events, and everything else — browser tabs, web apps, Electron players — through a bundled copy of [mediaremote-adapter](https://github.com/ungive/mediaremote-adapter), which reads the system's own now-playing state. That path relies on a private framework Apple has broken before; if it stops working NotchHub falls back to Music and Spotify rather than failing. Browser playback is labelled with the app macOS reports, so a YouTube Music tab in Safari reads as "Safari" while the installed web app reads as "YouTube Music". Artwork and album presentation are not part of the current UI.
+- Focus controls Do Not Disturb only. Without Full Disk Access the state is read back from Control Center after a toggle, and is shown as unknown until then rather than guessed; changes made outside NotchHub can still be stale.
 - Calendar links are syntax-validated and user-initiated. NotchHub does not show map previews or certify that a link belongs to a particular meeting provider.
 - Clipboard history lasts for the current process and clears on quit. Sensitive-content markers are honored when the source application supplies them.
 - Timer presets are fixed at 5, 15, 25, and 45 minutes in the current UI.
