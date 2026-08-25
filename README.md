@@ -138,7 +138,7 @@ The window is a non-activating AppKit panel at status-bar level. It joins all Sp
 | Clipboard | Checks pasteboard changes every 0.25 seconds | App launch when the module is visible | Yes |
 | Reminders | Every 60 seconds | App launch when the module is visible; authorization checks do not prompt | Yes |
 | Calendar | Every 60 seconds plus EventKit changes | First interaction when the module is visible | Yes |
-| Media | Every 2 seconds | First interaction when the module is visible | Yes |
+| Media | System playback streams continuously; Music and Spotify are polled every 2 seconds | System playback at app launch when the module is visible; Music and Spotify on first interaction | Only the Music/Spotify half |
 | Focus | Best-effort initial read, then local changes | App launch | No |
 
 Hiding a sensitive-service module stops Clipboard, Calendar, Reminders, or Media polling. Battery, system, Focus, time, and timer services remain available because they also support the overlay and shared controls.
@@ -155,7 +155,7 @@ NotchHub has no runtime backend, account system, analytics, advertising, remote 
 | **Clipboard** | Text, image data, and up to four file URLs from a copy event | Maximum 12 entries in process memory; cleared when NotchHub quits | No macOS prompt; hiding Clipboard stops pasteboard reads |
 | **Calendar** | Up to eight events from now through the start of the day two days ahead | Read-only in NotchHub | Full Calendar access is requested only after **Enable Calendar** |
 | **Reminders** | Up to 50 incomplete reminders due through the next two days | Writes only when you choose to complete a reminder | Full Reminders access is requested only after **Enable Reminders** |
-| **Media** | Track title, artist, playback state, and player name — from Music and Spotify over Apple Events, and from the system's own now-playing state for every other player | Sends local previous, play or pause, and next commands | The first interactive scan of a running Music or Spotify app can trigger the macOS Automation prompt; the system-wide reader needs no permission |
+| **Media** | Track title, artist, playback state, and player name — from Music and Spotify over Apple Events, and from the system's own now-playing state for every other player | Sends local previous, play or pause, and next commands | The system-wide reader needs no permission and runs from launch, so the notch can show a track before you open anything; the Music/Spotify half waits for your first interaction, because its first scan can trigger the macOS Automation prompt |
 | **Focus** | Best-effort Do Not Disturb state | UI-scripts Control Center only when you request a toggle | Accessibility must be granted manually; no named Focus profiles, and the state reads as unknown until a toggle or Full Disk Access supplies it |
 | **Timers** | Timer title, duration, phase, and dates | Up to eight records in `UserDefaults`; local notification on completion | Notification access is requested when the first timer is created |
 | **Launch at Login** | Login item registration status | Uses the macOS login-item service | Attempted once on first run, then controlled from Settings |
@@ -181,7 +181,7 @@ xcode-select --install
 
 ## Install
 
-The current release is **[0.3.1](https://github.com/Srimi1/Notch-hub/releases/latest)** — `NotchHub-0.3.1-universal.dmg`, a universal build that runs on both Apple Silicon and Intel.
+The current release is **[0.3.2](https://github.com/Srimi1/Notch-hub/releases/latest)** — `NotchHub-0.3.2-universal.dmg`, a universal build that runs on both Apple Silicon and Intel.
 
 That download is signed with an Apple Development certificate under the hardened runtime, but it is **not notarized**, so Gatekeeper refuses it on a Mac that did not build it. Approve it once under **System Settings ▸ Privacy & Security ▸ Open Anyway**, or — the route this project recommends — build from source, which takes about a minute and gives you full provenance:
 

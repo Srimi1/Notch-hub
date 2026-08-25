@@ -113,10 +113,16 @@ final class ServiceHub: ObservableObject {
         setRunning(clipboard.start, clipboard.stop, visible.contains(.clipboard))
         setRunning(reminders.start, reminders.stop, visible.contains(.todo))
 
-        // Media and Calendar are permission-gated, so they only ever run once
-        // the user has opened the panel at least once.
+        // System-wide playback prompts for nothing, so it follows the module's
+        // visibility directly. The Apple Events half does prompt, so it still
+        // waits for the first expand — as does Calendar.
+        if visible.contains(.media) {
+            media.startSystemPlayback()
+            if startedInteractive { media.startScriptedPlayers() }
+        } else {
+            media.stop()
+        }
         if startedInteractive {
-            setRunning(media.start, media.stop, visible.contains(.media))
             setRunning(calendar.start, calendar.stop, visible.contains(.calendar))
         }
         refreshActivities()
@@ -130,9 +136,10 @@ final class ServiceHub: ObservableObject {
         modulePreferences?.isVisible(module) ?? true
     }
 
-    /// Lightweight services tick immediately; permission-gated ones
-    /// (calendar, AppleScript media) start on first expand so a brand-new user
-    /// isn't hit with a wall of prompts before seeing the UI.
+    /// Lightweight services tick immediately, and so does system-wide media,
+    /// which asks macOS for nothing. The permission-gated ones — Calendar, and
+    /// the Apple Events half of Media — start on first expand so a brand-new
+    /// user isn't hit with a wall of prompts before seeing the UI.
     func startAmbient() {
         guard !started else { return }
         started = true
@@ -144,6 +151,9 @@ final class ServiceHub: ObservableObject {
         // Gated on their module being visible — see `applyModuleVisibility`.
         if isVisible(.clipboard) { clipboard.start() }
         if isVisible(.todo) { reminders.start() }
+        // Needs no permission, so the notch can show a track before the user
+        // has opened anything.
+        if isVisible(.media) { media.startSystemPlayback() }
         observeActivation()
         refreshActivities()
     }

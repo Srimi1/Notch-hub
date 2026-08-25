@@ -37,6 +37,11 @@ final class AppleScriptMediaSource: MediaSource {
 
     nonisolated static let pollInterval: TimeInterval = 2.0
 
+    /// Whether the Apple Events poll loop is running. Surfaced because whether
+    /// this half has started is exactly what separates ambient media from the
+    /// permission-prompting kind.
+    var isPolling: Bool { pollTask != nil }
+
     private var pollTask: Task<Void, Never>?
     private var isQuerying = false
 

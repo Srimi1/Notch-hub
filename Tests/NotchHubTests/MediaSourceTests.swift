@@ -234,65 +234,6 @@ struct MediaRemoteAdapterSourceTests {
     }
 }
 
-/// Unchecked: these tests run entirely on the main actor, and the fakes are only
-/// touched from there.
-private final class Counter: @unchecked Sendable {
-    var value = 0
-}
-
-private final class Schedule: @unchecked Sendable {
-    var delays: [TimeInterval] = []
-}
-
-private final class FakeLauncherState: @unchecked Sendable {
-    var launches: [[String]] = []
-    var detached: [[String]] = []
-    var continuations: [AsyncStream<AdapterEvent>.Continuation] = []
-    var handles: [FakeHandle] = []
-    var failNextLaunch = false
-}
-
-private struct LaunchFailed: Error {}
-
-private final class FakeLauncher: AdapterLaunching, @unchecked Sendable {
-    let state = FakeLauncherState()
-
-    func launch(arguments: [String]) throws -> AdapterSession {
-        state.launches.append(arguments)
-        if state.failNextLaunch {
-            state.failNextLaunch = false
-            throw LaunchFailed()
-        }
-        let (stream, continuation) = AsyncStream.makeStream(of: AdapterEvent.self)
-        state.continuations.append(continuation)
-        let handle = FakeHandle()
-        state.handles.append(handle)
-        return AdapterSession(handle: handle, events: stream)
-    }
-
-    func runDetached(arguments: [String]) {
-        state.detached.append(arguments)
-    }
-
-    /// Feed the most recently launched process. `.exited` finishes its stream,
-    /// exactly as the real launcher does.
-    func emit(_ event: AdapterEvent) {
-        guard let continuation = state.continuations.last else { return }
-        continuation.yield(event)
-        if case .exited = event { continuation.finish() }
-    }
-}
-
-private final class FakeHandle: AdapterProcessHandle, @unchecked Sendable {
-    private(set) var isRunning = true
-    private(set) var terminateCount = 0
-
-    func terminate() {
-        terminateCount += 1
-        isRunning = false
-    }
-}
-
 /// Two sources, one row in the UI. Which one wins decides both what the user
 /// reads and where a tap on "next" is sent.
 @Suite("Media source selection")

@@ -92,9 +92,30 @@ final class MediaService: ObservableObject {
 
     // MARK: - Lifecycle
 
+    /// Everything: system-wide playback plus the two scriptable players.
     func start() {
-        appleScript.start()
+        startSystemPlayback()
+        startScriptedPlayers()
+    }
+
+    /// Read what the system itself reports is playing.
+    ///
+    /// Safe to run from launch: the adapter asks macOS nothing and prompts for
+    /// nothing, so gating it behind the first expand only meant the collapsed
+    /// notch could not show a track until the user opened the dashboard once.
+    /// Hiding the Media module still stops it outright.
+    func startSystemPlayback() {
         adapter?.start()
+        recompute()
+    }
+
+    /// Read Music and Spotify over Apple Events.
+    ///
+    /// Deliberately *not* ambient: the first query to a running player raises
+    /// the macOS Automation prompt, and a brand-new user should not meet that
+    /// before they have seen the app.
+    func startScriptedPlayers() {
+        appleScript.start()
         recompute()
     }
 

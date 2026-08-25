@@ -4,6 +4,20 @@ Notable user-facing changes are recorded here. NotchHub follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while the public API
 and interface continue to mature before 1.0.
 
+## [0.3.2] - 2026-08-25
+
+### Changed
+
+- Now-playing from system playback starts with the app instead of waiting for
+  your first hover. The collapsed notch could not show a track until you had
+  opened the dashboard once per launch, which is most of the point of a notch
+  overlay. The reader that made this possible asks macOS for nothing, so there
+  was no reason to gate it.
+- The Music and Spotify half still waits for that first interaction. Its opening
+  query is what raises the macOS Automation prompt, and a new user should not
+  meet that before they have seen the app. Hiding the Media module continues to
+  stop both halves outright.
+
 ## [0.3.1] - 2026-08-25
 
 A packaging release. The app is unchanged; how it is built and shipped is not.
@@ -134,7 +148,8 @@ A packaging release. The app is unchanged; how it is built and shipped is not.
 
 - Published the first public NotchHub release.
 
-[Unreleased]: https://github.com/Srimi1/Notch-hub/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Srimi1/Notch-hub/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/Srimi1/Notch-hub/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Srimi1/Notch-hub/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Srimi1/Notch-hub/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Srimi1/Notch-hub/compare/v0.2.0...v0.2.1

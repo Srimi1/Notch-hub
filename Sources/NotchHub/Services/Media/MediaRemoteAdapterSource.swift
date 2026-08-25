@@ -41,6 +41,9 @@ final class MediaRemoteAdapterSource: MediaSource {
     private let schedule: @Sendable (TimeInterval, @escaping @Sendable () -> Void) -> Void
     private let resolveApp: (_ bundleId: String?, _ parentBundleId: String?) -> MediaApp
 
+    /// Whether the stream is up.
+    var isStreaming: Bool { readTask != nil }
+
     private var processHandle: AdapterProcessHandle?
     private var readTask: Task<Void, Never>?
     private var isStopping = false
