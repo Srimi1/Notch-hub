@@ -215,9 +215,23 @@ struct ClipPickerKeyTests {
     func holdingTheChordFiresOnce() {
         let pressed = UInt32(kEventHotKeyPressed)
         let released = UInt32(kEventHotKeyReleased)
-        #expect(CarbonHotKey.shouldFire(kind: pressed, isAlreadyDown: false))
-        #expect(CarbonHotKey.shouldFire(kind: pressed, isAlreadyDown: true) == false)
-        #expect(CarbonHotKey.shouldFire(kind: released, isAlreadyDown: true) == false)
+        #expect(CarbonHotKey.shouldFire(kind: pressed, isHeld: false, sinceLastPress: 5))
+        #expect(CarbonHotKey.shouldFire(kind: pressed, isHeld: true, sinceLastPress: 0.05) == false)
+        #expect(CarbonHotKey.shouldFire(kind: released, isHeld: true, sinceLastPress: 0.05) == false)
+    }
+
+    /// The release half of the gate cannot be relied on — Carbon's released
+    /// event is documented but not dependable. Waiting for one that never
+    /// arrives would leave the shortcut working exactly once per launch, so a
+    /// chord not heard from in a while is treated as let go.
+    @Test
+    func aChordNotHeardFromIsTreatedAsReleased() {
+        let pressed = UInt32(kEventHotKeyPressed)
+        #expect(CarbonHotKey.shouldFire(
+            kind: pressed,
+            isHeld: true,
+            sinceLastPress: CarbonHotKey.holdExpiry + 0.1
+        ))
     }
 
     /// The picker gets its own window size. `isExpanded` still outranks it in
