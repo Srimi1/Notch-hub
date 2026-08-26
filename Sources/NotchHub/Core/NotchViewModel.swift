@@ -352,6 +352,13 @@ final class NotchViewModel: ObservableObject {
 
     static func shouldPresentActivity(_ activity: ActivitySnapshot?) -> Bool {
         guard let activity else { return false }
+        // Music never takes the panel over. The Media module is already a
+        // dashboard for the playing track, so presenting the detail view on
+        // top of it gave the same track two dashboards and put a "Dashboard"
+        // button in front of the real one. The collapsed pill still carries
+        // the track and its astronaut, which is where playback belongs while
+        // the notch is shut.
+        guard activity.kind != .media else { return false }
         return activity.priority != .ambient
     }
 
