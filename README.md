@@ -197,7 +197,7 @@ xcode-select --install
 
 ## Install
 
-The current release is **[0.5.0](https://github.com/Srimi1/Notch-hub/releases/latest)** — `NotchHub-0.5.0-universal.dmg`, a universal build that runs on both Apple Silicon and Intel.
+The current release is **[0.6.0](https://github.com/Srimi1/Notch-hub/releases/latest)** — `NotchHub-0.6.0-universal.dmg`, a universal build that runs on both Apple Silicon and Intel.
 
 That download is signed with an Apple Development certificate under the hardened runtime, but it is **not notarized**, so Gatekeeper refuses it on a Mac that did not build it. Approve it once under **System Settings ▸ Privacy & Security ▸ Open Anyway**, or — the route this project recommends — build from source, which takes about a minute and gives you full provenance:
 
