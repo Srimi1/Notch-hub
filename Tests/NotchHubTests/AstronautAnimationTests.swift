@@ -110,3 +110,85 @@ struct AstronautPlaybackTests {
         #expect(AstronautMotion(isPlaying: false, reduceMotion: true) == .still)
     }
 }
+
+/// The artwork is drawn for a light ground and goes on the black pill, where
+/// its near-black measures 1.12:1 against the background. Inverting it is what
+/// makes it visible there, and it has to invert without disturbing anything
+/// else in the file.
+@Suite("Astronaut ink")
+struct AstronautInkTests {
+
+    /// The two tones swap: the figure turns white so it reads on black, and the
+    /// helmet highlight turns black so it stays a cutout rather than becoming
+    /// the figure.
+    @Test
+    func swapsTheTwoTonesAndLeavesTheRestAlone() throws {
+        let source = """
+        {"v":"5.6.3","w":1000,"h":1000,"layers":[
+          {"nm":"figure","shapes":[{"ty":"fl","c":{"a":0,"k":[0.098,0.047,0.137,1]}}]},
+          {"nm":"highlight","shapes":[{"ty":"fl","c":{"a":0,"k":[1,1,1,1]}}]},
+          {"nm":"midtone","shapes":[{"ty":"fl","c":{"a":0,"k":[0.5,0.5,0.5,1]}}]}
+        ]}
+        """
+        let out = try AstronautAnimation.inverted(Data(source.utf8))
+        let root = try #require(
+            try JSONSerialization.jsonObject(with: out) as? [String: Any]
+        )
+        let layers = try #require(root["layers"] as? [[String: Any]])
+
+        func fill(_ layer: [String: Any]) throws -> [Double] {
+            let shapes = try #require(layer["shapes"] as? [[String: Any]])
+            let colour = try #require(shapes[0]["c"] as? [String: Any])
+            let channels = try #require(colour["k"] as? [Double])
+            return Array(channels.prefix(3))
+        }
+
+        #expect(try fill(layers[0]) == [1, 1, 1], "the figure should read on black")
+        #expect(try fill(layers[1]) == [0, 0, 0], "the highlight should stay a cutout")
+        // Anything that is neither tone is left as it was, so a future revision
+        // of the artwork degrades to "partly inverted" rather than to nonsense.
+        #expect(try fill(layers[2]) == [0.5, 0.5, 0.5])
+    }
+
+    /// Inverting must not disturb the composition: same canvas, same timeline,
+    /// same layers, or Lottie is being handed a different animation.
+    @Test
+    func leavesTheCompositionIntact() throws {
+        // Found from this file rather than from a bundle, the way the suite
+        // above already reaches the vendored artwork under `swift test`.
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources/Animations/astronaut-and-music.json")
+        let original = try Data(contentsOf: url)
+        let inverted = try AstronautAnimation.inverted(original)
+
+        struct Composition: Equatable {
+            var layers: Int
+            var width: Int
+            var lastFrame: Int
+        }
+        func shape(_ data: Data) throws -> Composition {
+            let root = try #require(
+                try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            )
+            return Composition(
+                layers: (root["layers"] as? [Any])?.count ?? -1,
+                width: root["w"] as? Int ?? -1,
+                lastFrame: root["op"] as? Int ?? -1
+            )
+        }
+
+        #expect(try shape(original) == shape(inverted))
+    }
+
+    /// Something that is not JSON at all should throw rather than crash: the
+    /// caller already treats a failed decode as "draw the fallback".
+    @Test
+    func refusesSomethingThatIsNotAnAnimation() {
+        #expect(throws: (any Error).self) {
+            try AstronautAnimation.inverted(Data("not json".utf8))
+        }
+    }
+}

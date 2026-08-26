@@ -94,9 +94,28 @@ struct MediaAstronautView: View {
     /// are.
     static let tile = Color(red: 0xF6 / 255, green: 0xF4 / 255, blue: 0xF9 / 255)
 
+    /// How much of the 1000x1000 canvas the astronaut itself occupies.
+    ///
+    /// The rest is stars and music notes scattered to the edges. In the notch
+    /// there is room for about 22 points, and at that size the whole
+    /// composition is a smudge: the figure lands around nine points tall and
+    /// the stars fall under a pixel. Drawing it large and showing only this
+    /// much of it gives the figure the whole slot. The panel has room for
+    /// all of it and shows all of it.
+    static let figureFraction: CGFloat = 0.46
+
     /// Whether the music is actually playing. The astronaut listens along, so
     /// it moves while the track does and settles when the track is paused.
     var isPlaying: Bool
+    /// The panel draws the whole composition on its light tile; the notch
+    /// draws the figure alone, in white, straight onto the black.
+    var ink: AstronautAnimation.Ink = .asDrawn
+    var cropsToFigure = false
+    /// Drawn instead when the artwork is not in the bundle. The panel is
+    /// content to show nothing there, because the track details sit beside it
+    /// and say what is playing. The notch wing has only this slot, so it falls
+    /// back to the symbol it replaced rather than to a hole.
+    var fallbackSymbol: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animation: LottieAnimation?
@@ -104,17 +123,40 @@ struct MediaAstronautView: View {
     var body: some View {
         Group {
             if let animation {
-                player(animation)
-                    .padding(3)
-                    .background(
-                        RoundedRectangle(cornerRadius: NotchTheme.cardRadius).fill(Self.tile)
-                    )
+                if cropsToFigure {
+                    figure(animation)
+                } else {
+                    player(animation)
+                        .padding(3)
+                        .background(
+                            RoundedRectangle(cornerRadius: NotchTheme.cardRadius).fill(Self.tile)
+                        )
+                }
+            } else if let fallbackSymbol {
+                Image(systemName: fallbackSymbol)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(ActivityKind.media.tint)
             } else {
                 Color.clear
             }
         }
-        .task { animation = await AstronautAnimation.load() }
+        .task { animation = await AstronautAnimation.load(ink) }
         .accessibilityHidden(true)
+    }
+
+    /// The figure alone, filling the slot: drawn oversized and clipped, rather
+    /// than by editing the artwork, so the panel and the notch stay one file.
+    private func figure(_ animation: LottieAnimation) -> some View {
+        GeometryReader { proxy in
+            let slot = min(proxy.size.width, proxy.size.height)
+            player(animation)
+                .frame(width: slot / Self.figureFraction, height: slot / Self.figureFraction)
+                .offset(
+                    x: -(slot / Self.figureFraction - slot) / 2,
+                    y: -(slot / Self.figureFraction - slot) / 2
+                )
+        }
+        .clipped()
     }
 
     /// Held still when the music is paused, and under Reduce Motion, which is
@@ -160,17 +202,26 @@ enum AstronautMotion: Equatable {
 /// panel is built and torn down every time the notch expands.
 @MainActor
 enum AstronautAnimation {
-    private static var cached: LottieAnimation?
+
+    /// Which ground the astronaut is going to be drawn on.
+    enum Ink {
+        /// As authored, for the panel's light tile.
+        case asDrawn
+        /// Inverted, for the black collapsed pill.
+        case white
+    }
+
+    private static var cached: [Ink: LottieAnimation] = [:]
     private static var didReportMiss = false
 
-    static func load() async -> LottieAnimation? {
-        if let cached { return cached }
+    static func load(_ ink: Ink = .asDrawn) async -> LottieAnimation? {
+        if let cached = cached[ink] { return cached }
         guard let url = AnimationLocator.locate(AnimationLocator.astronautName) else {
             reportMissOnce("no animation bundled at \(AnimationLocator.astronautName).json")
             return nil
         }
-        let decoded = await Task.detached(priority: .utility) { decode(url) }.value
-        cached = decoded
+        let decoded = await Task.detached(priority: .utility) { decode(url, ink: ink) }.value
+        cached[ink] = decoded
         return decoded
     }
 
@@ -181,13 +232,64 @@ enum AstronautAnimation {
         decode(url)?.duration
     }
 
-    private nonisolated static func decode(_ url: URL) -> LottieAnimation? {
+    private nonisolated static func decode(_ url: URL, ink: Ink = .asDrawn) -> LottieAnimation? {
         do {
-            return try JSONDecoder().decode(LottieAnimation.self, from: Data(contentsOf: url))
+            var data = try Data(contentsOf: url)
+            if ink == .white { data = try inverted(data) }
+            return try JSONDecoder().decode(LottieAnimation.self, from: data)
         } catch {
             NSLog("NotchHub animation: %@", error.localizedDescription)
             return nil
         }
+    }
+
+    /// The two-tone artwork with its tones swapped, for drawing on black.
+    ///
+    /// The file is drawn for a light ground in exactly two fills: a near-black
+    /// for the figure, the stars and the notes, and white for the highlight cut
+    /// into the helmet and the visor. Swapping them keeps the relationship the
+    /// artist drew — a light figure with dark cutouts — rather than repainting
+    /// every fill one colour, which is what a Lottie colour value provider
+    /// keyed on the fill would do, and which would flatten the helmet away.
+    ///
+    /// Anything that is neither tone is left alone, so a future revision of the
+    /// artwork degrades to "some of it inverted" rather than to nonsense.
+    nonisolated static func inverted(_ json: Data) throws -> Data {
+        let root = try JSONSerialization.jsonObject(with: json)
+        let swapped = swapTones(in: root)
+        return try JSONSerialization.data(withJSONObject: swapped)
+    }
+
+    /// Bodymovin holds a solid fill as `{"c": {"k": [r, g, b, a]}}`, in 0...1.
+    private nonisolated static func swapTones(in node: Any) -> Any {
+        if let dictionary = node as? [String: Any] {
+            var result: [String: Any] = [:]
+            for (key, value) in dictionary {
+                result[key] = key == "k" ? swapChannels(in: value) : swapTones(in: value)
+            }
+            return result
+        }
+        if let array = node as? [Any] {
+            return array.map { swapTones(in: $0) }
+        }
+        return node
+    }
+
+    private nonisolated static func swapChannels(in value: Any) -> Any {
+        guard let channels = value as? [Any], channels.count >= 3 else { return value }
+        let numbers = channels.prefix(3).compactMap { ($0 as? NSNumber)?.doubleValue }
+        guard numbers.count == 3 else { return value }
+
+        // 0x19/0x0C/0x23 and white, matched loosely: the file stores them as
+        // floats, and an exact comparison would miss a re-export that rounds.
+        let isNearBlack = numbers.allSatisfy { $0 < 0.2 }
+        let isWhite = numbers.allSatisfy { $0 > 0.8 }
+        guard isNearBlack || isWhite else { return value }
+
+        let replacement: [Double] = isNearBlack ? [1, 1, 1] : [0, 0, 0]
+        var result = channels
+        for index in 0 ..< 3 { result[index] = replacement[index] }
+        return result
     }
 
     /// Once per launch: the panel opens often, and a missing decoration should
