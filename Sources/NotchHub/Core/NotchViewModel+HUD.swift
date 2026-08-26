@@ -110,13 +110,33 @@ extension NotchViewModel {
         _ clip: ClipboardService.Clip,
         pasteAfter delay: TimeInterval = PasteSynthesizer.defaultDelay
     ) {
-        services.clipboard.copy(clip)
+        let token = services.clipboard.copy(clip)
         guard services.hudPreferences.autoPaste else { return }
-        if pasteSynthesizer.pasteToFrontmostApp(after: delay) {
+        let clipboard = services.clipboard
+        // Only paste if this clip is still what the pasteboard is offering.
+        // Something else can write in the beat between the two — Universal
+        // Clipboard, another manager — and pasting anyway would put content
+        // in the document that the user never picked.
+        let paste = pasteSynthesizer.pasteToFrontmostApp(after: delay) {
+            clipboard.changeCount == token
+        }
+        if paste {
             pasteHint = nil
         } else if pasteHint == nil {
             pasteHint = "Copied. Grant Accessibility to paste automatically."
         }
+    }
+
+    /// Puts a clip back on the pasteboard and stops there.
+    ///
+    /// The dashboard's clipboard tiles use this rather than `pick`. Reaching
+    /// them means clicking the panel, which makes the notch the key window
+    /// without it having borrowed focus from anywhere — so there is nowhere to
+    /// hand the keyboard back to, and the synthesized ⌘V was delivered to the
+    /// overlay itself. Copying and saying so is honest; pasting into thin air
+    /// is not.
+    func copyWithoutPaste(_ clip: ClipboardService.Clip) {
+        services.clipboard.copy(clip)
     }
 
     // MARK: - Clipboard picker

@@ -35,7 +35,15 @@ final class PasteSynthesizer {
 
     init(
         isTrusted: @escaping @Sendable () -> Bool = { AXIsProcessTrusted() },
-        postEvent: @escaping @Sendable (CGEvent) -> Void = { $0.post(tap: .cghidEventTap) },
+        // Posted to the session tap rather than the HID tap. The HID tap sits
+        // below the window server's modifier bookkeeping, so a synthesized ⌘V
+        // arriving there is merged with whatever the user is physically
+        // holding: with the ⌃⌥V shortcut still under their fingers the target
+        // app saw ⌘⌃⌥V, which in Finder is Move Item Here — a destructive
+        // action from a paste. The session tap carries only the flags set on
+        // the event. (If an app is ever found that ignores session-tap events,
+        // `.cgAnnotatedSessionEventTap` is the next thing to try.)
+        postEvent: @escaping @Sendable (CGEvent) -> Void = { $0.post(tap: .cgSessionEventTap) },
         schedule: @escaping @Sendable (TimeInterval, @escaping @Sendable () -> Void) -> Void
             = { delay, work in
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
@@ -51,24 +59,43 @@ final class PasteSynthesizer {
 
     /// Sends ⌘V to the frontmost app after `delay`.
     ///
+    /// `isStillCurrent` is asked immediately before the keystroke goes out, and
+    /// nothing is sent if it says no. The pasteboard is written a beat before
+    /// the ⌘V, and that beat is long enough for something else to write over
+    /// it — Universal Clipboard handing over an iPhone's clipboard, another
+    /// clipboard manager, an app that copies on selection. Pasting anyway put
+    /// content in the user's document that they had not chosen.
+    ///
     /// Returns whether the keystroke was scheduled: `false` means Accessibility
     /// is missing and the clip is on the pasteboard but nothing was typed.
     @discardableResult
-    func pasteToFrontmostApp(after delay: TimeInterval = PasteSynthesizer.defaultDelay) -> Bool {
+    func pasteToFrontmostApp(
+        after delay: TimeInterval = PasteSynthesizer.defaultDelay,
+        isStillCurrent: @escaping @MainActor () -> Bool = { true }
+    ) -> Bool {
         guard isTrusted() else { return false }
         // Capture the sink rather than `self` so the scheduled work carries no
         // main-actor state across the hop.
         let post = postEvent
-        schedule(delay) { Self.postCommandV(post) }
+        // The scheduler delivers on the main queue, which is where the check
+        // has to run — same assumption `ClipboardService`'s timer makes.
+        schedule(delay) {
+            MainActor.assumeIsolated {
+                guard isStillCurrent() else { return }
+                Self.postCommandV(post)
+            }
+        }
         return true
     }
 
     nonisolated private static func postCommandV(_ post: @Sendable (CGEvent) -> Void) {
-        // A nil source posts into the session event stream, which is what a
-        // real keyboard does; a per-event source would need its own state.
+        // A private source keeps the pair out of the shared state the window
+        // server merges physical modifiers into, so the event carries exactly
+        // the flags set on it here and nothing the user happens to be holding.
+        let source = CGEventSource(stateID: .privateState)
         for isDown in [true, false] {
             guard let event = CGEvent(
-                keyboardEventSource: nil,
+                keyboardEventSource: source,
                 virtualKey: virtualKeyV,
                 keyDown: isDown
             ) else {

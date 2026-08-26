@@ -120,10 +120,18 @@ final class ClipboardService: ObservableObject {
 
     // MARK: - Restore to clipboard
 
+    /// The pasteboard's current generation. Compare a value taken from `copy`
+    /// against this to find out whether anything has written since.
+    var changeCount: Int { pasteboard.changeCount }
+
     /// Puts a history entry back on the pasteboard. History order is left
     /// alone: reordering under the pointer makes the next click land on a
     /// different clip than the one it appears to target.
-    func copy(_ clip: Clip) {
+    ///
+    /// Returns the change count the write produced, so a caller about to
+    /// synthesize a paste can check the clip is still the one on offer.
+    @discardableResult
+    func copy(_ clip: Clip) -> Int {
         pasteboard.clearContents()
         switch clip.kind {
         case .text(let text):
@@ -137,6 +145,8 @@ final class ClipboardService: ObservableObject {
         }
         // Don't re-ingest our own write on the next tick.
         lastChangeCount = pasteboard.changeCount
+        clearRetry()
+        return lastChangeCount
     }
 
     func clear() {
