@@ -14,6 +14,11 @@
 </div>
 
 <p align="center">
+  <img src="docs/assets/notchhub-tour.svg" width="100%" alt="Animated tour of NotchHub: at rest the overlay is exactly the size of the camera notch; it widens into wings showing the clock and what is playing; copying something reveals the last few clips; hovering opens the full dashboard; tapping N twice opens the clipboard picker." />
+</p>
+<p align="center"><sub>Drawn to the real proportions — the notch is 179 × 32 pt, the dashboard 860 × 136.</sub></p>
+
+<p align="center">
   <img src="docs/assets/screenshots/dashboard-overview.png" width="100%" alt="NotchHub expanded Dashboard showing time, battery, CPU, memory, and module controls" />
 </p>
 <p align="center"><sub>NotchHub running on a MacBook with a physical display notch.</sub></p>
