@@ -21,6 +21,10 @@ struct SettingsRootView: View {
             ModuleVisibilitySection(preferences: preferences)
             ShortcutSection(hotKeys: hotKeys, onChange: onHotKeyChange)
             PopupSection(preferences: services.hudPreferences)
+            ScreenshotSection(
+                preferences: services.screenshotPreferences,
+                screenshots: services.screenshots
+            )
             NextUpSettingsSections(
                 preferences: services.activityPreferences,
                 reminders: services.reminders,
@@ -35,6 +39,55 @@ struct SettingsRootView: View {
         // The login-item switch can also be flipped in System Settings, and
         // macOS posts no notification when it is.
         .onAppear { launchAtLogin.refresh() }
+    }
+}
+
+// MARK: - Screenshots
+
+private struct ScreenshotSection: View {
+    @Bindable var preferences: ScreenshotPreferences
+    @Bindable var screenshots: ScreenshotService
+
+    var body: some View {
+        Section {
+            Toggle("Copy screenshots to the clipboard", isOn: $preferences.autoCopy)
+            if preferences.autoCopy {
+                LabeledContent("Watching", value: screenshots.folderName)
+                if screenshots.access == .unknown {
+                    Button("Allow access to \(screenshots.folderName)…") {
+                        screenshots.requestAccess()
+                    }
+                }
+                Toggle("Move the file to the Trash after copying", isOn: $preferences.trashAfterCopying)
+                status
+            }
+        } header: {
+            Text("Screenshots")
+        } footer: {
+            Text(explanation)
+        }
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        if let note = screenshots.statusNote {
+            Text(note).foregroundStyle(NotchTheme.secondaryText)
+        }
+        if let failure = screenshots.lastError {
+            Text(failure).foregroundStyle(.red)
+            Button("Open Files and Folders…") { SystemSettingsPane.filesAndFolders.open() }
+        }
+    }
+
+    private var explanation: String {
+        "Every screenshot lands on the clipboard as well as in its folder, so you can paste it "
+            + "straight away without holding Control while you shoot. Turning this on is what "
+            + "asks macOS for access to that folder. NotchHub watches only that one folder, and "
+            + "only opens a file macOS has already marked as a screenshot.\n\n"
+            + "macOS writes the file when its floating preview fades, so the copy lands a few "
+            + "seconds after the shutter. Nothing is deleted unless you switch that on, and it "
+            + "goes to the Trash. Hiding the Clipboard module still leaves screenshots on the "
+            + "clipboard — it only stops NotchHub keeping them in history or announcing them."
     }
 }
 

@@ -65,10 +65,11 @@ fi
 
 # Opt-in: rebuild the adapter suite under the thread sanitizer. Off by default
 # because the sanitizer forces a full rebuild and a slower run; the descriptor
-# ownership it checks lives in AdapterProcess, so only that suite runs.
+# ownership it checks lives in AdapterProcess and in the screenshot folder
+# watcher, so only those two suites run.
 if [[ "${NOTCHHUB_TSAN:-0}" == "1" && "$HAS_XCODE" == "1" ]]; then
   hr "7 (opt-in) swift test --sanitize=thread"
-  if swift test --sanitize=thread --filter AdapterProcessLauncherTests; then
+  if swift test --sanitize=thread --filter 'AdapterProcessLauncherTests|DirectoryWatcherTests'; then
     echo "✓ TSan clean"; else echo "✗ TSan findings"; FAIL=1; fi
 fi
 

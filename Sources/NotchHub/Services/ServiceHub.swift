@@ -43,6 +43,8 @@ final class ServiceHub: ObservableObject {
     let timers = ActivityTimerService()
     let activityPreferences = ActivityPreferences()
     let hudPreferences = HudPreferences()
+    let screenshotPreferences = ScreenshotPreferences()
+    let screenshots: ScreenshotService
     let activityCoordinator: ActivityCoordinator
 
     private var started = false
@@ -61,6 +63,7 @@ final class ServiceHub: ObservableObject {
     init(modulePreferences: ModulePreferences? = nil) {
         self.modulePreferences = modulePreferences
         activityCoordinator = ActivityCoordinator(preferences: activityPreferences)
+        screenshots = ScreenshotService(preferences: screenshotPreferences)
 
         // Re-publish whenever any child service changes, so container views
         // that switch on cross-service state (the live strip, the collapsed
@@ -79,6 +82,10 @@ final class ServiceHub: ObservableObject {
                 }
                 .store(in: &cancellables)
         }
+
+        screenshots.onCapture = { [weak self] capture in self?.copyScreenshot(capture) }
+        screenshots.onChange = { [weak self] in self?.objectWillChange.send() }
+        screenshotPreferences.onChange = { [weak self] in self?.applyScreenshotWatching() }
 
         timers.onChange = { [weak self] in self?.refreshActivities() }
         reminders.onChange = { [weak self] in self?.refreshActivities() }
@@ -128,6 +135,27 @@ final class ServiceHub: ObservableObject {
         refreshActivities()
     }
 
+    /// A screenshot NotchHub noticed, on its way to the pasteboard.
+    ///
+    /// Always copied — that is the feature the user switched on. Kept in the
+    /// history and announced with the popup only while the Clipboard module is
+    /// visible, because hiding that module is the user asking NotchHub not to
+    /// keep or show their clipboard.
+    private func copyScreenshot(_ capture: CapturedScreenshot) {
+        let remember = ScreenshotService.shouldRemember(
+            clipboardModuleVisible: isVisible(.clipboard)
+        )
+        clipboard.offer(.image(capture.pngData), remember: remember)
+    }
+
+    /// The watcher follows its own switch in Settings, not a module's
+    /// visibility — there is no Screenshots module, and the folder grant is
+    /// too consequential to be turned on by a dashboard layout change.
+    private func applyScreenshotWatching() {
+        guard started else { return }
+        setRunning(screenshots.start, screenshots.stop, screenshotPreferences.autoCopy)
+    }
+
     private func setRunning(_ start: () -> Void, _ stop: () -> Void, _ shouldRun: Bool) {
         if shouldRun { start() } else { stop() }
     }
@@ -154,6 +182,8 @@ final class ServiceHub: ObservableObject {
         // Needs no permission, so the notch can show a track before the user
         // has opened anything.
         if isVisible(.media) { media.startSystemPlayback() }
+        // Deliberately not module-gated — see `applyScreenshotWatching`.
+        applyScreenshotWatching()
         observeActivation()
         refreshActivities()
     }
@@ -165,6 +195,7 @@ final class ServiceHub: ObservableObject {
     /// `mediaremote-adapter` behind for every launch.
     func shutDown() {
         media.stop()
+        screenshots.stop()
         clipboard.stop()
         calendar.stop()
         reminders.stop()

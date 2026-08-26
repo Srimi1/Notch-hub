@@ -34,6 +34,12 @@
     <string>NotchHub shows due reminders and lets you complete them from the notch.</string>
     <key>NSRemindersFullAccessUsageDescription</key>
     <string>NotchHub reads and completes reminders only when you choose an action.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>NotchHub watches the folder your screenshots are saved in so it can put each new screenshot on the clipboard. It reads nothing else there.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>NotchHub watches the folder your screenshots are saved in so it can put each new screenshot on the clipboard. It reads nothing else there.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>NotchHub watches the folder your screenshots are saved in so it can put each new screenshot on the clipboard. It reads nothing else there.</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>NotchHub controls your music player when you use the media controls, and Control Center when you toggle Do Not Disturb.</string>
 </dict>
