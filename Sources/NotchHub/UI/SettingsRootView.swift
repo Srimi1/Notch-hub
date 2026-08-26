@@ -19,7 +19,7 @@ struct SettingsRootView: View {
     var body: some View {
         Form {
             ModuleVisibilitySection(preferences: preferences)
-            ShortcutSection(hotKeys: hotKeys, onChange: onHotKeyChange)
+            ShortcutSection(hotKeys: hotKeys, permissions: permissions, onChange: onHotKeyChange)
             PopupSection(preferences: services.hudPreferences)
             ScreenshotSection(
                 preferences: services.screenshotPreferences,
@@ -148,7 +148,25 @@ private struct ModuleVisibilitySection: View {
 /// taken and then wonder why nothing happens.
 private struct ShortcutSection: View {
     @Bindable var hotKeys: HotKeyPreferences
+    @Bindable var permissions: PermissionCenter
     let onChange: () -> Void
+
+    /// The chord is a Carbon hot key and needs no permission; the double tap is
+    /// a global key monitor and cannot see a keystroke without Accessibility.
+    /// Switched on without it, the toggle simply does nothing, and a
+    /// requirement buried in the footer is not where anyone looks when a
+    /// gesture they just enabled fails to fire.
+    @ViewBuilder
+    private var doubleTapAccessNote: some View {
+        if hotKeys.clipPickerDoubleTapN, !permissions.status(of: .accessibility).isGranted {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("The double tap cannot see keystrokes until NotchHub has Accessibility. "
+                    + "The shortcut above keeps working without it.")
+                    .foregroundStyle(NotchTheme.secondaryText)
+                Button("Allow Accessibility…") { permissions.request(.accessibility) }
+            }
+        }
+    }
 
     var body: some View {
         Section {
@@ -163,6 +181,7 @@ private struct ShortcutSection: View {
             .disabled(!hotKeys.clipPickerEnabled)
             Toggle("Also open by tapping N twice", isOn: $hotKeys.clipPickerDoubleTapN)
                 .onChange(of: hotKeys.clipPickerDoubleTapN) { _, _ in onChange() }
+            doubleTapAccessNote
         } header: {
             Text("Shortcut")
         } footer: {
