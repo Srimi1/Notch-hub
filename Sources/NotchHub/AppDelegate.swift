@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let launchAtLogin = LaunchAtLoginController()
     private let hotKeyPreferences = HotKeyPreferences()
     private let hotKeys = HotKeyCenter()
+    private let doubleTapMonitor = KeyDoubleTapMonitor()
 
     override init() {
         // The hub needs the same preferences object so hiding a module really
@@ -142,17 +143,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKeys.onHotKey = { [weak self] in
             self?.notchController?.showClipPicker()
         }
+        // `showClipPicker` rather than a toggle: the second tap of the gesture
+        // would otherwise close what the first one opened.
+        doubleTapMonitor.onDoubleTap = { [weak self] in
+            self?.notchController?.showClipPicker()
+        }
         applyHotKeyPreference()
     }
 
     /// Keeps the live registration in step with the Settings choice.
     func applyHotKeyPreference() {
-        guard hotKeyPreferences.clipPickerEnabled else {
+        if hotKeyPreferences.clipPickerEnabled {
+            hotKeys.setSpec(hotKeyPreferences.clipPickerSpec)
+            hotKeys.start()
+        } else {
             hotKeys.stop()
-            return
         }
-        hotKeys.setSpec(hotKeyPreferences.clipPickerSpec)
-        hotKeys.start()
+
+        // The double tap needs Accessibility, which the user may grant while
+        // the app is already running; `start()` is idempotent and checks for
+        // itself, so calling it again when we come back to the front is enough
+        // to pick the grant up without a relaunch.
+        if hotKeyPreferences.clipPickerDoubleTapN {
+            doubleTapMonitor.start()
+        } else {
+            doubleTapMonitor.stop()
+        }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard hotKeyPreferences.clipPickerDoubleTapN else { return }
+        doubleTapMonitor.start()
     }
 
     /// First launch is the one moment the user expects to be asked for things,

@@ -71,7 +71,7 @@ final class PasteSynthesizer {
     @discardableResult
     func pasteToFrontmostApp(
         after delay: TimeInterval = PasteSynthesizer.defaultDelay,
-        isStillCurrent: @escaping @MainActor () -> Bool = { true }
+        isStillCurrent: @escaping @MainActor @Sendable () -> Bool = { true }
     ) -> Bool {
         guard isTrusted() else { return false }
         // Capture the sink rather than `self` so the scheduled work carries no

@@ -180,7 +180,7 @@ extension NotchViewModel {
         case 53, 36, 76, 49: return .dismiss // Escape, Return, keypad Enter, Space
         default: break
         }
-        guard modifiers.intersection([.command, .control, .option]).isEmpty else { return nil }
+        guard modifiers.isDisjoint(with: [.command, .control, .option]) else { return nil }
         guard let digit = characters.flatMap(Int.init), (1 ... 9).contains(digit) else { return nil }
         return .select(digit)
     }

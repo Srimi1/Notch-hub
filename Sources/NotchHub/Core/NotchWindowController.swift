@@ -180,28 +180,8 @@ final class NotchWindowController {
     // MARK: - Frame animation
 
     private func animateFrame(tier: Tier, showWings: Bool? = nil) {
-        let target: NSRect
-        switch tier {
-        case .collapsed: target = collapsedFrame(showWings: showWings ?? viewModel.showCollapsedWings)
-        case .hud: target = hudFrame()
-        case .picker: target = pickerFrame()
-        case .expanded: target = expandedFrame()
-        }
-        // The popup takes clicks and drags, so it needs the interaction layer
-        // exactly like the dashboard does.
-        if tier != .collapsed { panel.claimInteractionLayer() }
-        // The picker is keyboard-driven, so it borrows key status the other
-        // tiers do not need — and gives it straight back on the way out. The
-        // panel is non-activating, so the app the user was typing in stays
-        // frontmost throughout; but frontmost is not the same as key, and while
-        // the panel held the keyboard the synthesized ⌘V was delivered to the
-        // notch instead of to their document.
-        if tier == .picker { panel.takeKeyFocus() } else { panel.releaseKeyFocus() }
-        hoverView?.bottomRadius = switch tier {
-        case .collapsed: 10
-        case .hud: 18
-        case .picker, .expanded: 24
-        }
+        let target = frame(for: tier, showWings: showWings)
+        applyChrome(for: tier)
         // The content view is laid out from the window's bottom-left, and the
         // window's top edge is welded to the top of the screen — so content
         // taller than the window does not overhang downwards, it runs off the
@@ -233,6 +213,34 @@ final class NotchWindowController {
                 self.hoverView?.syncHoverState()
                 if tier == .collapsed { self.panel.yieldToPeerOverlays() }
             }
+        }
+    }
+
+    private func frame(for tier: Tier, showWings: Bool?) -> NSRect {
+        switch tier {
+        case .collapsed: collapsedFrame(showWings: showWings ?? viewModel.showCollapsedWings)
+        case .hud: hudFrame()
+        case .picker: pickerFrame()
+        case .expanded: expandedFrame()
+        }
+    }
+
+    /// Interaction, keyboard, and corner rounding for a tier.
+    private func applyChrome(for tier: Tier) {
+        // The popup takes clicks and drags, so it needs the interaction layer
+        // exactly like the dashboard does.
+        if tier != .collapsed { panel.claimInteractionLayer() }
+        // The picker is keyboard-driven, so it borrows key status the other
+        // tiers do not need — and gives it straight back on the way out. The
+        // panel is non-activating, so the app the user was typing in stays
+        // frontmost throughout; but frontmost is not the same as key, and while
+        // the panel held the keyboard the synthesized ⌘V was delivered to the
+        // notch instead of to their document.
+        if tier == .picker { panel.takeKeyFocus() } else { panel.releaseKeyFocus() }
+        hoverView?.bottomRadius = switch tier {
+        case .collapsed: 10
+        case .hud: 18
+        case .picker, .expanded: 24
         }
     }
 

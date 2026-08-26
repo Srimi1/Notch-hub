@@ -91,12 +91,17 @@ private struct ShortcutSection: View {
             }
             .onChange(of: hotKeys.clipPickerSpecID) { _, _ in onChange() }
             .disabled(!hotKeys.clipPickerEnabled)
+            Toggle("Also open by tapping N twice", isOn: $hotKeys.clipPickerDoubleTapN)
+                .onChange(of: hotKeys.clipPickerDoubleTapN) { _, _ in onChange() }
         } header: {
             Text("Shortcut")
         } footer: {
             Text("Press it from any app to drop your clipboard history out of the notch, "
                 + "then press 1–9 to paste one. ⌘Space is not offered — Spotlight owns it "
-                + "at a level no app can take.")
+                + "at a level no app can take.\n\n"
+                + "The double tap needs Accessibility, and only fires after a pause in "
+                + "typing — words like \"announce\" will not set it off. It does not take "
+                + "the key away from anything, so the two letters are still typed.")
         }
     }
 }
