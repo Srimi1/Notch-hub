@@ -125,7 +125,12 @@ final class NotchViewModel: ObservableObject {
         pickerKeyMonitor.onKeyDown = { [weak self] event in
             self?.handlePickerKey(
                 code: event.keyCode,
-                characters: event.charactersIgnoringModifiers
+                // `characters`, not `charactersIgnoringModifiers`: shifted
+                // number rows are how digits are typed on some layouts, and on
+                // a US layout ⇧1 reads as "!" and picks nothing, which is what
+                // the user meant by it.
+                characters: event.characters,
+                modifiers: event.modifierFlags
             ) ?? false
         }
         observeCharging()
@@ -221,6 +226,10 @@ final class NotchViewModel: ObservableObject {
         // growing straight from whatever HUD tier was showing (⌘T pressed
         // while a popup or peek is up).
         pasteMonitor.stop()
+        // The picker can be what is on screen when this runs, and clearing
+        // hudContent without stopping its key monitor leaves a key hook
+        // installed for the life of the process.
+        pickerKeyMonitor.stop()
         pendingHudDismiss?.cancel()
         pendingHudDismiss = nil
         pendingPeekPromotion?.cancel()

@@ -74,6 +74,9 @@ extension NotchViewModel {
     func expandFromHUD() {
         pendingHudDismiss?.cancel()
         pendingHudDismiss = nil
+        // Same reason as `toggle()`: the picker may be the HUD being expanded
+        // away from, and its key monitor has to go with it.
+        pickerKeyMonitor.stop()
         if preferences.isVisible(.clipboard) { select(.clipboard) }
         beginInteractiveIfNeeded()
         // Deliberately NOT pinned. Clicking the popup means "show me the
@@ -149,10 +152,35 @@ extension NotchViewModel {
 
     /// Pure so the key mapping is testable without an event or a window.
     ///
-    /// Digits pick; Escape closes. Everything else is ignored rather than
-    /// swallowed, since the picker sits over whatever the user was doing.
-    static func pickerAction(forKeyCode keyCode: UInt16, characters: String?) -> PickerAction? {
-        if keyCode == 53 { return .dismiss } // kVK_Escape
+    /// Digits pick; Escape, Return and Space close. Everything else is ignored
+    /// rather than swallowed, since the picker sits over whatever the user was
+    /// doing.
+    ///
+    /// Modifiers are the reason this takes them. A bare digit picks, but ⌘1 is
+    /// switch-to-first-tab in every browser and something of its own in most
+    /// other apps — and the picker has no auto-dismiss, sits on every Space,
+    /// and is easy not to notice. Reading ⌘1 as "pick the first clip" meant an
+    /// unnoticed picker turned a tab switch into a paste of whatever was
+    /// copied first, and swallowed the shortcut on the way.
+    ///
+    /// Shift is allowed through: on layouts where the number row is shifted,
+    /// Shift is how a digit is typed at all. `characters` rather than
+    /// `charactersIgnoringModifiers` keeps ⇧1 on a US layout as "!", which
+    /// selects nothing.
+    ///
+    /// Return and Space dismiss rather than select. With Full Keyboard Access
+    /// on they activate whichever row SwiftUI focused first — the top one — so
+    /// leaving them unhandled meant a silent pick of the newest clip.
+    static func pickerAction(
+        forKeyCode keyCode: UInt16,
+        characters: String?,
+        modifiers: NSEvent.ModifierFlags = []
+    ) -> PickerAction? {
+        switch keyCode {
+        case 53, 36, 76, 49: return .dismiss // Escape, Return, keypad Enter, Space
+        default: break
+        }
+        guard modifiers.intersection([.command, .control, .option]).isEmpty else { return nil }
         guard let digit = characters.flatMap(Int.init), (1 ... 9).contains(digit) else { return nil }
         return .select(digit)
     }
@@ -216,9 +244,13 @@ extension NotchViewModel {
     }
 
     /// Act on a key press while the picker is showing.
-    func handlePickerKey(code: UInt16, characters: String?) -> Bool {
+    func handlePickerKey(
+        code: UInt16,
+        characters: String?,
+        modifiers: NSEvent.ModifierFlags = []
+    ) -> Bool {
         guard case .clipPicker = hudContent else { return false }
-        switch Self.pickerAction(forKeyCode: code, characters: characters) {
+        switch Self.pickerAction(forKeyCode: code, characters: characters, modifiers: modifiers) {
         case .dismiss:
             dismissHUD()
             return true

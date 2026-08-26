@@ -178,8 +178,46 @@ struct ClipPickerKeyTests {
     func everythingElseIsLeftAlone() {
         #expect(NotchViewModel.pickerAction(forKeyCode: 29, characters: "0") == nil)
         #expect(NotchViewModel.pickerAction(forKeyCode: 0, characters: "a") == nil)
-        #expect(NotchViewModel.pickerAction(forKeyCode: 49, characters: " ") == nil)
-        #expect(NotchViewModel.pickerAction(forKeyCode: 36, characters: nil) == nil)
+    }
+
+    /// ⌘1 is switch-to-first-tab in every browser. The picker has no
+    /// auto-dismiss and sits on every Space, so one left open unnoticed turned
+    /// a tab switch into a paste of the newest clip — and swallowed the
+    /// shortcut, so the tab never switched and the user pressed it again.
+    @Test
+    func commandDigitsBelongToTheAppUnderneath() {
+        #expect(NotchViewModel.pickerAction(forKeyCode: 18, characters: "1", modifiers: .command) == nil)
+        #expect(NotchViewModel.pickerAction(forKeyCode: 18, characters: "1", modifiers: .option) == nil)
+        #expect(NotchViewModel.pickerAction(forKeyCode: 18, characters: "1", modifiers: .control) == nil)
+    }
+
+    /// Shift is how a digit is typed at all on some layouts, so it has to pass
+    /// through — and on a US layout it produces "!", which picks nothing.
+    @Test
+    func shiftIsLeftToTheLayout() {
+        #expect(NotchViewModel.pickerAction(forKeyCode: 18, characters: "1", modifiers: .shift) == .select(1))
+        #expect(NotchViewModel.pickerAction(forKeyCode: 18, characters: "!", modifiers: .shift) == nil)
+    }
+
+    /// With Full Keyboard Access on, Return and Space activate whichever row
+    /// SwiftUI focused first — the top one — so leaving them unhandled was a
+    /// silent pick of the newest clip.
+    @Test
+    func returnAndSpaceCloseRatherThanPickSilently() {
+        #expect(NotchViewModel.pickerAction(forKeyCode: 49, characters: " ") == .dismiss)
+        #expect(NotchViewModel.pickerAction(forKeyCode: 36, characters: nil) == .dismiss)
+        #expect(NotchViewModel.pickerAction(forKeyCode: 76, characters: nil) == .dismiss)
+    }
+
+    /// Carbon repeats the pressed event while a chord is held, and the handler
+    /// is a toggle — holding the shortcut flickered the picker open and shut.
+    @Test
+    func holdingTheChordFiresOnce() {
+        let pressed = UInt32(kEventHotKeyPressed)
+        let released = UInt32(kEventHotKeyReleased)
+        #expect(CarbonHotKey.shouldFire(kind: pressed, isAlreadyDown: false))
+        #expect(CarbonHotKey.shouldFire(kind: pressed, isAlreadyDown: true) == false)
+        #expect(CarbonHotKey.shouldFire(kind: released, isAlreadyDown: true) == false)
     }
 
     /// The picker gets its own window size. `isExpanded` still outranks it in
