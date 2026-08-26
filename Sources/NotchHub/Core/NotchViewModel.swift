@@ -28,7 +28,16 @@ final class NotchViewModel: ObservableObject {
     @Published var isExpanded = false
     /// The middle presentation tier: bigger than the collapsed pill, far
     /// smaller than the dashboard. `isExpanded` always wins over it.
-    @Published var hudContent: HudContent?
+    ///
+    /// The global key monitors are derived from this rather than started and
+    /// stopped at each call site: two of them leaked that way — the picker's,
+    /// then the paste watcher — each a keyDown hook that outlived its popup
+    /// because one mutation path forgot its `stop()`. `didSet` makes the tier
+    /// the single source of truth, so no path can forget again.
+    @Published var hudContent: HudContent? {
+        didSet { applyMonitorPolicy() }
+    }
+
     @Published var activeModule: FeatureModule = .dashboard
     @Published private(set) var presentedActivityID: String?
     @Published private(set) var actionError: String?
@@ -219,17 +228,11 @@ final class NotchViewModel: ObservableObject {
         let willExpand = !isExpanded
         if willExpand { presentCurrentActivity() }
         isManuallyPinned = willExpand
-        // Stop the HUD's own timers without letting it animate hudContent to
-        // nil on its own — see the ordering note on `expandFromHUD`. When
-        // expanding, isExpanded has to flip in the SAME animation that clears
-        // hudContent, or the window collapses and re-expands instead of
-        // growing straight from whatever HUD tier was showing (⌘T pressed
-        // while a popup or peek is up).
-        pasteMonitor.stop()
-        // The picker can be what is on screen when this runs, and clearing
-        // hudContent without stopping its key monitor leaves a key hook
-        // installed for the life of the process.
-        pickerKeyMonitor.stop()
+        // When expanding, isExpanded has to flip in the SAME animation that
+        // clears hudContent, or the window collapses and re-expands instead of
+        // growing straight from whatever HUD tier was showing (⌘T pressed while
+        // a popup or peek is up). Clearing hudContent below takes both key
+        // monitors down through its didSet.
         pendingHudDismiss?.cancel()
         pendingHudDismiss = nil
         pendingPeekPromotion?.cancel()

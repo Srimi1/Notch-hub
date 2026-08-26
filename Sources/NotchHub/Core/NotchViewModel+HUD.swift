@@ -32,20 +32,41 @@ extension NotchViewModel {
             hudContent: hudContent
         ) else { return }
         pendingHudDismiss?.cancel()
+        // Setting hudContent starts the paste monitor through its didSet.
         withAnimation(transitionAnimation) { hudContent = .clip(clip) }
         armHudDismiss()
-        pasteMonitor.start()
     }
 
     func dismissHUD() {
-        pasteMonitor.stop()
-        pickerKeyMonitor.stop()
         pendingHudDismiss?.cancel()
         pendingHudDismiss = nil
         pendingPeekPromotion?.cancel()
         pendingPeekPromotion = nil
         guard hudContent != nil else { return }
         withAnimation(transitionAnimation) { hudContent = nil }
+    }
+
+    /// Which global hooks may live for a given HUD tier. Static so the rule is
+    /// testable without building the service graph.
+    ///
+    /// The paste monitor watches for the ⌘V that means a copy popup's clip was
+    /// used; the picker's monitor reads the digit keys that pick from it.
+    /// Nothing else keeps a system-wide keyDown hook installed.
+    static func monitorPolicy(for content: HudContent?) -> (paste: Bool, picker: Bool) {
+        switch content {
+        case .clip: (paste: true, picker: false)
+        case .clipPicker: (paste: false, picker: true)
+        case .peek, .charging, .none: (paste: false, picker: false)
+        }
+    }
+
+    /// Reconcile the monitors with the current tier. Called only from
+    /// `hudContent`'s didSet — the one place either monitor starts or stops, so
+    /// no mutation path can leave one running.
+    func applyMonitorPolicy() {
+        let policy = Self.monitorPolicy(for: hudContent)
+        if policy.paste { pasteMonitor.start() } else { pasteMonitor.stop() }
+        if policy.picker { pickerKeyMonitor.start() } else { pickerKeyMonitor.stop() }
     }
 
     /// Hovering the popup pauses the countdown so it can be read or dragged
@@ -74,14 +95,8 @@ extension NotchViewModel {
     func expandFromHUD() {
         pendingHudDismiss?.cancel()
         pendingHudDismiss = nil
-        // Same reason as `toggle()`: the picker may be the HUD being expanded
-        // away from, and its key monitor has to go with it.
-        pickerKeyMonitor.stop()
-        // The copy popup can be the HUD being expanded away from too, and its
-        // global ⌘V monitor has to go with it: the hover-out collapse never
-        // calls dismissHUD, so nothing else stops it until the next ⌘V anywhere
-        // on the system.
-        pasteMonitor.stop()
+        // Clearing hudContent below takes down whichever monitor the HUD being
+        // expanded away from was using, through its didSet.
         if preferences.isVisible(.clipboard) { select(.clipboard) }
         beginInteractiveIfNeeded()
         // Deliberately NOT pinned. Clicking the popup means "show me the
@@ -228,7 +243,6 @@ extension NotchViewModel {
         pendingPeekPromotion?.cancel()
         pendingPeekPromotion = nil
         cancelPendingCollapse()
-        pasteMonitor.stop()
         // The chord is global, so it has to work while the dashboard happens to
         // be open — and `isExpanded` outranks `hudContent` in the tier map. Set
         // both in one animation: leaving `isExpanded` true showed nothing at
@@ -249,11 +263,12 @@ extension NotchViewModel {
         // leaves the intermediate state on the tier it is already showing, and
         // the picker arrives in a single step. Same reason as `expandFromHUD`
         // and `armPeekPromotion` below.
+        // Setting hudContent to .clipPicker starts the picker's key monitor
+        // through its didSet.
         withAnimation(transitionAnimation) {
             hudContent = Self.clipPickerPresentation.hudContent
             isExpanded = Self.clipPickerPresentation.isExpanded
         }
-        pickerKeyMonitor.start()
     }
 
     /// Act on a key press while the picker is showing.
