@@ -4,7 +4,7 @@ Notable user-facing changes are recorded here. NotchHub follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while the public API
 and interface continue to mature before 1.0.
 
-## [Unreleased]
+## [0.4.0] - 2026-08-26
 
 ### Added
 
