@@ -15,6 +15,9 @@ final class NotchWindowController {
     private var geometry: NotchGeometry
     private weak var hoverView: HoverView?
     private weak var hostingView: NSHostingView<NotchContainerView>?
+    /// Identifies the in-flight frame animation, so a completion that has been
+    /// overtaken by a newer one does nothing.
+    private var frameGeneration = 0
 
     static let expandedSize = CGSize(
         width: NotchTheme.expandedWidth,
@@ -199,15 +202,37 @@ final class NotchWindowController {
         case .hud: 18
         case .picker, .expanded: 24
         }
-        resizeContent(to: target.size)
+        // The content view is laid out from the window's bottom-left, and the
+        // window's top edge is welded to the top of the screen — so content
+        // taller than the window does not overhang downwards, it runs off the
+        // top of the display where it cannot be seen. Grow the content first so
+        // it is ready when the window reaches it, but shrink it only once the
+        // window has, and never below the window in between.
+        //
+        // The generation guard covers a retarget: if a newer, larger frame is
+        // already on its way when a shrink completes, honouring the stale
+        // completion would cut the content out from under it.
+        frameGeneration += 1
+        let generation = frameGeneration
+        let grows = target.width >= panel.frame.width && target.height >= panel.frame.height
+        if grows { resizeContent(to: target.size) }
+
         NSAnimationContext.runAnimationGroup { context in
             context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.01 : 0.28
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             context.allowsImplicitAnimation = true
             panel.animator().setFrame(target, display: true)
         } completionHandler: { [weak self] in
-            guard tier == .collapsed else { return }
-            Task { @MainActor [weak self] in self?.panel.yieldToPeerOverlays() }
+            Task { @MainActor [weak self] in
+                guard let self, self.frameGeneration == generation else { return }
+                self.resizeContent(to: target.size)
+                // Reconcile hover once the frame has stopped moving. Asking
+                // mid-flight compares the pointer against a frame that is still
+                // interpolating, which reported the pointer as having left and
+                // started a collapse the user never asked for.
+                self.hoverView?.syncHoverState()
+                if tier == .collapsed { self.panel.yieldToPeerOverlays() }
+            }
         }
     }
 

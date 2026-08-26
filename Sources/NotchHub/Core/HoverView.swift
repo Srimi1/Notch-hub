@@ -45,7 +45,6 @@ final class HoverView: NSView {
         for subview in subviews {
             subview.frame = bounds
         }
-        refreshHoverState()
     }
 
     override func updateTrackingAreas() {
@@ -71,7 +70,13 @@ final class HoverView: NSView {
         onHoverChange?(false)
     }
 
-    private func refreshHoverState() {
+    /// Reconcile the hover flag with where the pointer actually is.
+    ///
+    /// Called once the window has finished moving, not from `layout()`: every
+    /// frame of a resize is a layout pass, and each one asked this question
+    /// against a frame still in flight. The answers were wrong often enough to
+    /// start a collapse in the middle of an expansion.
+    func syncHoverState() {
         guard let window else { return }
         let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
         let mouse = convert(windowPoint, from: nil)

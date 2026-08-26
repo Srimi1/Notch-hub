@@ -178,9 +178,19 @@ extension NotchViewModel {
         isManuallyPinned = false
         // No auto-dismiss timer: unlike the copy popup, this one is waiting for
         // the user to choose something.
+        // Order matters, and it is the opposite of how it reads. Both
+        // properties publish in willSet, so the window controller sees each
+        // assignment separately: setting `isExpanded` first published a state
+        // with no HUD content and nothing expanded — the collapsed tier — and
+        // the picker's own tier a moment later, so two window animations ran
+        // against each other and the frame could settle on the smaller one
+        // while the content stayed picker-sized. Raising `hudContent` first
+        // leaves the intermediate state on the tier it is already showing, and
+        // the picker arrives in a single step. Same reason as `expandFromHUD`
+        // and `armPeekPromotion` below.
         withAnimation(transitionAnimation) {
-            isExpanded = Self.clipPickerPresentation.isExpanded
             hudContent = Self.clipPickerPresentation.hudContent
+            isExpanded = Self.clipPickerPresentation.isExpanded
         }
         pickerKeyMonitor.start()
     }

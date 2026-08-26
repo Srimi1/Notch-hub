@@ -210,6 +210,33 @@ struct ClipPickerKeyTests {
         )
     }
 
+    /// Opening the picker from the dashboard must not dip through a smaller
+    /// tier on the way.
+    ///
+    /// Both properties publish in willSet, so the window controller sees each
+    /// assignment on its own. Clearing `isExpanded` first published a state
+    /// that maps to `.collapsed`, starting a window animation the picker's own
+    /// animation then had to fight — and the frame could settle on the smaller
+    /// of the two while the content stayed picker-sized, which put most of the
+    /// list above the top of the screen. Raising `hudContent` first keeps the
+    /// intermediate state on the tier already showing.
+    @Test
+    func openingThePickerNeverDipsThroughASmallerTier() {
+        let presentation = NotchViewModel.clipPickerPresentation
+        // The order the assignments are published in, as `showClipPicker`
+        // writes them: hudContent first, then isExpanded.
+        let steps = [
+            NotchWindowController.tier(isExpanded: true, hudContent: presentation.hudContent),
+            NotchWindowController.tier(
+                isExpanded: presentation.isExpanded,
+                hudContent: presentation.hudContent
+            )
+        ]
+
+        #expect(steps == [.expanded, .picker])
+        #expect(!steps.contains(.collapsed))
+    }
+
     /// The keyboard is borrowed for the picker and has to be handed straight
     /// back. Leaving it with the notch meant the synthesized ⌘V was delivered
     /// to an overlay with no responder for it — the clip was copied and nothing
