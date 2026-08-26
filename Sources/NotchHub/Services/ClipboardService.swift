@@ -75,6 +75,12 @@ final class ClipboardService: ObservableObject {
     private var lastChangeCount: Int
     private let historyLimit = 12
 
+    /// How many ticks a change with nothing readable behind it is given before
+    /// it is written off.
+    static let maximumSampleRetries = 3
+    private var retryingChangeCount: Int?
+    private var retryAttempts = 0
+
     /// The pasteboard is injectable so tests can run against a private named
     /// pasteboard — a bare `ClipboardService()` in a test used to write its
     /// fixture strings straight onto the clipboard the user was working with.
@@ -140,35 +146,91 @@ final class ClipboardService: ObservableObject {
 
     // MARK: - Sampling
 
-    private func sample() {
-        guard pasteboard.changeCount != lastChangeCount else { return }
-        lastChangeCount = pasteboard.changeCount
+    /// Internal so tests can drive a tick without waiting on the timer.
+    func sample() {
+        // Read the counter once. Reading it again to store it opens a window
+        // where a copy that landed in between is marked as already seen.
+        let observed = pasteboard.changeCount
+        guard observed != lastChangeCount else { return }
 
-        // Respect privacy markers (passwords, OTPs, transient copies).
-        if let types = pasteboard.types,
-           types.contains(where: { ignoredTypes.contains($0.rawValue) }) {
+        if hasIgnoredMarkers() {
+            lastChangeCount = observed
+            clearRetry()
             return
         }
 
-        // Priority: real files (covers images/videos) › raw image › text.
+        let captured = readCurrentContent()
+
+        // Ask again. Writing to the pasteboard is several calls — clear it,
+        // declare the types, set the data — and the privacy markers are not
+        // necessarily there when the content is. Sampling in the middle of a
+        // password manager's write could read the secret before the marker
+        // saying not to arrived.
+        if hasIgnoredMarkers() {
+            lastChangeCount = observed
+            clearRetry()
+            return
+        }
+
+        guard !captured.isEmpty else {
+            // `clearContents()` bumps the counter before the content it is
+            // clearing the way for exists. Marking this generation as seen
+            // would drop the copy entirely: the user copies something, it
+            // never enters the history, and the next paste from the notch is
+            // whatever came before it. Leave the counter alone and look again
+            // on the next tick — but not forever, or a genuinely empty
+            // pasteboard would be re-read four times a second all session.
+            noteEmptyRead(of: observed)
+            return
+        }
+
+        lastChangeCount = observed
+        clearRetry()
+        add(contentsOf: captured)
+    }
+
+    /// Markers used by password managers and transient producers.
+    private func hasIgnoredMarkers() -> Bool {
+        guard let types = pasteboard.types else { return false }
+        return types.contains { ignoredTypes.contains($0.rawValue) }
+    }
+
+    /// Priority: real files (covers images/videos) › raw image › text.
+    private func readCurrentContent() -> [Clip.Kind] {
         if let urls = pasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
         ) as? [URL], !urls.isEmpty {
-            for url in urls.prefix(4) { add(.file(url)) }
-            return
+            return urls.prefix(4).map { .file($0) }
         }
 
         if let image = NSImage(pasteboard: pasteboard), let data = image.pngData {
-            add(.image(data))
-            return
+            return [.image(data)]
         }
 
-        if let text = pasteboard.string(forType: .string) {
-            let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !cleaned.isEmpty else { return }
-            add(.text(text))
+        if let text = pasteboard.string(forType: .string),
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return [.text(text)]
         }
+
+        return []
+    }
+
+    private func noteEmptyRead(of changeCount: Int) {
+        guard retryingChangeCount == changeCount else {
+            retryingChangeCount = changeCount
+            retryAttempts = 1
+            return
+        }
+        retryAttempts += 1
+        guard retryAttempts >= Self.maximumSampleRetries else { return }
+        lastChangeCount = changeCount
+        clearRetry()
+    }
+
+    private func clearRetry() {
+        retryingChangeCount = nil
+        retryAttempts = 0
     }
 
     // MARK: - History management
@@ -177,12 +239,25 @@ final class ClipboardService: ObservableObject {
     /// than private so tests can seed history without driving the real
     /// pasteboard.
     func add(_ kind: Clip.Kind) {
-        removeClips { $0.kind == kind }
-        let clip = Clip(id: UUID(), kind: kind, date: Date())
-        clips.insert(clip, at: 0)
+        add(contentsOf: [kind])
+    }
+
+    /// Records one copy that carried several items — selecting four files in
+    /// Finder and pressing ⌘C is a single gesture.
+    ///
+    /// Inserted back to front so the history reads in the order they were
+    /// selected, and announced once: adding them one at a time reversed them
+    /// and raised the copy popup once per file.
+    func add(contentsOf kinds: [Clip.Kind]) {
+        guard !kinds.isEmpty else { return }
+        for kind in kinds.reversed() {
+            removeClips { $0.kind == kind }
+            let clip = Clip(id: UUID(), kind: kind, date: Date())
+            clips.insert(clip, at: 0)
+            generateThumbnail(for: clip)
+        }
         trim()
-        generateThumbnail(for: clip)
-        onCopy?(clip)
+        if let newest = clips.first { onCopy?(newest) }
     }
 
     /// Drops clips and their thumbnails together — a clip removed without its

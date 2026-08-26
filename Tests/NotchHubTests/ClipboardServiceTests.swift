@@ -103,6 +103,79 @@ struct ClipboardServiceTests {
         #expect(clipboard.thumbnails.keys.allSatisfy { live.contains($0) })
     }
 
+    /// `clearContents()` advances the change counter before the content that
+    /// follows it exists. Treating that generation as seen dropped the copy:
+    /// it never entered the history, and the next paste from the notch was
+    /// whatever the user had copied before.
+    @Test
+    func aCounterBumpWithNothingBehindItIsLookedAtAgain() {
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
+
+        pasteboard.clearContents()
+        clipboard.sample()
+        #expect(clipboard.clips.isEmpty)
+
+        pasteboard.setString("landed late", forType: .string)
+        clipboard.sample()
+
+        #expect(clipboard.clips.map(\.preview) == ["landed late"])
+    }
+
+    /// Retrying cannot go on forever, or an empty pasteboard is re-read four
+    /// times a second for the rest of the session.
+    @Test
+    func anEmptyPasteboardIsWrittenOffAfterTheRetryLimit() {
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
+
+        pasteboard.clearContents()
+        for _ in 0 ..< ClipboardService.maximumSampleRetries { clipboard.sample() }
+
+        // Written off — and a real copy afterwards is still picked up.
+        pasteboard.clearContents()
+        pasteboard.setString("real", forType: .string)
+        clipboard.sample()
+
+        #expect(clipboard.clips.map(\.preview) == ["real"])
+    }
+
+    /// Writing to the pasteboard is several calls, and the privacy marker does
+    /// not necessarily arrive with the content. Sampling mid-write could read
+    /// a password before the marker saying not to.
+    @Test
+    func concealedContentIsDroppedEvenWhenItWasReadable() {
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
+
+        let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+        pasteboard.declareTypes([.string, concealed], owner: nil)
+        pasteboard.setString("hunter2", forType: .string)
+        pasteboard.setString("", forType: concealed)
+        clipboard.sample()
+
+        #expect(clipboard.clips.isEmpty)
+    }
+
+    /// Copying several files in Finder is one gesture. Adding them one at a
+    /// time reversed the selection and raised the popup once per file.
+    @Test
+    func aMultiFileCopyKeepsItsOrderAndAnnouncesItselfOnce() {
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
+        var announcements = 0
+        clipboard.onCopy = { _ in announcements += 1 }
+
+        clipboard.add(contentsOf: [
+            .file(URL(fileURLWithPath: "/tmp/a.png")),
+            .file(URL(fileURLWithPath: "/tmp/b.png")),
+            .file(URL(fileURLWithPath: "/tmp/c.png"))
+        ])
+
+        #expect(clipboard.clips.map(\.preview) == ["a.png", "b.png", "c.png"])
+        #expect(announcements == 1)
+    }
+
     /// Clearing drops both sides of the state together.
     @Test
     func clearingEmptiesClipsAndThumbnails() {
