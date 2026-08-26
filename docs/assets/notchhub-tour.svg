@@ -1,224 +1,270 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 520" width="920" height="520"
-     role="img" aria-label="NotchHub grows out of the MacBook notch: at rest it is the notch, then it shows a clock and what is playing, then recent clips, then the full dashboard, then the clipboard picker.">
-  <title>NotchHub — from the notch to the full dashboard</title>
-  <desc>An animated tour, drawn to the app's real proportions. At rest the overlay is exactly the size of the camera notch. A live activity widens it into two wings — the clock on the left, what is playing on the right. Copying something shows the last few clips. Hovering opens the full dashboard. Tapping N twice opens the clipboard picker.</desc>
+     role="img" aria-label="NotchHub grows out of the MacBook notch. At rest it is exactly the size of the camera notch. It widens into wings showing the clock and what is playing. A copy or a screenshot brings up the last few clips. Hovering opens the full dashboard. Tapping N twice opens the clipboard picker.">
+  <title>NotchHub, from the notch to the full dashboard</title>
+  <desc>An animated tour drawn to the app's real proportions and its real colours, sampled from the running app: the collapsed pill is 179 by 32 points, the wings add 124 points a side, the dashboard is 860 by 136, and the clipboard picker is 560 by 360. The accent is the same teal the app uses for playback.</desc>
 
   <defs>
-    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#171b22"/>
-      <stop offset="1" stop-color="#0d1015"/>
+    <linearGradient id="deck" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#15181c"/>
+      <stop offset="1" stop-color="#0e1113"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#a78bfa"/>
-      <stop offset="1" stop-color="#7c6cf0"/>
-    </linearGradient>
-    <clipPath id="screenClip">
-      <rect x="10" y="30" width="900" height="470" rx="16"/>
+    <clipPath id="deckClip">
+      <rect x="10" y="30" width="900" height="470" rx="18"/>
     </clipPath>
     <style>
-      .lbl { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
-      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .ui { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Helvetica, sans-serif; }
+      .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+      .cap { font-size: 15px; font-weight: 600; fill: #eef1f4; }
+      .still { display: none; }
+      /* Motion here is the message: it is the state change the app makes.
+         Where the reader has asked for less of it, the tour holds still on
+         the dashboard instead of looping. */
+      @media (prefers-reduced-motion: reduce) {
+        .moving { display: none; }
+        .still { display: block; }
+      }
     </style>
   </defs>
 
-  <!-- Display -->
-  <rect x="10" y="30" width="900" height="470" rx="16" fill="url(#screen)"/>
-  <rect x="10" y="30" width="900" height="470" rx="16" fill="none" stroke="#2b323d" stroke-width="1"/>
+  <rect x="10" y="30" width="900" height="470" rx="18" fill="url(#deck)"/>
+  <rect x="10" y="30" width="900" height="470" rx="18" fill="none" stroke="#262b31"/>
 
-  <!-- Menu bar furniture, generic -->
-  <g fill="#5b6472" opacity="0.75">
-    <rect x="30" y="43" width="34" height="7" rx="3.5"/>
-    <rect x="74" y="43" width="24" height="7" rx="3.5"/>
-    <rect x="108" y="43" width="28" height="7" rx="3.5"/>
-    <rect x="806" y="43" width="20" height="7" rx="3.5"/>
-    <rect x="836" y="43" width="14" height="7" rx="3.5"/>
-    <rect x="860" y="43" width="30" height="7" rx="3.5"/>
+  <!-- Menu bar, suggested rather than drawn: this is the strip the overlay lives in. -->
+  <g fill="#4b535c" opacity="0.8">
+    <rect x="32" y="43" width="36" height="7" rx="3.5"/>
+    <rect x="78" y="43" width="24" height="7" rx="3.5"/>
+    <rect x="112" y="43" width="30" height="7" rx="3.5"/>
+    <rect x="812" y="43" width="18" height="7" rx="3.5"/>
+    <rect x="840" y="43" width="14" height="7" rx="3.5"/>
+    <rect x="864" y="43" width="28" height="7" rx="3.5"/>
   </g>
 
-  <!-- A hint of the work going on underneath, so the panel reads as a screen
-       rather than an empty field. Kept faint; it must never compete. -->
-  <g opacity="0.5">
-    <rect x="150" y="150" width="620" height="290" rx="12" fill="#12161d" stroke="#232a35" stroke-width="1"/>
-    <g fill="#1e252f">
-      <rect x="150" y="150" width="620" height="30" rx="12"/>
-      <rect x="150" y="168" width="620" height="12"/>
+  <!-- The work going on underneath, kept faint so it never competes. -->
+  <g opacity="0.45">
+    <rect x="152" y="152" width="616" height="286" rx="14" fill="#12161a" stroke="#20262c"/>
+    <rect x="152" y="152" width="616" height="30" rx="14" fill="#1b2127"/>
+    <rect x="152" y="170" width="616" height="12" fill="#1b2127"/>
+    <g fill="#2a323a">
+      <circle cx="172" cy="167" r="4"/><circle cx="186" cy="167" r="4"/><circle cx="200" cy="167" r="4"/>
     </g>
-    <g fill="#2b3341">
-      <circle cx="170" cy="165" r="4"/><circle cx="184" cy="165" r="4"/><circle cx="198" cy="165" r="4"/>
-    </g>
-    <g fill="#1b212b">
-      <rect x="172" y="206" width="300" height="9" rx="4.5"/>
-      <rect x="172" y="228" width="420" height="9" rx="4.5"/>
-      <rect x="172" y="250" width="360" height="9" rx="4.5"/>
-      <rect x="172" y="284" width="200" height="9" rx="4.5"/>
-      <rect x="172" y="306" width="404" height="9" rx="4.5"/>
-      <rect x="172" y="328" width="330" height="9" rx="4.5"/>
-      <rect x="172" y="362" width="260" height="9" rx="4.5"/>
-      <rect x="172" y="384" width="390" height="9" rx="4.5"/>
+    <g fill="#1a2027">
+      <rect x="176" y="208" width="296" height="9" rx="4.5"/>
+      <rect x="176" y="230" width="416" height="9" rx="4.5"/>
+      <rect x="176" y="252" width="352" height="9" rx="4.5"/>
+      <rect x="176" y="286" width="204" height="9" rx="4.5"/>
+      <rect x="176" y="308" width="398" height="9" rx="4.5"/>
+      <rect x="176" y="330" width="326" height="9" rx="4.5"/>
+      <rect x="176" y="364" width="262" height="9" rx="4.5"/>
+      <rect x="176" y="386" width="384" height="9" rx="4.5"/>
     </g>
   </g>
 
-  <!-- Where the physical camera housing sits -->
-  <g opacity="0.55">
-    <rect x="370.5" y="30" width="179" height="32" fill="none" stroke="#4b5563"
-          stroke-width="1" stroke-dasharray="3 3"/>
-    <text class="lbl" x="460" y="80" text-anchor="middle" fill="#6b7480" font-size="11">
-      the physical notch — 179 × 32 pt
-      <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
-               values="1;1;0;0;1" keyTimes="0;0.13;0.17;0.93;1"/>
-    </text>
-  </g>
-
-  <g clip-path="url(#screenClip)">
-    <!-- The overlay itself. Drawn 16pt above the screen edge so only its
-         bottom corners are rounded, the way the real window is masked. -->
-    <rect id="pill" x="370.5" y="14" width="179" height="48" rx="16" fill="#000">
-      <animate attributeName="x" dur="14s" repeatCount="indefinite" calcMode="spline"
-        values="370.5;370.5;258.5;258.5;200;200;30;30;180;180;370.5;370.5"
-        keyTimes="0;0.1429;0.1679;0.3214;0.3464;0.5;0.525;0.7143;0.7393;0.9286;0.9643;1"
-        keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1"/>
-      <animate attributeName="width" dur="14s" repeatCount="indefinite" calcMode="spline"
-        values="179;179;403;403;520;520;860;860;560;560;179;179"
-        keyTimes="0;0.1429;0.1679;0.3214;0.3464;0.5;0.525;0.7143;0.7393;0.9286;0.9643;1"
-        keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1"/>
-      <animate attributeName="height" dur="14s" repeatCount="indefinite" calcMode="spline"
-        values="48;48;48;48;120;120;152;152;376;376;48;48"
-        keyTimes="0;0.1429;0.1679;0.3214;0.3464;0.5;0.525;0.7143;0.7393;0.9286;0.9643;1"
-        keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1"/>
-    </rect>
-
-    <!-- 2. Wings: the clock, and what is playing -->
-    <g opacity="0">
-      <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
-               values="0;0;1;1;0;0" keyTimes="0;0.164;0.176;0.318;0.329;1"/>
-      <text class="lbl" x="278" y="52" fill="#e8ecf1" font-size="15" font-weight="600">9:41</text>
-      <path d="M600 40 l0 12 M604 37 l0 18 M608 42 l0 8 M612 39 l0 14" stroke="#a78bfa"
-            stroke-width="2.5" stroke-linecap="round" fill="none"/>
-      <text class="lbl" x="622" y="51" fill="#c7cedb" font-size="13">Midnight City</text>
+  <g class="moving">
+    <!-- The camera housing the overlay hides inside. -->
+    <g opacity="0.5">
+      <rect x="370.5" y="30" width="179" height="32" fill="none" stroke="#454e57" stroke-dasharray="3 3"/>
+      <text class="ui" x="460" y="80" text-anchor="middle" fill="#6c757e" font-size="11">
+        the physical notch, 179 by 32 points
+        <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
+                 values="1;1;0;0;1" keyTimes="0;0.13;0.17;0.93;1"/>
+      </text>
     </g>
 
-    <!-- 3. Peek: the last few clips, after a copy -->
-    <g opacity="0">
-      <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
-               values="0;0;1;1;0;0" keyTimes="0;0.343;0.354;0.496;0.507;1"/>
-      <text class="lbl" x="216" y="52" fill="#8a93a3" font-size="11" letter-spacing="0.6">COPIED</text>
-      <g>
-        <rect x="216" y="64" width="132" height="38" rx="9" fill="#1c212a"/>
-        <text class="mono" x="228" y="87" fill="#c7cedb" font-size="11">git push origin</text>
-        <rect x="356" y="64" width="132" height="38" rx="9" fill="#1c212a"/>
-        <text class="mono" x="368" y="87" fill="#c7cedb" font-size="11">#8B7CF6</text>
-        <rect x="496" y="64" width="132" height="38" rx="9" fill="#1c212a"/>
-        <text class="mono" x="508" y="87" fill="#c7cedb" font-size="11">README.md</text>
+    <g clip-path="url(#deckClip)">
+      <!-- Drawn 18 points above the deck edge so only the bottom corners round,
+           the way the real window is masked on a notched display. -->
+      <rect x="370.5" y="12" width="179" height="50" rx="18" fill="#000">
+        <animate attributeName="x" dur="14s" repeatCount="indefinite" calcMode="spline"
+          values="370.5;370.5;272.5;272.5;200;200;30;30;180;180;370.5;370.5"
+          keyTimes="0;0.1429;0.1679;0.3214;0.3464;0.5;0.525;0.7143;0.7393;0.9286;0.9643;1"
+          keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1"/>
+        <animate attributeName="width" dur="14s" repeatCount="indefinite" calcMode="spline"
+          values="179;179;375;375;520;520;860;860;560;560;179;179"
+          keyTimes="0;0.1429;0.1679;0.3214;0.3464;0.5;0.525;0.7143;0.7393;0.9286;0.9643;1"
+          keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1"/>
+        <animate attributeName="height" dur="14s" repeatCount="indefinite" calcMode="spline"
+          values="50;50;50;50;122;122;154;154;378;378;50;50"
+          keyTimes="0;0.1429;0.1679;0.3214;0.3464;0.5;0.525;0.7143;0.7393;0.9286;0.9643;1"
+          keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1;0.16 1 0.3 1;0 0 1 1"/>
+      </rect>
+
+      <!-- Wings. Laid out from the real capture: clock left, playback right. -->
+      <g opacity="0">
+        <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
+                 values="0;0;1;1;0;0" keyTimes="0;0.164;0.176;0.318;0.329;1"/>
+        <text class="ui" x="292" y="53" fill="#f2f4f6" font-size="16" font-weight="600">2:55</text>
+        <text class="ui" x="330" y="52" fill="#6f6f6f" font-size="11" font-weight="600">PM</text>
+        <path d="M594 40 v12 M600 40 v12" stroke="#71dcce" stroke-width="3.5" stroke-linecap="round"/>
+        <text class="ui" x="612" y="52" fill="#f2f4f6" font-size="13" font-weight="500">Cheques</text>
+      </g>
+
+      <!-- A copy, or a screenshot, brings the last clips up. -->
+      <g opacity="0">
+        <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
+                 values="0;0;1;1;0;0" keyTimes="0;0.343;0.354;0.496;0.507;1"/>
+        <text class="ui" x="216" y="52" fill="#71dcce" font-size="11" font-weight="600" letter-spacing="0.7">COPIED</text>
+        <g>
+          <rect x="216" y="66" width="132" height="40" rx="10" fill="#1a1f25"/>
+          <text class="mono" x="228" y="90" fill="#c9d1da" font-size="11">git push origin</text>
+          <rect x="356" y="66" width="132" height="40" rx="10" fill="#1a1f25"/>
+          <text class="mono" x="368" y="90" fill="#c9d1da" font-size="11">#71DCCE</text>
+          <rect x="496" y="66" width="132" height="40" rx="10" fill="#1a1f25"/>
+          <text class="mono" x="508" y="90" fill="#c9d1da" font-size="11">README.md</text>
+        </g>
+      </g>
+
+      <!-- Dashboard. The chip row leaves a real gap for the camera housing. -->
+      <g opacity="0">
+        <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
+                 values="0;0;1;1;0;0" keyTimes="0;0.521;0.536;0.711;0.721;1"/>
+        <g fill="#1a1f25">
+          <rect x="48" y="38" width="78" height="24" rx="12"/>
+          <rect x="134" y="38" width="72" height="24" rx="12"/>
+          <rect x="214" y="38" width="62" height="24" rx="12"/>
+          <rect x="284" y="38" width="70" height="24" rx="12"/>
+          <rect x="566" y="38" width="62" height="24" rx="12"/>
+          <rect x="636" y="38" width="76" height="24" rx="12"/>
+          <rect x="720" y="38" width="62" height="24" rx="12"/>
+          <rect x="790" y="38" width="72" height="24" rx="12"/>
+        </g>
+        <g class="ui" fill="#aab3bd" font-size="10.5" text-anchor="middle">
+          <text x="87" y="54">Dashboard</text>
+          <text x="170" y="54">Calendar</text>
+          <text x="245" y="54">Todo</text>
+          <text x="319" y="54">Pomodoro</text>
+          <text x="597" y="54">Media</text>
+          <text x="674" y="54">Clipboard</text>
+          <text x="751" y="54">Focus</text>
+          <text x="826" y="54">Battery</text>
+        </g>
+        <g>
+          <rect x="48" y="76" width="186" height="66" rx="12" fill="#161b21"/>
+          <text class="ui" x="64" y="105" fill="#f2f4f6" font-size="24" font-weight="600">2:55</text>
+          <text class="ui" x="64" y="126" fill="#79828c" font-size="11">Wednesday, 26 August</text>
+
+          <rect x="246" y="76" width="186" height="66" rx="12" fill="#161b21"/>
+          <text class="ui" x="262" y="99" fill="#79828c" font-size="10.5" letter-spacing="0.5">NEXT UP</text>
+          <text class="ui" x="262" y="120" fill="#f2f4f6" font-size="13">Design review, 20 min</text>
+
+          <rect x="444" y="76" width="186" height="66" rx="12" fill="#161b21"/>
+          <text class="ui" x="460" y="99" fill="#79828c" font-size="10.5" letter-spacing="0.5">NOW PLAYING</text>
+          <path d="M462 112 v10 M468 109 v16 M474 114 v6 M480 110 v14" stroke="#71dcce"
+                stroke-width="3" stroke-linecap="round" fill="none"/>
+          <text class="ui" x="492" y="123" fill="#c9d1da" font-size="12">Cheques</text>
+
+          <rect x="642" y="76" width="186" height="66" rx="12" fill="#161b21"/>
+          <text class="ui" x="658" y="99" fill="#79828c" font-size="10.5" letter-spacing="0.5">BATTERY</text>
+          <rect x="658" y="108" width="120" height="10" rx="5" fill="#232a31"/>
+          <rect x="658" y="108" width="94" height="10" rx="5" fill="#71dcce"/>
+          <text class="ui" x="788" y="117" fill="#c9d1da" font-size="11">78%</text>
+        </g>
+      </g>
+
+      <!-- Clipboard picker. -->
+      <g opacity="0">
+        <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
+                 values="0;0;1;1;0;0" keyTimes="0;0.736;0.754;0.925;0.936;1"/>
+        <text class="ui" x="204" y="90" fill="#79828c" font-size="11" letter-spacing="0.7">CLIPBOARD HISTORY</text>
+        <g>
+          <rect x="196" y="102" width="528" height="42" rx="10" fill="#1a1f25"/>
+          <rect x="208" y="114" width="18" height="18" rx="5" fill="#71dcce"/>
+          <text class="ui" x="217" y="127" fill="#0e1113" font-size="11" font-weight="700" text-anchor="middle">1</text>
+          <text class="mono" x="238" y="128" fill="#e3e9ef" font-size="12">git push origin main</text>
+
+          <rect x="196" y="152" width="528" height="42" rx="10" fill="#161b21"/>
+          <rect x="208" y="164" width="18" height="18" rx="5" fill="#39424b"/>
+          <text class="ui" x="217" y="177" fill="#c9d1da" font-size="11" font-weight="700" text-anchor="middle">2</text>
+          <text class="mono" x="238" y="178" fill="#aab3bd" font-size="12">Screenshot 2026-08-26.png</text>
+
+          <rect x="196" y="202" width="528" height="42" rx="10" fill="#161b21"/>
+          <rect x="208" y="214" width="18" height="18" rx="5" fill="#39424b"/>
+          <text class="ui" x="217" y="227" fill="#c9d1da" font-size="11" font-weight="700" text-anchor="middle">3</text>
+          <text class="mono" x="238" y="228" fill="#aab3bd" font-size="12">#71DCCE</text>
+
+          <rect x="196" y="252" width="528" height="42" rx="10" fill="#161b21"/>
+          <rect x="208" y="264" width="18" height="18" rx="5" fill="#39424b"/>
+          <text class="ui" x="217" y="277" fill="#c9d1da" font-size="11" font-weight="700" text-anchor="middle">4</text>
+          <text class="mono" x="238" y="278" fill="#aab3bd" font-size="12">swift build -c release</text>
+
+          <rect x="196" y="302" width="528" height="42" rx="10" fill="#161b21"/>
+          <rect x="208" y="314" width="18" height="18" rx="5" fill="#39424b"/>
+          <text class="ui" x="217" y="327" fill="#c9d1da" font-size="11" font-weight="700" text-anchor="middle">5</text>
+          <text class="mono" x="238" y="328" fill="#aab3bd" font-size="12">README.md</text>
+        </g>
+        <text class="ui" x="460" y="368" fill="#6c757e" font-size="11" text-anchor="middle">press 1 to 5 to paste, esc to close</text>
       </g>
     </g>
 
-    <!-- 4. Dashboard. The chip row leaves a gap for the camera housing. -->
-    <g opacity="0">
-      <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
-               values="0;0;1;1;0;0" keyTimes="0;0.521;0.536;0.711;0.721;1"/>
-      <g fill="#1c212a">
-        <rect x="46" y="38" width="74" height="24" rx="12"/>
-        <rect x="128" y="38" width="74" height="24" rx="12"/>
-        <rect x="210" y="38" width="74" height="24" rx="12"/>
-        <rect x="292" y="38" width="62" height="24" rx="12"/>
+    <g class="ui" text-anchor="middle">
+      <g opacity="0">
+        <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
+                 values="1;1;0;0;1" keyTimes="0;0.12;0.15;0.955;1"/>
+        <text class="cap" x="460" y="470">At rest, it <tspan fill="#71dcce">is</tspan> the notch</text>
+      </g>
+      <g opacity="0">
+        <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
+                 values="0;0;1;1;0;0" keyTimes="0;0.164;0.176;0.318;0.329;1"/>
+        <text class="cap" x="460" y="470">Wings for the clock and what is playing</text>
+      </g>
+      <g opacity="0">
+        <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
+                 values="0;0;1;1;0;0" keyTimes="0;0.343;0.354;0.496;0.507;1"/>
+        <text class="cap" x="460" y="470">Copy or screenshot, the clips come to you</text>
+      </g>
+      <g opacity="0">
+        <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
+                 values="0;0;1;1;0;0" keyTimes="0;0.521;0.536;0.711;0.721;1"/>
+        <text class="cap" x="460" y="470">Hover for the full dashboard</text>
+      </g>
+      <g opacity="0">
+        <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
+                 values="0;0;1;1;0;0" keyTimes="0;0.736;0.754;0.925;0.936;1"/>
+        <text class="cap" x="460" y="470">Tap <tspan fill="#71dcce">N</tspan> twice for clipboard history</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Held still for readers who have asked for reduced motion. -->
+  <g class="still">
+    <g clip-path="url(#deckClip)">
+      <rect x="30" y="12" width="860" height="154" rx="18" fill="#000"/>
+      <g fill="#1a1f25">
+        <rect x="48" y="38" width="78" height="24" rx="12"/>
+        <rect x="134" y="38" width="72" height="24" rx="12"/>
+        <rect x="214" y="38" width="62" height="24" rx="12"/>
+        <rect x="284" y="38" width="70" height="24" rx="12"/>
         <rect x="566" y="38" width="62" height="24" rx="12"/>
-        <rect x="636" y="38" width="74" height="24" rx="12"/>
-        <rect x="718" y="38" width="74" height="24" rx="12"/>
-        <rect x="800" y="38" width="62" height="24" rx="12"/>
+        <rect x="636" y="38" width="76" height="24" rx="12"/>
+        <rect x="720" y="38" width="62" height="24" rx="12"/>
+        <rect x="790" y="38" width="72" height="24" rx="12"/>
       </g>
-      <g class="lbl" fill="#aeb7c4" font-size="10.5" text-anchor="middle">
-        <text x="83" y="54">Dashboard</text>
-        <text x="165" y="54">Calendar</text>
-        <text x="247" y="54">Reminders</text>
-        <text x="323" y="54">Timer</text>
+      <g class="ui" fill="#aab3bd" font-size="10.5" text-anchor="middle">
+        <text x="87" y="54">Dashboard</text>
+        <text x="170" y="54">Calendar</text>
+        <text x="245" y="54">Todo</text>
+        <text x="319" y="54">Pomodoro</text>
         <text x="597" y="54">Media</text>
-        <text x="673" y="54">Clipboard</text>
-        <text x="755" y="54">Focus</text>
-        <text x="831" y="54">Battery</text>
+        <text x="674" y="54">Clipboard</text>
+        <text x="751" y="54">Focus</text>
+        <text x="826" y="54">Battery</text>
       </g>
-      <g>
-        <rect x="46" y="74" width="188" height="68" rx="12" fill="#161b23"/>
-        <text class="lbl" x="62" y="103" fill="#e8ecf1" font-size="24" font-weight="600">9:41</text>
-        <text class="lbl" x="62" y="124" fill="#7d8695" font-size="11">Tuesday, 26 August</text>
-
-        <rect x="246" y="74" width="188" height="68" rx="12" fill="#161b23"/>
-        <text class="lbl" x="262" y="97" fill="#7d8695" font-size="10.5" letter-spacing="0.5">NEXT UP</text>
-        <text class="lbl" x="262" y="118" fill="#e8ecf1" font-size="13">Design review · 20 min</text>
-
-        <rect x="446" y="74" width="188" height="68" rx="12" fill="#161b23"/>
-        <text class="lbl" x="462" y="97" fill="#7d8695" font-size="10.5" letter-spacing="0.5">CLIPBOARD</text>
-        <rect x="462" y="106" width="72" height="22" rx="7" fill="#232a35"/>
-        <rect x="542" y="106" width="72" height="22" rx="7" fill="#232a35"/>
-
-        <rect x="646" y="74" width="188" height="68" rx="12" fill="#161b23"/>
-        <text class="lbl" x="662" y="97" fill="#7d8695" font-size="10.5" letter-spacing="0.5">BATTERY</text>
-        <rect x="662" y="106" width="120" height="10" rx="5" fill="#232a35"/>
-        <rect x="662" y="106" width="94" height="10" rx="5" fill="url(#accent)"/>
-        <text class="lbl" x="792" y="115" fill="#c7cedb" font-size="11">78%</text>
-      </g>
+      <rect x="48" y="76" width="186" height="66" rx="12" fill="#161b21"/>
+      <text class="ui" x="64" y="105" fill="#f2f4f6" font-size="24" font-weight="600">2:55</text>
+      <text class="ui" x="64" y="126" fill="#79828c" font-size="11">Wednesday, 26 August</text>
+      <rect x="246" y="76" width="186" height="66" rx="12" fill="#161b21"/>
+      <text class="ui" x="262" y="99" fill="#79828c" font-size="10.5" letter-spacing="0.5">NEXT UP</text>
+      <text class="ui" x="262" y="120" fill="#f2f4f6" font-size="13">Design review, 20 min</text>
+      <rect x="444" y="76" width="186" height="66" rx="12" fill="#161b21"/>
+      <text class="ui" x="460" y="99" fill="#79828c" font-size="10.5" letter-spacing="0.5">NOW PLAYING</text>
+      <path d="M462 112 v10 M468 109 v16 M474 114 v6 M480 110 v14" stroke="#71dcce"
+            stroke-width="3" stroke-linecap="round" fill="none"/>
+      <text class="ui" x="492" y="123" fill="#c9d1da" font-size="12">Cheques</text>
+      <rect x="642" y="76" width="186" height="66" rx="12" fill="#161b21"/>
+      <text class="ui" x="658" y="99" fill="#79828c" font-size="10.5" letter-spacing="0.5">BATTERY</text>
+      <rect x="658" y="108" width="120" height="10" rx="5" fill="#232a31"/>
+      <rect x="658" y="108" width="94" height="10" rx="5" fill="#71dcce"/>
+      <text class="ui" x="788" y="117" fill="#c9d1da" font-size="11">78%</text>
     </g>
-
-    <!-- 5. Clipboard picker -->
-    <g opacity="0">
-      <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
-               values="0;0;1;1;0;0" keyTimes="0;0.736;0.754;0.925;0.936;1"/>
-      <text class="lbl" x="204" y="88" fill="#8a93a3" font-size="11" letter-spacing="0.6">CLIPBOARD HISTORY</text>
-      <g>
-        <rect x="196" y="100" width="528" height="42" rx="10" fill="#1c212a"/>
-        <rect x="208" y="112" width="18" height="18" rx="5" fill="url(#accent)"/>
-        <text class="lbl" x="217" y="125" fill="#0d1015" font-size="11" font-weight="700" text-anchor="middle">1</text>
-        <text class="mono" x="238" y="126" fill="#dbe2ec" font-size="12">git push origin main</text>
-
-        <rect x="196" y="150" width="528" height="42" rx="10" fill="#161b23"/>
-        <rect x="208" y="162" width="18" height="18" rx="5" fill="#3a4351"/>
-        <text class="lbl" x="217" y="175" fill="#c7cedb" font-size="11" font-weight="700" text-anchor="middle">2</text>
-        <text class="mono" x="238" y="176" fill="#aeb7c4" font-size="12">https://notchhub.local</text>
-
-        <rect x="196" y="200" width="528" height="42" rx="10" fill="#161b23"/>
-        <rect x="208" y="212" width="18" height="18" rx="5" fill="#3a4351"/>
-        <text class="lbl" x="217" y="225" fill="#c7cedb" font-size="11" font-weight="700" text-anchor="middle">3</text>
-        <text class="mono" x="238" y="226" fill="#aeb7c4" font-size="12">#8B7CF6</text>
-
-        <rect x="196" y="250" width="528" height="42" rx="10" fill="#161b23"/>
-        <rect x="208" y="262" width="18" height="18" rx="5" fill="#3a4351"/>
-        <text class="lbl" x="217" y="275" fill="#c7cedb" font-size="11" font-weight="700" text-anchor="middle">4</text>
-        <text class="mono" x="238" y="276" fill="#aeb7c4" font-size="12">swift build -c release</text>
-
-        <rect x="196" y="300" width="528" height="42" rx="10" fill="#161b23"/>
-        <rect x="208" y="312" width="18" height="18" rx="5" fill="#3a4351"/>
-        <text class="lbl" x="217" y="325" fill="#c7cedb" font-size="11" font-weight="700" text-anchor="middle">5</text>
-        <text class="mono" x="238" y="326" fill="#aeb7c4" font-size="12">README.md</text>
-      </g>
-      <text class="lbl" x="460" y="366" fill="#6b7480" font-size="11" text-anchor="middle">press 1–5 to paste · esc to close</text>
-    </g>
-  </g>
-
-  <!-- Captions -->
-  <g class="lbl" text-anchor="middle" font-size="15">
-    <g opacity="0">
-      <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
-               values="1;1;0;0;1" keyTimes="0;0.12;0.15;0.955;1"/>
-      <text x="460" y="470" fill="#e8ecf1" font-weight="600">At rest, it <tspan fill="#a78bfa">is</tspan> the notch</text>
-    </g>
-    <g opacity="0">
-      <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
-               values="0;0;1;1;0;0" keyTimes="0;0.164;0.176;0.318;0.329;1"/>
-      <text x="460" y="470" fill="#e8ecf1" font-weight="600">Wings for the clock and what's playing</text>
-    </g>
-    <g opacity="0">
-      <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
-               values="0;0;1;1;0;0" keyTimes="0;0.343;0.354;0.496;0.507;1"/>
-      <text x="460" y="470" fill="#e8ecf1" font-weight="600">Copy something — the last clips appear</text>
-    </g>
-    <g opacity="0">
-      <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
-               values="0;0;1;1;0;0" keyTimes="0;0.521;0.536;0.711;0.721;1"/>
-      <text x="460" y="470" fill="#e8ecf1" font-weight="600">Hover for the full dashboard</text>
-    </g>
-    <g opacity="0">
-      <animate attributeName="opacity" dur="14s" repeatCount="indefinite"
-               values="0;0;1;1;0;0" keyTimes="0;0.736;0.754;0.925;0.936;1"/>
-      <text x="460" y="470" fill="#e8ecf1" font-weight="600">Tap <tspan fill="#a78bfa">N</tspan> twice for clipboard history</text>
-    </g>
+    <text class="ui cap" x="460" y="470" text-anchor="middle">The notch, opened into a dashboard</text>
   </g>
 </svg>
