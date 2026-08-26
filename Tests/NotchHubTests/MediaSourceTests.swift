@@ -127,23 +127,63 @@ struct MediaRemoteAdapterSourceTests {
         #expect(launcher.state.launches.count == launchesWhileGivingUp)
     }
 
-    /// A stream that produces data is healthy again, however badly it started.
+    /// A run that lasted is healthy again, however badly it started.
     @Test
-    func aWorkingRunClearsTheCrashCount() async {
+    func aRunThatLastsClearsTheCrashCount() async {
         let launcher = FakeLauncher()
         let schedule = Schedule()
-        let source = makeSource(launcher, schedule: schedule)
+        let clock = FakeClock()
+        let source = makeSource(launcher, schedule: schedule, clock: clock)
 
         source.start()
         await settle()
         launcher.emit(.exited(status: 1))
         await settle()
-        launcher.emit(.line(trackLine(title: "Teardrop", playing: true)))
+        clock.advance(MediaRemoteAdapterSource.stabilityWindow + 1)
         launcher.emit(.exited(status: 1))
         await settle()
 
         #expect(schedule.delays == [1, 1])
         #expect(source.isUnavailable == false)
+    }
+
+    /// Speaking is not the same as surviving. The adapter's output is drained
+    /// on the way out, so a process that prints one good line and dies used to
+    /// clear the crash count on its way down — the ceiling was never reached
+    /// and the relaunch loop ran for the rest of the session, flapping the
+    /// now-playing state a second at a time.
+    @Test
+    func aCrashLoopThatKeepsTalkingStillGivesUp() async {
+        let launcher = FakeLauncher()
+        let clock = FakeClock()
+        let source = makeSource(launcher, clock: clock)
+
+        source.start()
+        await settle()
+        for index in 0 ..< MediaRemoteAdapterSource.maximumConsecutiveFailures {
+            launcher.emit(.line(trackLine(title: "Track \(index)", playing: true)))
+            clock.advance(1)
+            launcher.emit(.exited(status: 1))
+            await settle()
+        }
+
+        #expect(source.isUnavailable)
+        #expect(source.nowPlaying == nil)
+    }
+
+    /// The streak rule itself: survive the window and this exit starts a fresh
+    /// streak; die inside it and the exit extends the streak it belongs to.
+    @Test
+    func onlyALastingRunResetsTheStreak() {
+        let window = MediaRemoteAdapterSource.stabilityWindow
+        #expect(MediaRemoteAdapterSource.failures(
+            afterExitWithUptime: window + 1,
+            previousFailures: 4
+        ) == 1)
+        #expect(MediaRemoteAdapterSource.failures(
+            afterExitWithUptime: 1,
+            previousFailures: 4
+        ) == 5)
     }
 
     /// A launch that throws is a failure like any other, not a silent no-op
@@ -206,7 +246,8 @@ struct MediaRemoteAdapterSourceTests {
 
     private func makeSource(
         _ launcher: FakeLauncher,
-        schedule: Schedule = Schedule()
+        schedule: Schedule = Schedule(),
+        clock: FakeClock = FakeClock()
     ) -> MediaRemoteAdapterSource {
         MediaRemoteAdapterSource(
             launcher: launcher,
@@ -214,7 +255,8 @@ struct MediaRemoteAdapterSourceTests {
                 schedule.delays.append(delay)
                 work()
             },
-            resolveApp: { bundleId, _ in MediaApp(name: "Test Player", bundleId: bundleId) }
+            resolveApp: { bundleId, _ in MediaApp(name: "Test Player", bundleId: bundleId) },
+            now: { clock.now }
         )
     }
 
