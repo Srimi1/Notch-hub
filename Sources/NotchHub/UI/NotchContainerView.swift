@@ -26,6 +26,7 @@ struct NotchContainerView: View {
                     time: viewModel.services.time,
                     coordinator: viewModel.services.activityCoordinator,
                     battery: viewModel.services.battery,
+                    media: viewModel.services.media,
                     warningPercent: viewModel.services.activityPreferences.batteryWarningPercent,
                     wingWidth: viewModel.collapsedWingWidth,
                     wingPadding: viewModel.collapsedWingPadding
@@ -46,6 +47,7 @@ private struct CollapsedStripView: View {
     @ObservedObject var time: TimeService
     @Bindable var coordinator: ActivityCoordinator
     @ObservedObject var battery: BatteryService
+    @ObservedObject var media: MediaService
     let warningPercent: Int
     let wingWidth: CGFloat
     let wingPadding: CGFloat
@@ -58,6 +60,7 @@ private struct CollapsedStripView: View {
             ActivityWingView(
                 activity: coordinator.currentActivity,
                 battery: battery,
+                media: media,
                 warningPercent: warningPercent
             )
             .frame(width: wingWidth, alignment: .trailing)
@@ -83,9 +86,15 @@ private struct ClockWingView: View {
 }
 
 private struct ActivityWingView: View {
+    /// The pill is only 32pt tall on a display with no notch, so this is the
+    /// safe ceiling rather than a taste call. It leaves the title around 85 of
+    /// the wing's 112 points, which still truncates tidily.
+    static let astronautSide: CGFloat = 22
+
     let activity: ActivitySnapshot?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var battery: BatteryService
+    @ObservedObject var media: MediaService
     let warningPercent: Int
 
     /// Nothing to say means nothing to draw. The strip appears on a published
@@ -114,15 +123,22 @@ private struct ActivityWingView: View {
         if activity?.kind == .battery {
             BatteryGlyphView(level: battery.level, state: batteryState, height: 11)
         } else if activity?.kind == .media {
-            // Playing music gets a heartbeat — a slow breathing scale, no timers.
-            Image(systemName: activity?.symbol ?? "waveform")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(ActivityKind.media.tint)
-                .phaseAnimator([1.0, 1.12]) { view, scale in
-                    view.scaleEffect(reduceMotion ? 1 : scale)
-                } animation: { _ in
-                    .easeInOut(duration: 0.8)
-                }
+            // The astronaut listens along here rather than only inside the
+            // dashboard's Media panel, which is the one place it used to live
+            // and the one place nobody is looking while they are just playing
+            // music. It brings its own motion, so the breathing scale the
+            // symbol used to do would only fight it.
+            //
+            // Play state comes from the service, not from `activity.symbol`:
+            // the snapshot carries no such flag and encodes it in the symbol
+            // name, which is a display detail and a poor thing to branch on.
+            MediaAstronautView(
+                isPlaying: media.isPlaying,
+                ink: .white,
+                cropsToFigure: true,
+                fallbackSymbol: activity?.symbol ?? "waveform"
+            )
+            .frame(width: Self.astronautSide, height: Self.astronautSide)
         } else {
             Image(systemName: activity?.symbol ?? "circle")
                 .font(.system(size: 11, weight: .bold))
