@@ -56,8 +56,12 @@ and interface continue to mature before 1.0.
   file rather than one for the gesture.
 - Fixed the dashboard's clipboard tiles trying to paste into the notch itself.
   They copy, and say so.
-- Fixed the pointer being reported as having left the notch during a resize,
-  which could collapse the panel in the middle of expanding it.
+- Fixed the notch flickering open and shut under a stationary pointer, which
+  left it unusable while it lasted. Resizing the overlay rebuilds its tracking
+  area, and AppKit reports the pointer as having left even though it has not
+  moved; the collapse that caused was undone the moment it finished, and the
+  cycle repeated. Enter and exit are now ignored while the frame is moving, and
+  the hover state is reconciled from the pointer's real position once it stops.
 
 ## [0.3.3] - 2026-08-26
 
