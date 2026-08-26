@@ -4,6 +4,31 @@ Notable user-facing changes are recorded here. NotchHub follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while the public API
 and interface continue to mature before 1.0.
 
+## [0.5.0] - 2026-08-26
+
+### Added
+
+- Screenshots can now be put on the clipboard automatically. Take one the way
+  you always do and it is waiting for ⌘V, with the usual copy popup and an
+  entry in the clipboard history. It is off until you switch it on in Settings,
+  because switching it on is what asks macOS for access to the folder your
+  screenshots are saved in — NotchHub watches that one folder, follows it if you
+  move it, and only ever opens a file macOS has already marked as a screen
+  capture, so a document you saved to your Desktop is never touched. Screen
+  recordings are left alone. There is a second switch, off by default, that
+  moves the file to the Trash once its picture is safely copied. Note that with
+  the floating screenshot preview turned on, macOS does not write the file until
+  that preview fades, so the copy lands a few seconds after the shutter.
+- The Media panel has an astronaut in it, listening to music while you do.
+
+### Fixed
+
+- Fixed copied images being kept at full resolution for a preview drawn 44
+  points wide. The clipboard's file previews had always been asked for at 72
+  points, but a copied bitmap was decoded and held whole, so a handful of Retina
+  screenshots in the twelve-entry history could leave NotchHub holding hundreds
+  of megabytes. Previews are now bounded as they are decoded.
+
 ## [0.4.0] - 2026-08-26
 
 ### Added

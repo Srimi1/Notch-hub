@@ -31,6 +31,7 @@ in-app HTTP client. Its runtime data comes from local macOS APIs and application
 | Apple Music or Spotify | Track metadata and transport state | A scan of a running player can trigger the macOS Automation prompt |
 | Focus / Do Not Disturb | Best-effort state and an on-demand toggle | The toggle needs manually granted Accessibility; an existing Full Disk Access grant can improve the state read |
 | Clipboard | In-memory text, image, and file history | Pasteboard reads require no prompt; protected-file metadata and thumbnails are skipped when Full Disk Access is unavailable |
+| Screenshot folder | The newest screenshot, so its picture can be placed on the clipboard | Off by default; the folder prompt is raised only by the Settings switch, and only files macOS has tagged `kMDItemIsScreenCapture` are opened |
 | Battery and system counters | Battery, CPU, RAM, and disk sampling | No permission required |
 
 Hiding Clipboard, Calendar, Reminders, or Media stops the corresponding polling
@@ -41,7 +42,8 @@ refresh.
 
 | Destination | Change |
 | --- | --- |
-| `UserDefaults` | Module visibility, Next Up settings, popup settings, timer records, and one-time migration flags |
+| `UserDefaults` | Module visibility, Next Up settings, popup settings, screenshot copying and its allowed folders, timer records, and one-time migration flags |
+| Screenshot folder | Nothing, unless **Move the file to the Trash after copying** is switched on — and then only `trashItem`, which is recoverable, and only after the picture has reached the pasteboard |
 | EventKit | Marks a reminder complete only after the user chooses that action |
 | `UNUserNotificationCenter` | Schedules a local notification for a timer the user started |
 | `SMAppService` | Registers or unregisters Launch at Login; registration is attempted once on first run and remains user-controlled afterward |

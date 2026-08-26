@@ -16,6 +16,8 @@ supplies local state to both interfaces.
 | Activity ranking | [`ActivitySnapshotFactory.swift`](../Sources/NotchHub/Core/ActivitySnapshotFactory.swift), [`ActivityCoordinator.swift`](../Sources/NotchHub/Core/ActivityCoordinator.swift) |
 | Dashboard and Settings | [`ExpandedDashboardView.swift`](../Sources/NotchHub/UI/ExpandedDashboardView.swift), [`SettingsRootView.swift`](../Sources/NotchHub/UI/SettingsRootView.swift) |
 | External-input checks | [`UntrustedInput.swift`](../Sources/NotchHub/Core/UntrustedInput.swift), [`EventKitAccess.swift`](../Sources/NotchHub/Core/EventKitAccess.swift) |
+| Screenshot auto-copy | `Sources/NotchHub/Services/Screenshots/*` — [`ScreenshotService.swift`](../Sources/NotchHub/Services/Screenshots/ScreenshotService.swift) orchestrates, [`DirectoryWatcher.swift`](../Sources/NotchHub/Services/Screenshots/DirectoryWatcher.swift) owns the descriptor |
+| Bundled animation | [`AnimationLocator.swift`](../Sources/NotchHub/Core/AnimationLocator.swift), [`MediaModuleView.swift`](../Sources/NotchHub/UI/MediaModuleView.swift) |
 
 ## Runtime ownership
 
@@ -92,6 +94,7 @@ service instead of merely hiding its view.
 | Reminders | App launch when Todo is visible | Authorization check and EventKit refresh every 60 seconds | Yes |
 | Calendar | First interaction when Calendar is visible | EventKit every 60 seconds plus store-change notifications | Yes |
 | Media | First interaction when Media is visible | AppleScript query of running Music or Spotify every 2 seconds | Yes |
+| Screenshot watch | When switched on in Settings, and only for a folder already allowed | A directory event source, plus a 30-second reconcile that re-reads the save location | No — it follows its own switch, not a module |
 
 Calendar and Reminder refreshes re-read authorization without prompting. Their
 access requests are separate operations invoked only from explicit **Enable**
@@ -179,6 +182,20 @@ pasteboard items are ignored. Without Full Disk Access, NotchHub avoids metadata
 and Quick Look reads for file URLs inside Desktop, Documents, Downloads, and
 iCloud Drive.
 
+Screenshot auto-copy is the one feature that deliberately reaches into a
+TCC-protected folder, so it is arranged so the prompt can only ever follow a
+deliberate act. It is off by default; the switch in Settings is what opens the
+folder and therefore what raises the macOS Files-and-Folders dialog; the grant
+is recorded per folder, and the watcher arms only on a folder already in that
+list. Folder access has no status API, so the state is probed by opening the
+folder — off the main actor, because that call blocks until the dialog is
+answered and the notch panel is always on screen. A file is opened only once
+macOS has tagged it `kMDItemIsScreenCapture`; the tag, not the filename, is the
+classifier, because screenshot filenames are localized and contain a narrow
+no-break space. The descriptor behind the watch has one owning queue and one
+close site, per the descriptor-ownership rule, and its suite runs under the
+thread sanitizer.
+
 Focus toggles Do Not Disturb through Accessibility-driven Control Center scripting.
 Its state begins with a best-effort read of the protected Do Not Disturb assertions
 file, so it can be stale when Full Disk Access is unavailable or another app
@@ -190,8 +207,12 @@ See [`SECURITY.md`](../SECURITY.md) for the complete access and reporting policy
 
 `Package.swift` defines one macOS 14 executable target and one test target. The
 manifest uses Swift tools 5.9 while strict-concurrency migration remains in
-progress. SwiftFormat and SwiftLint are development dependencies; the executable
-has no third-party runtime package.
+progress. SwiftFormat and SwiftLint are development dependencies.
+The executable has exactly one third-party runtime package — Lottie, linked
+statically, used to play the bundled animation as authored. The
+strict-concurrency count reported by `scripts/check.sh` is scoped to
+`Sources/NotchHub` so it stays a measure of this project's migration debt
+rather than its dependency's.
 
 ```bash
 swift build
@@ -211,6 +232,7 @@ tests for pushes and pull requests targeting `main`.
 | --- | --- |
 | Add a module | Extend `FeatureModule`, add a concrete SwiftUI view and exhaustive dispatch case, decide default visibility, and test preference restoration. |
 | Add a service | Define isolation and lifecycle, construct it in `ServiceHub`, forward changes, stop owned work, and surface typed errors. |
+| Touch a file descriptor | Give it one owning queue and one close site, state the invariant in the file header, and add its suite to gate 7 of `scripts/check.sh`. |
 | Add an activity source | Extend `ActivityKind`, create bounded snapshots, wire refresh and action routing, expose preferences, and add ranking tests. |
 | Accept external text or URLs | Define the exact trust boundary, reuse or extend the central validation types, and add hostile-input tests. |
 | Add a permission | Keep prompting behind an explicit user action where macOS permits it, provide recovery guidance, and update `SECURITY.md`. |
