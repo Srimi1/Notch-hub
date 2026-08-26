@@ -67,6 +67,34 @@ struct PolishedNotchGeometryTests {
         #expect(compact.width == 660)
         #expect(compact.height == 136)
     }
+
+    /// Each wing needs its outer padding as well as its own width, or the ends
+    /// of the clock and the activity label sit under the camera housing.
+    @Test
+    @MainActor
+    func collapsedWidthBudgetsBothWingsAndTheirPadding() {
+        let wide = NotchWindowController.collapsedWidth(
+            notchWidth: 179,
+            showWings: true,
+            wingWidth: 112,
+            wingPadding: 12
+        )
+        #expect(wide == CGFloat(179 + (112 + 12) * 2))
+    }
+
+    /// Without an activity the pill is the bare notch — anything wider is an
+    /// empty black slab, because nothing is drawn in the extra space.
+    @Test
+    @MainActor
+    func collapsedWidthWithoutWingsIsTheBareNotch() {
+        let narrow = NotchWindowController.collapsedWidth(
+            notchWidth: 179,
+            showWings: false,
+            wingWidth: 112,
+            wingPadding: 12
+        )
+        #expect(narrow == 179)
+    }
 }
 
 @Suite("Polished Navigation and Settings")

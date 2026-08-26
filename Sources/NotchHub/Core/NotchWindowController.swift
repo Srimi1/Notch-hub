@@ -126,10 +126,15 @@ final class NotchWindowController {
         viewModel.$showCollapsedWings
             .removeDuplicates()
             .dropFirst()
-            .sink { [weak self] _ in
+            .sink { [weak self] wings in
                 guard let self, !self.viewModel.isExpanded,
                       self.viewModel.hudContent == nil else { return }
-                self.animateFrame(tier: .collapsed)
+                // Size the pill from the value being published, not from the
+                // property: @Published emits in willSet, so re-reading it here
+                // returns the *previous* state. The frame ran one transition
+                // behind — widening for wings just as they went away, which
+                // left an oversized pill with nothing in it.
+                self.animateFrame(tier: .collapsed, showWings: wings)
             }
             .store(in: &cancellables)
     }
@@ -137,7 +142,7 @@ final class NotchWindowController {
     // MARK: - Public
 
     func show() {
-        panel.setFrame(collapsedFrame(), display: true)
+        panel.setFrame(collapsedFrame(showWings: viewModel.showCollapsedWings), display: true)
         panel.claimInteractionLayer()
         panel.yieldToPeerOverlays()
     }
@@ -171,10 +176,10 @@ final class NotchWindowController {
 
     // MARK: - Frame animation
 
-    private func animateFrame(tier: Tier) {
+    private func animateFrame(tier: Tier, showWings: Bool? = nil) {
         let target: NSRect
         switch tier {
-        case .collapsed: target = collapsedFrame()
+        case .collapsed: target = collapsedFrame(showWings: showWings ?? viewModel.showCollapsedWings)
         case .hud: target = hudFrame()
         case .picker: target = pickerFrame()
         case .expanded: target = expandedFrame()
@@ -214,14 +219,30 @@ final class NotchWindowController {
 
     // MARK: - Frames (top-centered on the active screen)
 
-    private func collapsedFrame() -> NSRect {
+    private func collapsedFrame(showWings: Bool) -> NSRect {
         var size = geometry.notchSize
-        if viewModel.showCollapsedWings {
-            // Symmetric wings keep the black notch body centered over the
-            // physical camera housing.
-            size.width += viewModel.collapsedWingWidth * 2
-        }
+        size.width = Self.collapsedWidth(
+            notchWidth: size.width,
+            showWings: showWings,
+            wingWidth: viewModel.collapsedWingWidth,
+            wingPadding: viewModel.collapsedWingPadding
+        )
         return Self.topCentered(size: size, on: geometry.screen)
+    }
+
+    /// Window width for the collapsed pill. Symmetric wings keep the black
+    /// body centered over the physical camera housing, and each wing needs its
+    /// outer padding as well as its own width — budgeting only the wing slid
+    /// the last few characters of the clock and the activity label under the
+    /// housing, where they cannot be read.
+    static func collapsedWidth(
+        notchWidth: CGFloat,
+        showWings: Bool,
+        wingWidth: CGFloat,
+        wingPadding: CGFloat
+    ) -> CGFloat {
+        guard showWings else { return notchWidth }
+        return notchWidth + (wingWidth + wingPadding) * 2
     }
 
     private func hudFrame() -> NSRect {

@@ -51,11 +51,17 @@ final class NotchViewModel: ObservableObject {
     /// physical camera housing.
     @Published private(set) var showCollapsedWings = false
     let collapsedWingWidth: CGFloat = 112
+    /// Outer padding on each wing. The window has to budget for it too, or the
+    /// text runs under the camera housing.
+    let collapsedWingPadding: CGFloat = 12
 
     /// Physical notch size on the active screen, published by the window
     /// controller. The expanded dashboard uses the width to leave a gap in the
     /// middle of its toggle row so buttons never hide behind the camera.
-    @Published var notchSize: CGSize = CGSize(width: 200, height: 32)
+    @Published var notchSize = CGSize(
+        width: NotchGeometry.fallbackWidth,
+        height: NotchGeometry.fallbackHeight
+    )
 
     /// Small grace period before collapsing, so brushing past the edge of the
     /// expanded panel doesn't cause it to flicker shut.
