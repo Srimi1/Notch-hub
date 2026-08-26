@@ -16,6 +16,11 @@ and interface continue to mature before 1.0.
 
 ### Fixed
 
+- Fixed now-playing updates being silently dropped when the media adapter wrote
+  a burst of output and exited: two readers raced over the same pipe, chunks
+  could interleave mid-line into JSON the parser rejected, and in the worst case
+  a read after close could crash the app. One reader now owns each pipe from
+  launch to EOF.
 - Fixed IPv6 transition addresses slipping past the meeting-link guard. NAT64,
   6to4 and IPv4-translated spellings could dress a loopback or link-local IPv4
   address up as a public IPv6 one, and a crafted invite's Join chip would have

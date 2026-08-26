@@ -39,10 +39,6 @@ extension AdapterLaunching {
 /// Runs `/usr/bin/perl <script> <framework> <arguments…>`.
 struct AdapterProcessLauncher: AdapterLaunching {
 
-    /// How many reads the exit drain will make before giving up, so a writer
-    /// that outlives the process cannot block termination forever.
-    static let drainReadLimit = 64
-
     let paths: AdapterLocator.Paths
 
     func launch(arguments: [String]) throws -> AdapterSession {
@@ -59,52 +55,74 @@ struct AdapterProcessLauncher: AdapterLaunching {
         let (stream, sink) = AsyncStream.makeStream(of: AdapterEvent.self)
         let accumulator = LineAccumulator()
 
-        output.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            for line in accumulator.append(data) { sink.yield(.line(line)) }
-        }
+        // Each descriptor has exactly one owner: a dedicated thread reads its
+        // pipe to EOF and then closes the handle it alone touched. The previous
+        // shape — readability handlers on Foundation's read source plus a drain
+        // loop in the termination handler, over the same handles — put two
+        // readers on one descriptor. Their chunks could interleave mid-line and
+        // garble the JSON, and the termination handler's close could land under
+        // an in-flight read, which raises an Objective-C exception Swift cannot
+        // catch. `.exited` waits for the reader to reach EOF *and* the status to
+        // be recorded, so it stays the last event the stream produces.
+        let exitGate = DispatchGroup()
+        let exitStatus = ExitStatusBox()
+        let outputHandle = UncheckedHandle(output.fileHandleForReading)
+        let errorHandle = UncheckedHandle(errors.fileHandleForReading)
 
-        // Upstream documents every stderr line as an error message that is only
-        // fatal if the process also exits non-zero. Log them; do not act on them.
-        errors.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { NSLog("NotchHub media adapter: %@", trimmed) }
-        }
+        exitGate.enter() // balanced by the termination handler (or the catch).
+        exitGate.enter() // balanced by the stdout reader at EOF (or the catch).
 
         process.terminationHandler = { finished in
-            output.fileHandleForReading.readabilityHandler = nil
-            errors.fileHandleForReading.readabilityHandler = nil
-
-            // Drain what is still in the pipe before closing it. A process that
-            // writes and exits immediately can be gone before the readability
-            // handler ever runs, and tearing the pipe down here would discard
-            // its output entirely — the last thing a crashing adapter said is
-            // exactly the thing worth keeping. Bounded rather than
-            // `readToEnd()`, so a lingering writer cannot wedge this thread.
-            for _ in 0 ..< Self.drainReadLimit {
-                let remaining = output.fileHandleForReading.availableData
-                if remaining.isEmpty { break }
-                for line in accumulator.append(remaining) { sink.yield(.line(line)) }
-            }
-            if let last = accumulator.flush() { sink.yield(.line(last)) }
-
-            try? output.fileHandleForReading.close()
-            try? errors.fileHandleForReading.close()
-            sink.yield(.exited(status: finished.terminationStatus))
-            sink.finish()
+            exitStatus.record(finished.terminationStatus)
+            exitGate.leave()
         }
 
         do {
             try process.run()
         } catch {
-            output.fileHandleForReading.readabilityHandler = nil
-            errors.fileHandleForReading.readabilityHandler = nil
             process.terminationHandler = nil
+            exitGate.leave() // the termination handler will not fire.
+            exitGate.leave() // the reader thread is not started below.
             sink.finish()
             throw error
+        }
+
+        Thread.detachNewThread {
+            let handle = outputHandle.value
+            while true {
+                // Blocks until the child writes or every write end is gone. The
+                // child exiting delivers the empty read, so EOF ends the loop
+                // and nothing buffered is left behind.
+                let data = handle.availableData
+                if data.isEmpty { break }
+                for line in accumulator.append(data) { sink.yield(.line(line)) }
+            }
+            try? handle.close()
+            exitGate.leave()
+        }
+
+        // Upstream documents every stderr line as an error message that is only
+        // fatal if the process also exits non-zero. Log them; do not act on
+        // them, and do not let them gate `.exited` — they carry no events.
+        Thread.detachNewThread {
+            let handle = errorHandle.value
+            while true {
+                let data = handle.availableData
+                if data.isEmpty { break }
+                guard let text = String(data: data, encoding: .utf8) else { continue }
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { NSLog("NotchHub media adapter: %@", trimmed) }
+            }
+            try? handle.close()
+        }
+
+        // Runs once the reader has seen EOF and the status is recorded, so every
+        // `.line` is already on the stream before `.exited` — consumers' `for
+        // await` loops rely on that ordering to finish cleanly.
+        exitGate.notify(queue: .global(qos: .utility)) {
+            if let last = accumulator.flush() { sink.yield(.line(last)) }
+            sink.yield(.exited(status: exitStatus.value))
+            sink.finish()
         }
 
         return AdapterSession(handle: RunningProcess(process: process), events: stream)
@@ -200,6 +218,34 @@ private final class RunningProcess: AdapterProcessHandle, @unchecked Sendable {
         NSLog("NotchHub media adapter: ignored SIGTERM, killing pid %d", process.processIdentifier)
         kill(process.processIdentifier, SIGKILL)
     }
+}
+
+/// Carries the exit status from the termination handler's queue to the block
+/// that emits `.exited`. The `DispatchGroup` provides the ordering; the lock
+/// makes the cross-thread hand-off honest under strict concurrency.
+private final class ExitStatusBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var status: Int32 = -1
+
+    func record(_ value: Int32) {
+        lock.lock()
+        defer { lock.unlock() }
+        status = value
+    }
+
+    var value: Int32 {
+        lock.lock()
+        defer { lock.unlock() }
+        return status
+    }
+}
+
+/// Hands a `FileHandle` to the one thread that owns it. `FileHandle` predates
+/// `Sendable`; this crosses the thread boundary once, at hand-off, after which
+/// exactly one thread ever touches the handle — the whole point of the change.
+private struct UncheckedHandle: @unchecked Sendable {
+    let value: FileHandle
+    init(_ value: FileHandle) { self.value = value }
 }
 
 /// Reassembles newline-delimited output from arbitrary read chunks. A single
