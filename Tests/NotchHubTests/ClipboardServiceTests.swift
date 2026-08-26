@@ -189,3 +189,169 @@ struct ClipboardServiceTests {
         #expect(clipboard.thumbnails.isEmpty)
     }
 }
+
+/// Screenshot auto-copy writes to the pasteboard on the user's behalf. These
+/// pin the one rule that makes that safe to do from a background watcher: it is
+/// announced exactly once, and never ingested back as if the user had copied it.
+@Suite("Clipboard offers")
+@MainActor
+struct ClipboardOfferTests {
+
+    private static func makeIsolated() -> (ClipboardService, NSPasteboard) {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("NotchHubTests." + UUID().uuidString))
+        return (ClipboardService(pasteboard: pasteboard), pasteboard)
+    }
+
+    /// A solid bitmap big enough to be a Retina screenshot.
+    private static func png(width: Int, height: Int) -> Data {
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+        NSColor.systemTeal.setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+        image.unlockFocus()
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let data = rep.representation(using: .png, properties: [:]) else {
+            Issue.record("Could not build a PNG fixture")
+            return Data()
+        }
+        return data
+    }
+
+    /// The whole point of the entry point: the picture reaches the pasteboard
+    /// and the copy popup fires, from one call, once.
+    @Test
+    func offeringContentWritesItAndAnnouncesItOnce() {
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
+        var announcements = 0
+        clipboard.onCopy = { _ in announcements += 1 }
+
+        clipboard.offer(.text("captured"), remember: true)
+
+        #expect(pasteboard.string(forType: .string) == "captured")
+        #expect(clipboard.clips.count == 1)
+        #expect(announcements == 1)
+    }
+
+    /// Hiding the Clipboard module is the user asking NotchHub not to keep or
+    /// show their clipboard. The copy still has to happen — that is a separate
+    /// switch they turned on — but nothing may be kept or announced.
+    @Test
+    func offeringWithoutRememberingCopiesButKeepsNothing() {
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
+        var announcements = 0
+        clipboard.onCopy = { _ in announcements += 1 }
+
+        clipboard.offer(.text("captured"), remember: false)
+
+        #expect(pasteboard.string(forType: .string) == "captured")
+        #expect(clipboard.clips.isEmpty)
+        #expect(announcements == 0)
+    }
+
+    /// The bug this pins: NotchHub's own write bumps the pasteboard generation,
+    /// so the quarter-second poller would read it back as something the user
+    /// had just copied — a second history entry and a second popup for one
+    /// screenshot. The write marks its own generation as seen.
+    @Test
+    func anOfferIsNotReadBackAgainOnTheNextTick() {
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
+        var announcements = 0
+        clipboard.onCopy = { _ in announcements += 1 }
+
+        clipboard.offer(.text("captured"), remember: true)
+        clipboard.sample()
+        clipboard.sample()
+
+        #expect(clipboard.clips.count == 1)
+        #expect(announcements == 1)
+    }
+
+    /// `copy(_:)` was rewritten onto the shared writer. It must still put the
+    /// clip on the pasteboard without recording or announcing anything.
+    @Test
+    func restoringAClipStillWritesWithoutAnnouncing() {
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
+        clipboard.add(.text("first"))
+        clipboard.add(.text("second"))
+        var announcements = 0
+        clipboard.onCopy = { _ in announcements += 1 }
+
+        clipboard.copy(clipboard.clips[1])
+
+        #expect(pasteboard.string(forType: .string) == "first")
+        #expect(clipboard.clips.count == 2)
+        #expect(announcements == 0)
+    }
+}
+
+/// Copied images are shown at 44 points and were being kept at whatever size
+/// they arrived at. These pin the bound.
+@Suite("Clipboard previews")
+@MainActor
+struct ClipboardPreviewTests {
+
+    private static func makeIsolated() -> (ClipboardService, NSPasteboard) {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("NotchHubTests." + UUID().uuidString))
+        return (ClipboardService(pasteboard: pasteboard), pasteboard)
+    }
+
+    /// A solid bitmap big enough to be a Retina screenshot.
+    private static func png(width: Int, height: Int) -> Data {
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+        NSColor.systemTeal.setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+        image.unlockFocus()
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let data = rep.representation(using: .png, properties: [:]) else {
+            Issue.record("Could not build a PNG fixture")
+            return Data()
+        }
+        return data
+    }
+
+    /// The bug this pins: image clips kept `NSImage(data:)` — the picture at
+    /// full resolution, decoded — as their "thumbnail", while file clips had
+    /// always asked QuickLook for 72 points. Harmless while people only ⌘C'd
+    /// the occasional image; with screenshots copying themselves, twelve
+    /// Retina captures in history left NotchHub holding hundreds of megabytes
+    /// for previews drawn 44 points wide.
+    @Test
+    func anImageClipKeepsABoundedPreviewRatherThanTheWholeBitmap() throws {
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
+        let data = Self.png(width: 2000, height: 1500)
+
+        clipboard.add(.image(data))
+
+        let clip = try #require(clipboard.clips.first)
+        let thumbnail = try #require(clipboard.thumbnails[clip.id])
+        let longestEdge = max(thumbnail.size.width, thumbnail.size.height)
+        #expect(longestEdge <= CGFloat(ClipboardService.thumbnailMaximumPixels))
+        #expect(longestEdge > 0)
+    }
+
+    /// Downscaling must not change the shape of the picture.
+    @Test
+    func aBoundedPreviewKeepsTheOriginalAspectRatio() throws {
+        let data = Self.png(width: 1600, height: 800)
+
+        let thumbnail = try #require(ClipboardService.thumbnail(from: data))
+        let ratio = thumbnail.size.width / max(thumbnail.size.height, 1)
+
+        #expect(abs(ratio - 2) < 0.05)
+    }
+
+    /// Bytes that are not a picture must come back as no preview rather than
+    /// throwing out through the history insert.
+    @Test
+    func contentThatIsNotAnImageProducesNoPreview() {
+        #expect(ClipboardService.thumbnail(from: Data("not a picture".utf8)) == nil)
+    }
+}

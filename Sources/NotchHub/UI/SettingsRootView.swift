@@ -19,8 +19,12 @@ struct SettingsRootView: View {
     var body: some View {
         Form {
             ModuleVisibilitySection(preferences: preferences)
-            ShortcutSection(hotKeys: hotKeys, onChange: onHotKeyChange)
+            ShortcutSection(hotKeys: hotKeys, permissions: permissions, onChange: onHotKeyChange)
             PopupSection(preferences: services.hudPreferences)
+            ScreenshotSection(
+                preferences: services.screenshotPreferences,
+                screenshots: services.screenshots
+            )
             NextUpSettingsSections(
                 preferences: services.activityPreferences,
                 reminders: services.reminders,
@@ -35,6 +39,72 @@ struct SettingsRootView: View {
         // The login-item switch can also be flipped in System Settings, and
         // macOS posts no notification when it is.
         .onAppear { launchAtLogin.refresh() }
+    }
+}
+
+// MARK: - Screenshots
+
+private struct ScreenshotSection: View {
+    @Bindable var preferences: ScreenshotPreferences
+    @Bindable var screenshots: ScreenshotService
+
+    var body: some View {
+        Section {
+            Toggle("Copy screenshots to the clipboard", isOn: $preferences.autoCopy)
+            if preferences.autoCopy {
+                LabeledContent("Watching", value: screenshots.folderName)
+                if screenshots.access == .unknown {
+                    Button("Allow access to \(screenshots.folderName)…") {
+                        screenshots.requestAccess()
+                    }
+                }
+                Toggle("Move the file to the Trash after copying", isOn: $preferences.trashAfterCopying)
+                previewDelayHint
+                status
+            }
+        } header: {
+            Text("Screenshots")
+        } footer: {
+            Text(explanation)
+        }
+    }
+
+    /// Shown only while Screenshot.app's floating preview is on, because that
+    /// is the only time the copy is slow. The toggle lives in that app's own
+    /// Options menu, so this opens it rather than pretending to change it.
+    @ViewBuilder
+    private var previewDelayHint: some View {
+        if ScreenshotPreviewHint.shouldExplainDelay(
+            showsThumbnail: ScreenshotPreviewHint.showsThumbnail()
+        ) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("The copy waits for the floating preview to fade, which takes a few seconds.")
+                    .foregroundStyle(NotchTheme.secondaryText)
+                Button("Open Screenshot…") { ScreenshotPreviewHint.openScreenshotApp() }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        if let note = screenshots.statusNote {
+            Text(note).foregroundStyle(NotchTheme.secondaryText)
+        }
+        if let failure = screenshots.lastError {
+            Text(failure).foregroundStyle(.red)
+            Button("Open Files and Folders…") { SystemSettingsPane.filesAndFolders.open() }
+        }
+    }
+
+    private var explanation: String {
+        "Every screenshot lands on the clipboard as well as in its folder, so you can paste it "
+            + "straight away without holding Control while you shoot. Turning this on is what "
+            + "asks macOS for access to that folder. NotchHub watches only that one folder, and "
+            + "only opens a file macOS has already marked as a screenshot.\n\n"
+            + "macOS writes the file when its floating preview fades, so the copy lands a few "
+            + "seconds after the shutter. Nothing is deleted unless you switch that on, and it "
+            + "goes to the Trash. Hiding the Clipboard module still leaves screenshots on the "
+            + "clipboard — it only stops NotchHub keeping them in history or announcing them."
     }
 }
 
@@ -78,7 +148,25 @@ private struct ModuleVisibilitySection: View {
 /// taken and then wonder why nothing happens.
 private struct ShortcutSection: View {
     @Bindable var hotKeys: HotKeyPreferences
+    @Bindable var permissions: PermissionCenter
     let onChange: () -> Void
+
+    /// The chord is a Carbon hot key and needs no permission; the double tap is
+    /// a global key monitor and cannot see a keystroke without Accessibility.
+    /// Switched on without it, the toggle simply does nothing, and a
+    /// requirement buried in the footer is not where anyone looks when a
+    /// gesture they just enabled fails to fire.
+    @ViewBuilder
+    private var doubleTapAccessNote: some View {
+        if hotKeys.clipPickerDoubleTapN, !permissions.status(of: .accessibility).isGranted {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("The double tap cannot see keystrokes until NotchHub has Accessibility. "
+                    + "The shortcut above keeps working without it.")
+                    .foregroundStyle(NotchTheme.secondaryText)
+                Button("Allow Accessibility…") { permissions.request(.accessibility) }
+            }
+        }
+    }
 
     var body: some View {
         Section {
@@ -93,6 +181,7 @@ private struct ShortcutSection: View {
             .disabled(!hotKeys.clipPickerEnabled)
             Toggle("Also open by tapping N twice", isOn: $hotKeys.clipPickerDoubleTapN)
                 .onChange(of: hotKeys.clipPickerDoubleTapN) { _, _ in onChange() }
+            doubleTapAccessNote
         } header: {
             Text("Shortcut")
         } footer: {

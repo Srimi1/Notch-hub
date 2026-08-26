@@ -31,10 +31,18 @@ let package = Package(
         // Prebuilt SwiftLint binary artifact (no SwiftSyntax recompile).
         .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins", from: "0.63.3"),
         .package(url: "https://github.com/nicklockwood/SwiftFormat", from: "0.59.1"),
+        // The only runtime dependency. Lottie is the reference player for
+        // Bodymovin JSON; the notch's astronaut is played by it verbatim rather
+        // than approximated. SwiftPM links it statically, so the app bundle
+        // needs no embedded framework.
+        .package(url: "https://github.com/airbnb/lottie-ios", from: "4.6.1"),
     ],
     targets: [
         .executableTarget(
             name: "NotchHub",
+            dependencies: [
+                .product(name: "Lottie", package: "lottie-ios"),
+            ],
             path: "Sources/NotchHub",
             // A stray vector database sits in the source tree and is gitignored;
             // without this SwiftPM warns about an unhandled file on every build.

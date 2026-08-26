@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ImageIO
 import QuickLookThumbnailing
 import UniformTypeIdentifiers
 
@@ -132,8 +133,35 @@ final class ClipboardService: ObservableObject {
     /// synthesize a paste can check the clip is still the one on offer.
     @discardableResult
     func copy(_ clip: Clip) -> Int {
+        write(clip.kind)
+    }
+
+    /// Puts content NotchHub produced itself on the pasteboard — a screenshot
+    /// it noticed, rather than something the user pressed ⌘C on.
+    ///
+    /// `remember` is the whole difference between this and `copy(_:)`. The
+    /// content always reaches the pasteboard, because that is the feature the
+    /// user switched on. Hiding the Clipboard module is the user saying "don't
+    /// keep or show my clipboard in the notch", so the history entry and the
+    /// copy popup are the part that switches off — not the copy itself.
+    ///
+    /// Announced exactly once: `write` marks the generation as seen *before*
+    /// `add` runs, so the quarter-second poller cannot ingest the same content
+    /// again and raise a second popup, and `add(contentsOf:)` announces one
+    /// batch once.
+    @discardableResult
+    func offer(_ kind: Clip.Kind, remember: Bool) -> Int {
+        let token = write(kind)
+        if remember { add(kind) }
+        return token
+    }
+
+    /// The one place anything is written to the pasteboard, so the re-ingest
+    /// suppression has a single home.
+    @discardableResult
+    private func write(_ kind: Clip.Kind) -> Int {
         pasteboard.clearContents()
-        switch clip.kind {
+        switch kind {
         case .text(let text):
             pasteboard.setString(text, forType: .string)
         case .image(let data):
@@ -307,12 +335,37 @@ final class ClipboardService: ObservableObject {
         case .text:
             break
         case .image(let data):
-            if let image = NSImage(data: data) {
-                thumbnails[clip.id] = image
-            }
+            thumbnails[clip.id] = Self.thumbnail(from: data)
         case .file(let url):
             generateFileThumbnail(url, id: clip.id)
         }
+    }
+
+    /// The longest edge, in pixels, a stored preview is allowed to have. The
+    /// file branch asks QuickLook for 72 points; this is that same box at 3×,
+    /// so a Retina preview of a copied bitmap is still sharp.
+    nonisolated static let thumbnailMaximumPixels = 216
+
+    /// Downscales a copied bitmap for the popup.
+    ///
+    /// The bug this fixes: this branch used to keep `NSImage(data:)` — the
+    /// picture at full resolution, decoded — for every image clip in a
+    /// twelve-entry history, while the file branch had always asked QuickLook
+    /// for 72 points. Copying a handful of Retina screenshots left NotchHub
+    /// holding hundreds of megabytes for previews drawn 44 points wide. ImageIO
+    /// decodes straight to the size actually wanted, so the full-size bitmap is
+    /// never resident at all.
+    nonisolated static func thumbnail(from data: Data) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: thumbnailMaximumPixels
+        ]
+        guard let scaled = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return NSImage(cgImage: scaled, size: NSSize(width: scaled.width, height: scaled.height))
     }
 
     private func generateFileThumbnail(_ url: URL, id: UUID) {

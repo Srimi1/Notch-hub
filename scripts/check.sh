@@ -41,8 +41,12 @@ if $SF Sources Tests --lint; then echo "✓ formatting clean"; else echo "✗ fo
 
 hr "4/6 Strict-concurrency (informational — legacy debt)"
 swift package clean >/dev/null 2>&1 || true
-SC=$(swift build -Xswiftc -strict-concurrency=complete 2>&1 | grep -c "warning:" || true)
-echo "  $SC strict-concurrency warnings (target: 0)"
+# Scoped to our own sources on purpose. The flag applies to every target in the
+# graph, so an unscoped count would be dominated by the Lottie dependency and
+# stop being a number about NotchHub's migration debt.
+SC=$(swift build -Xswiftc -strict-concurrency=complete 2>&1 \
+  | grep "warning:" | grep -c "Sources/NotchHub/" || true)
+echo "  $SC strict-concurrency warnings in Sources/NotchHub (target: 0)"
 
 hr "5/6 SwiftLint"
 if [[ "$HAS_XCODE" == "1" ]]; then
@@ -61,10 +65,11 @@ fi
 
 # Opt-in: rebuild the adapter suite under the thread sanitizer. Off by default
 # because the sanitizer forces a full rebuild and a slower run; the descriptor
-# ownership it checks lives in AdapterProcess, so only that suite runs.
+# ownership it checks lives in AdapterProcess and in the screenshot folder
+# watcher, so only those two suites run.
 if [[ "${NOTCHHUB_TSAN:-0}" == "1" && "$HAS_XCODE" == "1" ]]; then
   hr "7 (opt-in) swift test --sanitize=thread"
-  if swift test --sanitize=thread --filter AdapterProcessLauncherTests; then
+  if swift test --sanitize=thread --filter 'AdapterProcessLauncherTests|DirectoryWatcherTests'; then
     echo "✓ TSan clean"; else echo "✗ TSan findings"; FAIL=1; fi
 fi
 
