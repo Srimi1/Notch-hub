@@ -85,3 +85,28 @@ struct AstronautAnimationTests {
         #expect(AstronautAnimation.duration(of: scratch) == nil)
     }
 }
+
+/// The astronaut is listening along, so it moves while the music does. Holding
+/// still is also what Reduce Motion asks for, and the two reasons collapse into
+/// one rule.
+@Suite("Astronaut playback")
+struct AstronautPlaybackTests {
+
+    @Test
+    func movesWhileTheMusicPlays() {
+        #expect(AstronautMotion(isPlaying: true, reduceMotion: false) == .looping)
+    }
+
+    @Test
+    func settlesWhenTheMusicIsPaused() {
+        #expect(AstronautMotion(isPlaying: false, reduceMotion: false) == .still)
+    }
+
+    /// Reduce Motion wins over playback: a track playing does not license
+    /// motion the reader has asked the system not to show them.
+    @Test
+    func holdsStillUnderReduceMotionEvenWhilePlaying() {
+        #expect(AstronautMotion(isPlaying: true, reduceMotion: true) == .still)
+        #expect(AstronautMotion(isPlaying: false, reduceMotion: true) == .still)
+    }
+}

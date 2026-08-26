@@ -59,12 +59,29 @@ private struct ScreenshotSection: View {
                     }
                 }
                 Toggle("Move the file to the Trash after copying", isOn: $preferences.trashAfterCopying)
+                previewDelayHint
                 status
             }
         } header: {
             Text("Screenshots")
         } footer: {
             Text(explanation)
+        }
+    }
+
+    /// Shown only while Screenshot.app's floating preview is on, because that
+    /// is the only time the copy is slow. The toggle lives in that app's own
+    /// Options menu, so this opens it rather than pretending to change it.
+    @ViewBuilder
+    private var previewDelayHint: some View {
+        if ScreenshotPreviewHint.shouldExplainDelay(
+            showsThumbnail: ScreenshotPreviewHint.showsThumbnail()
+        ) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("The copy waits for the floating preview to fade, which takes a few seconds.")
+                    .foregroundStyle(NotchTheme.secondaryText)
+                Button("Open Screenshot…") { ScreenshotPreviewHint.openScreenshotApp() }
+            }
         }
     }
 

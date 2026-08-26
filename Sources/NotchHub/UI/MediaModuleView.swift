@@ -11,7 +11,7 @@ struct MediaModuleView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            MediaAstronautView()
+            MediaAstronautView(isPlaying: media.nowPlaying?.isPlaying ?? false)
                 .frame(width: MediaAstronautView.side, height: MediaAstronautView.side)
             details
         }
@@ -84,6 +84,21 @@ struct MediaAstronautView: View {
     /// six points of air top and bottom.
     static let side: CGFloat = 56
 
+    /// What the astronaut sits on.
+    ///
+    /// The artwork is drawn for a light ground: the figure, the stars and the
+    /// notes are one near-black, and the only white in the file is the
+    /// highlight cut into the helmet and the visor. Against the panel's black
+    /// that near-black contrasts 1.12:1, so the stars and notes were simply
+    /// absent and the astronaut read as a dim smudge. On the ground it was
+    /// drawn for, every mark lands and the highlights read as the cutouts they
+    /// are.
+    static let tile = Color(red: 0xF6 / 255, green: 0xF4 / 255, blue: 0xF9 / 255)
+
+    /// Whether the music is actually playing. The astronaut listens along, so
+    /// it moves while the track does and settles when the track is paused.
+    var isPlaying: Bool
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animation: LottieAnimation?
 
@@ -91,6 +106,10 @@ struct MediaAstronautView: View {
         Group {
             if let animation {
                 player(animation)
+                    .padding(3)
+                    .background(
+                        RoundedRectangle(cornerRadius: NotchTheme.cardRadius).fill(Self.tile)
+                    )
             } else {
                 Color.clear
             }
@@ -99,16 +118,39 @@ struct MediaAstronautView: View {
         .accessibilityHidden(true)
     }
 
-    /// Under Reduce Motion the astronaut is still there — it just holds its
-    /// first frame instead of looping, the same bargain every other animation
-    /// in the notch strikes.
+    /// Held still when the music is paused, and under Reduce Motion, which is
+    /// the same bargain every other animation in the notch strikes. Pausing on
+    /// the current frame rather than rewinding means a track paused and resumed
+    /// picks the astronaut up where it left off.
     private func player(_ animation: LottieAnimation) -> some View {
         LottieView(animation: animation)
             .resizable()
             .backgroundBehavior(.pauseAndRestore)
-            .playbackMode(reduceMotion ? .paused(at: .progress(0)) : .playing(.fromProgress(
-                0, toProgress: 1, loopMode: .loop
-            )))
+            .playbackMode(
+                AstronautMotion(isPlaying: isPlaying, reduceMotion: reduceMotion).lottieMode
+            )
+    }
+}
+
+/// Whether the astronaut is moving, kept as NotchHub's own type so the rule can
+/// be tested without rendering a view or reaching for Lottie's.
+enum AstronautMotion: Equatable {
+    case looping
+    case still
+
+    /// Reduce Motion wins over playback: a track playing does not license
+    /// motion the reader has asked the system not to show them.
+    init(isPlaying: Bool, reduceMotion: Bool) {
+        self = isPlaying && !reduceMotion ? .looping : .still
+    }
+
+    /// Pausing on the current frame rather than rewinding means a track paused
+    /// and resumed picks the astronaut up where it left off.
+    var lottieMode: LottiePlaybackMode {
+        switch self {
+        case .looping: .playing(.fromProgress(0, toProgress: 1, loopMode: .loop))
+        case .still: .paused
+        }
     }
 }
 
