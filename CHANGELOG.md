@@ -4,6 +4,24 @@ Notable user-facing changes are recorded here. NotchHub follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while the public API
 and interface continue to mature before 1.0.
 
+## [0.6.0] - 2026-08-26
+
+### Added
+
+- The astronaut now listens along in the closed notch, not only in the Media
+  panel. Whenever something is playing — Apple Music, Spotify, or a player with
+  no AppleScript dictionary at all, YouTube Music included — the small pill at
+  the top of the screen shows the astronaut moving to it. The artwork is drawn
+  near-black, so it is re-toned to white to read against the pill, and cropped
+  to the figure to survive being 22 points tall. If the animation file is
+  missing, the pill falls back to the symbol it always drew.
+
+### Fixed
+
+- A paused track no longer breathes. The pill's icon animated whenever the
+  activity was music, whether or not it was actually playing, so a paused song
+  kept pulsing its pause symbol. Motion now follows playback.
+
 ## [0.5.0] - 2026-08-26
 
 ### Added
