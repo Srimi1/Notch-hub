@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ImageIO
 import QuickLookThumbnailing
 import UniformTypeIdentifiers
 
@@ -307,12 +308,37 @@ final class ClipboardService: ObservableObject {
         case .text:
             break
         case .image(let data):
-            if let image = NSImage(data: data) {
-                thumbnails[clip.id] = image
-            }
+            thumbnails[clip.id] = Self.thumbnail(from: data)
         case .file(let url):
             generateFileThumbnail(url, id: clip.id)
         }
+    }
+
+    /// The longest edge, in pixels, a stored preview is allowed to have. The
+    /// file branch asks QuickLook for 72 points; this is that same box at 3×,
+    /// so a Retina preview of a copied bitmap is still sharp.
+    nonisolated static let thumbnailMaximumPixels = 216
+
+    /// Downscales a copied bitmap for the popup.
+    ///
+    /// The bug this fixes: this branch used to keep `NSImage(data:)` — the
+    /// picture at full resolution, decoded — for every image clip in a
+    /// twelve-entry history, while the file branch had always asked QuickLook
+    /// for 72 points. Copying a handful of Retina screenshots left NotchHub
+    /// holding hundreds of megabytes for previews drawn 44 points wide. ImageIO
+    /// decodes straight to the size actually wanted, so the full-size bitmap is
+    /// never resident at all.
+    nonisolated static func thumbnail(from data: Data) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: thumbnailMaximumPixels
+        ]
+        guard let scaled = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return NSImage(cgImage: scaled, size: NSSize(width: scaled.width, height: scaled.height))
     }
 
     private func generateFileThumbnail(_ url: URL, id: UUID) {

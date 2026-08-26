@@ -189,3 +189,70 @@ struct ClipboardServiceTests {
         #expect(clipboard.thumbnails.isEmpty)
     }
 }
+
+/// Copied images are shown at 44 points and were being kept at whatever size
+/// they arrived at. These pin the bound.
+@Suite("Clipboard previews")
+@MainActor
+struct ClipboardPreviewTests {
+
+    private static func makeIsolated() -> (ClipboardService, NSPasteboard) {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("NotchHubTests." + UUID().uuidString))
+        return (ClipboardService(pasteboard: pasteboard), pasteboard)
+    }
+
+    /// A solid bitmap big enough to be a Retina screenshot.
+    private static func png(width: Int, height: Int) -> Data {
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.lockFocus()
+        NSColor.systemTeal.setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+        image.unlockFocus()
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let data = rep.representation(using: .png, properties: [:]) else {
+            Issue.record("Could not build a PNG fixture")
+            return Data()
+        }
+        return data
+    }
+
+    /// The bug this pins: image clips kept `NSImage(data:)` — the picture at
+    /// full resolution, decoded — as their "thumbnail", while file clips had
+    /// always asked QuickLook for 72 points. Harmless while people only ⌘C'd
+    /// the occasional image; with screenshots copying themselves, twelve
+    /// Retina captures in history left NotchHub holding hundreds of megabytes
+    /// for previews drawn 44 points wide.
+    @Test
+    func anImageClipKeepsABoundedPreviewRatherThanTheWholeBitmap() throws {
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
+        let data = Self.png(width: 2000, height: 1500)
+
+        clipboard.add(.image(data))
+
+        let clip = try #require(clipboard.clips.first)
+        let thumbnail = try #require(clipboard.thumbnails[clip.id])
+        let longestEdge = max(thumbnail.size.width, thumbnail.size.height)
+        #expect(longestEdge <= CGFloat(ClipboardService.thumbnailMaximumPixels))
+        #expect(longestEdge > 0)
+    }
+
+    /// Downscaling must not change the shape of the picture.
+    @Test
+    func aBoundedPreviewKeepsTheOriginalAspectRatio() throws {
+        let data = Self.png(width: 1600, height: 800)
+
+        let thumbnail = try #require(ClipboardService.thumbnail(from: data))
+        let ratio = thumbnail.size.width / max(thumbnail.size.height, 1)
+
+        #expect(abs(ratio - 2) < 0.05)
+    }
+
+    /// Bytes that are not a picture must come back as no preview rather than
+    /// throwing out through the history insert.
+    @Test
+    func contentThatIsNotAnImageProducesNoPreview() {
+        #expect(ClipboardService.thumbnail(from: Data("not a picture".utf8)) == nil)
+    }
+}
