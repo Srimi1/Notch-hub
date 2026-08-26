@@ -261,16 +261,42 @@ enum AstronautAnimation {
     }
 
     /// Bodymovin holds a solid fill as `{"c": {"k": [r, g, b, a]}}`, in 0...1.
+    ///
+    /// Only what sits under a `c` is a colour. A transform's scale, position and
+    /// anchor are held in the same `{"k": [...]}` shape, and their numbers land
+    /// in the same ranges a tone test looks at — a scale of `[100, 100, 100]`
+    /// is three numbers above 0.8, and an anchor of `[0, 0, 0]` three numbers
+    /// below 0.2. Swapping those turns the artwork into a scale of a tenth of a
+    /// percent, which is why the astronaut was in the notch and yet invisible.
     private nonisolated static func swapTones(in node: Any) -> Any {
         if let dictionary = node as? [String: Any] {
             var result: [String: Any] = [:]
             for (key, value) in dictionary {
-                result[key] = key == "k" ? swapChannels(in: value) : swapTones(in: value)
+                result[key] = key == "c" ? swapColour(in: value) : swapTones(in: value)
             }
             return result
         }
         if let array = node as? [Any] {
             return array.map { swapTones(in: $0) }
+        }
+        return node
+    }
+
+    /// Inside a colour, the channels live under `k` when the fill is static and
+    /// under a keyframe's `s`/`e` when it is animated. Anything else in there —
+    /// a path's `c` closed flag, say — is handed back untouched.
+    private nonisolated static func swapColour(in node: Any) -> Any {
+        if let dictionary = node as? [String: Any] {
+            var result: [String: Any] = [:]
+            for (key, value) in dictionary {
+                result[key] = ["k", "s", "e"].contains(key)
+                    ? swapColour(in: swapChannels(in: value))
+                    : swapColour(in: value)
+            }
+            return result
+        }
+        if let array = node as? [Any] {
+            return array.map { swapColour(in: $0) }
         }
         return node
     }

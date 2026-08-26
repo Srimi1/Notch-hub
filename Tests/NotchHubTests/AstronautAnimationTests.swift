@@ -118,6 +118,9 @@ struct AstronautPlaybackTests {
 @Suite("Astronaut ink")
 struct AstronautInkTests {
 
+    /// Raised when the inverted file is not the shape the test reads it as.
+    enum CompositionError: Error { case notAnObject }
+
     /// The two tones swap: the figure turns white so it reads on black, and the
     /// helmet highlight turns black so it stays a cutout rather than becoming
     /// the figure.
@@ -150,6 +153,74 @@ struct AstronautInkTests {
         #expect(try fill(layers[2]) == [0.5, 0.5, 0.5])
     }
 
+    /// A transform is not a colour, however much it looks like one.
+    ///
+    /// Scale, position and anchor are held in the same `{"k": [...]}` shape a
+    /// fill uses, and their numbers fall in the same ranges a tone test asks
+    /// about: `[100, 100, 100]` is three numbers above 0.8, and `[0, 0, 0]` is
+    /// three below 0.2. Swapping them scaled the artwork to a tenth of a
+    /// percent, which drew the astronaut into the notch at a size nobody could
+    /// see. Only what sits under a `c` may change.
+    @Test
+    func leavesTransformsAlone() throws {
+        let source = """
+        {"v":"5.6.3","w":1000,"h":1000,"layers":[
+          {"nm":"figure","ks":{"s":{"a":0,"k":[100,100,100]},"a":{"a":0,"k":[0,0,0]},
+           "p":{"a":0,"k":[-14.854,-217.005,0]}},
+           "shapes":[{"ty":"fl","c":{"a":0,"k":[0.098,0.047,0.137,1]}}]}
+        ]}
+        """
+        let out = try AstronautAnimation.inverted(Data(source.utf8))
+        let object = try JSONSerialization.jsonObject(with: out)
+        guard let root = object as? [String: Any],
+              let layer = (root["layers"] as? [[String: Any]])?.first,
+              let transform = layer["ks"] as? [String: Any]
+        else { throw CompositionError.notAnObject }
+
+        func value(_ name: String) throws -> [Double] {
+            guard let property = transform[name] as? [String: Any],
+                  let numbers = property["k"] as? [Double]
+            else { throw CompositionError.notAnObject }
+            return numbers
+        }
+
+        #expect(try value("s") == [100, 100, 100], "scale is not a colour")
+        #expect(try value("a") == [0, 0, 0], "an anchor at the origin is not black")
+        #expect(try value("p") == [-14.854, -217.005, 0], "position is not a colour")
+
+        // The fill it sits beside still inverts, or the test proves nothing.
+        let shapes = try #require(layer["shapes"] as? [[String: Any]])
+        let colour = try #require(shapes[0]["c"] as? [String: Any])
+        let channels = try #require(colour["k"] as? [Double])
+        #expect(Array(channels.prefix(3)) == [1, 1, 1])
+    }
+
+    /// An animated fill keeps its channels under each keyframe rather than
+    /// directly under `k`, and has to invert the same way a static one does.
+    @Test
+    func swapsAnimatedFillsToo() throws {
+        let source = """
+        {"v":"5.6.3","w":1000,"h":1000,"layers":[
+          {"nm":"pulse","shapes":[{"ty":"fl","c":{"a":1,"k":[
+            {"t":0,"s":[0.098,0.047,0.137,1],"e":[1,1,1,1]}
+          ]}}]}
+        ]}
+        """
+        let out = try AstronautAnimation.inverted(Data(source.utf8))
+        let object = try JSONSerialization.jsonObject(with: out)
+        guard let root = object as? [String: Any],
+              let layer = (root["layers"] as? [[String: Any]])?.first,
+              let shapes = layer["shapes"] as? [[String: Any]],
+              let colour = shapes[0]["c"] as? [String: Any],
+              let frames = colour["k"] as? [[String: Any]],
+              let start = frames[0]["s"] as? [Double],
+              let end = frames[0]["e"] as? [Double]
+        else { throw CompositionError.notAnObject }
+
+        #expect(Array(start.prefix(3)) == [1, 1, 1])
+        #expect(Array(end.prefix(3)) == [0, 0, 0])
+    }
+
     /// Inverting must not disturb the composition: same canvas, same timeline,
     /// same layers, or Lottie is being handed a different animation.
     @Test
@@ -169,7 +240,6 @@ struct AstronautInkTests {
             var width: Int
             var lastFrame: Int
         }
-        enum CompositionError: Error { case notAnObject }
         func shape(_ data: Data) throws -> Composition {
             let object = try JSONSerialization.jsonObject(with: data)
             guard let root = object as? [String: Any] else {
@@ -183,6 +253,32 @@ struct AstronautInkTests {
         }
 
         #expect(try shape(original) == shape(inverted))
+
+        // Every number outside a colour has to come back identical. The real
+        // artwork holds forty of them that read as a tone if you ask the
+        // question of the wrong node — eleven of those are a scale of
+        // `[100, 100, 100]`, and swapping one is the difference between an
+        // astronaut and a tenth of a percent of an astronaut.
+        #expect(try transforms(of: original) == transforms(of: inverted))
+    }
+
+    /// Every `k` that is not inside a `c`, flattened, in document order.
+    private func transforms(of data: Data) throws -> [Double] {
+        var found: [Double] = []
+        func walk(_ node: Any, insideColour: Bool) {
+            if let dictionary = node as? [String: Any] {
+                for (key, value) in dictionary.sorted(by: { $0.key < $1.key }) {
+                    if key == "k", !insideColour, let numbers = value as? [Double] {
+                        found.append(contentsOf: numbers)
+                    }
+                    walk(value, insideColour: insideColour || key == "c")
+                }
+            } else if let array = node as? [Any] {
+                for element in array { walk(element, insideColour: insideColour) }
+            }
+        }
+        walk(try JSONSerialization.jsonObject(with: data), insideColour: false)
+        return found
     }
 
     /// Something that is not JSON at all should throw rather than crash: the
