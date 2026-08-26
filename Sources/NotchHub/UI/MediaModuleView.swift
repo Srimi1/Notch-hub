@@ -64,9 +64,8 @@ private struct TransportButton: View {
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 30)
-                .background(Circle().fill(Color.white.opacity(0.1)))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NotchButtonStyle(shape: .circle))
     }
 }
 

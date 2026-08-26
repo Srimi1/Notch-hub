@@ -21,7 +21,7 @@ struct TimerModuleView: View {
                 Button("\(minutes)m") {
                     timers.create(title: minutes == 25 ? "Focus" : "Timer", duration: Double(minutes * 60))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NotchButtonStyle(shape: .bare))
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 38, height: 28)
@@ -80,16 +80,15 @@ private struct TimerTile: View {
             }
             Button { primaryAction() } label: {
                 Image(systemName: primarySymbol)
-                    .frame(width: 22, height: 22)
-                    .background(Circle().fill(Color.white.opacity(0.1)))
+                    .frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NotchButtonStyle(shape: .circle))
             .accessibilityLabel(primaryLabel)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 8)
         .frame(width: 125, height: 38)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.07)))
+        .background(RoundedRectangle(cornerRadius: NotchTheme.cardRadius).fill(Color.white.opacity(0.07)))
     }
 
     private var statusText: String {
@@ -169,7 +168,7 @@ struct ReminderModuleView: View {
                         }
                         .frame(width: 130, height: 34, alignment: .leading)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NotchButtonStyle(shape: .card))
                     .foregroundStyle(.white)
                     .accessibilityLabel("Complete \(reminder.title)")
                 }
@@ -207,7 +206,7 @@ private struct ModuleErrorBanner: View {
             Button(action: clear) {
                 Image(systemName: "xmark.circle.fill")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NotchButtonStyle(shape: .bare))
             .accessibilityLabel("Dismiss error")
         }
         .font(.system(size: 9, weight: .medium))

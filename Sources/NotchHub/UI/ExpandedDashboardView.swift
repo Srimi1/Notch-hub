@@ -203,7 +203,10 @@ private struct CalendarModuleView: View {
                         .foregroundStyle(.white)
                         .frame(width: 124, height: 38, alignment: .topLeading)
                         .padding(6)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.07)))
+                        .background(
+                            RoundedRectangle(cornerRadius: NotchTheme.cardRadius)
+                                .fill(NotchTheme.subtleSurface)
+                        )
                     }
                 }
             }
@@ -236,12 +239,11 @@ private struct FocusModuleView: View {
                     }
                     pane.open()
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NotchButtonStyle(shape: .capsule))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 12)
                 .frame(height: 32)
-                .background(Capsule().fill(Color.white.opacity(0.12)))
             }
 
             toggleButton
@@ -262,11 +264,10 @@ private struct FocusModuleView: View {
             .padding(.horizontal, 12)
             .frame(height: 32)
             .background(
-                Capsule().fill(isShowingOn ? Color.purple.opacity(0.9) : Color.white.opacity(0.12))
+                Capsule().fill(isShowingOn ? Color.purple.opacity(0.9) : NotchTheme.hoverSurface)
             )
-            .opacity(focus.isToggling ? 0.5 : 1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NotchButtonStyle(shape: .bare))
         .disabled(focus.isToggling)
     }
 
@@ -345,7 +346,7 @@ private struct ClipboardModuleView: View {
                         } label: {
                             ClipTile(clip: clip, thumbnail: clipboard.thumbnails[clip.id])
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(NotchButtonStyle(shape: .card))
                     }
                 }
             }
@@ -357,9 +358,8 @@ private struct ClipboardModuleView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.75))
                     .frame(width: 30, height: 30)
-                    .background(Circle().fill(Color.white.opacity(0.08)))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NotchButtonStyle(shape: .circle))
         }
     }
 }
@@ -387,10 +387,9 @@ private struct ClipTile: View {
         .foregroundStyle(.white)
         .frame(width: clip.isVisual ? 150 : 136, height: 38, alignment: .leading)
         .padding(6)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.07)))
-        // Without this the plain button style only hit-tests the drawn text, so
-        // clicks in the padding fall through and miss the tile entirely.
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        // The style owns the fill and the hit shape together. Before it, the
+        // plain button hit-tested only the drawn text, so clicks in the padding
+        // fell through and missed the tile entirely.
     }
 
     @ViewBuilder
@@ -400,9 +399,9 @@ private struct ClipTile: View {
                 .resizable()
                 .aspectRatio(contentMode: .fill)
                 .frame(width: 34, height: 34)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .clipShape(RoundedRectangle(cornerRadius: NotchTheme.innerRadius))
         } else {
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: NotchTheme.innerRadius)
                 .fill(Color.white.opacity(0.1))
                 .frame(width: 34, height: 34)
                 .overlay(Image(systemName: clip.symbol).font(.system(size: 14)))

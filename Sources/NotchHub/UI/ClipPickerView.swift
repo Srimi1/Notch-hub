@@ -60,7 +60,7 @@ struct ClipPickerView: View {
                             shortcut: index < 9 ? String(index + 1) : nil
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NotchButtonStyle(shape: .card))
                 }
             }
         }
@@ -105,8 +105,6 @@ private struct ClipPickerRow: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 8).fill(NotchTheme.subtleSurface))
-        .contentShape(RoundedRectangle(cornerRadius: 8))
     }
 
     @ViewBuilder
@@ -116,7 +114,7 @@ private struct ClipPickerRow: View {
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.85))
                 .frame(width: 18, height: 18)
-                .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.12)))
+                .background(RoundedRectangle(cornerRadius: NotchTheme.innerRadius).fill(Color.white.opacity(0.12)))
         } else {
             Color.clear.frame(width: 18, height: 18)
         }
@@ -128,7 +126,7 @@ private struct ClipPickerRow: View {
             Image(nsImage: thumbnail)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .clipShape(RoundedRectangle(cornerRadius: NotchTheme.innerRadius))
         } else {
             Image(systemName: clip.symbol)
                 .font(.system(size: 13, weight: .medium))
