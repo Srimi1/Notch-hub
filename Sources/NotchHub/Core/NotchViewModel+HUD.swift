@@ -77,6 +77,11 @@ extension NotchViewModel {
         // Same reason as `toggle()`: the picker may be the HUD being expanded
         // away from, and its key monitor has to go with it.
         pickerKeyMonitor.stop()
+        // The copy popup can be the HUD being expanded away from too, and its
+        // global ⌘V monitor has to go with it: the hover-out collapse never
+        // calls dismissHUD, so nothing else stops it until the next ⌘V anywhere
+        // on the system.
+        pasteMonitor.stop()
         if preferences.isVisible(.clipboard) { select(.clipboard) }
         beginInteractiveIfNeeded()
         // Deliberately NOT pinned. Clicking the popup means "show me the

@@ -16,6 +16,9 @@ and interface continue to mature before 1.0.
 
 ### Fixed
 
+- Fixed the copy popup's system-wide key monitor staying installed after the
+  popup was clicked open into the dashboard. It kept watching every keystroke
+  for a ⌘V until one eventually arrived somewhere.
 - Fixed clicking a peek card typing its ⌘V into the notch itself. The click
   makes the panel the key window without borrowing focus from anywhere, so
   there is nowhere to hand the keyboard back to; the card now copies and says
