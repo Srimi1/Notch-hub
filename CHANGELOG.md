@@ -4,6 +4,61 @@ Notable user-facing changes are recorded here. NotchHub follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while the public API
 and interface continue to mature before 1.0.
 
+## [Unreleased]
+
+### Added
+
+- The clipboard picker can be opened by tapping N twice. The gesture only fires
+  after a pause in typing and with nothing between the two taps, so words like
+  "announce" cannot set it off; it needs Accessibility, and it does not take the
+  key away from the app underneath, so both letters are still typed. There is a
+  toggle for it in Settings.
+
+### Fixed
+
+- Fixed the collapsed notch appearing as an oversized empty black slab. The
+  subscription that resizes the pill read the "show wings" flag back off the
+  view model instead of using the value it was handed, and that property
+  publishes before it is updated — so the window was sized for the previous
+  state. It stayed narrow as an activity arrived, and widened as one left,
+  leaving a pill twice the width of the notch with nothing drawn in it.
+- Fixed a crash-looping media adapter relaunching every second for the rest of
+  the session, which is what kept the pill growing and shrinking on its own. A
+  run now counts as healthy only if it lasted, rather than if it printed
+  anything before dying.
+- Fixed the clipboard picker opening clipped off the top of the screen when the
+  dashboard was already open. Two window animations were started against each
+  other, and the frame could settle on the smaller one while the content was
+  already picker-sized.
+- Fixed the picker's first row rendering behind the camera housing.
+- Fixed the dashboard being 2 points too short for its own contents on the 14"
+  and 16" MacBook Pros, where the notch is taller.
+- Fixed the test suite writing its fixtures to the clipboard the user was
+  actually using: running the suite while NotchHub was running put strings like
+  "first" and "alpha" into the history, and from there into documents.
+- Fixed copies being lost when NotchHub sampled the pasteboard mid-write. The
+  change counter is bumped before the new content exists, and that generation
+  was being marked as seen regardless — so the copy never entered the history
+  and the next paste from the notch gave back the one before it.
+- Fixed concealed content being recorded when its privacy marker had not yet
+  landed. The markers are now checked on both sides of the read.
+- Fixed ⌘1 through ⌘9 selecting and pasting a clip while the picker was open.
+  They belong to the app underneath — switching browser tabs, most often — and
+  were being swallowed as well as acted on.
+- Fixed Return and Space silently pasting the newest clip when Full Keyboard
+  Access is on. They now close the picker.
+- Fixed a paste going out after something else had taken the pasteboard in the
+  moment between the copy and the keystroke.
+- Fixed held modifiers reaching the synthesized ⌘V: with the ⌃⌥V shortcut still
+  under the user's fingers, Finder saw ⌘⌃⌥V, which is Move Item Here.
+- Fixed holding the shortcut down toggling the picker open and shut repeatedly.
+- Fixed a multi-file copy landing in reverse order and raising one popup per
+  file rather than one for the gesture.
+- Fixed the dashboard's clipboard tiles trying to paste into the notch itself.
+  They copy, and say so.
+- Fixed the pointer being reported as having left the notch during a resize,
+  which could collapse the panel in the middle of expanding it.
+
 ## [0.3.3] - 2026-08-26
 
 ### Fixed
