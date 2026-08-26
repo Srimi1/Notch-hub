@@ -196,6 +196,9 @@ final class NotchWindowController {
         let generation = frameGeneration
         let grows = target.width >= panel.frame.width && target.height >= panel.frame.height
         if grows { resizeContent(to: target.size) }
+        // Enter and exit events are not to be trusted while the frame moves;
+        // the completion below reconciles from the pointer's real position.
+        hoverView?.isFrameAnimating = true
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.01 : 0.28
@@ -204,12 +207,13 @@ final class NotchWindowController {
             panel.animator().setFrame(target, display: true)
         } completionHandler: { [weak self] in
             Task { @MainActor [weak self] in
+                // A newer frame is already on its way: leave the content and
+                // the hover gate to whichever animation finishes last.
                 guard let self, self.frameGeneration == generation else { return }
                 self.resizeContent(to: target.size)
-                // Reconcile hover once the frame has stopped moving. Asking
-                // mid-flight compares the pointer against a frame that is still
-                // interpolating, which reported the pointer as having left and
-                // started a collapse the user never asked for.
+                // Reconcile hover from where the pointer actually is, now that
+                // the frame has stopped moving and the tracking area is stable.
+                self.hoverView?.isFrameAnimating = false
                 self.hoverView?.syncHoverState()
                 if tier == .collapsed { self.panel.yieldToPeerOverlays() }
             }

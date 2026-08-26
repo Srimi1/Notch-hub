@@ -26,8 +26,22 @@ final class HoverView: NSView {
         }
     }
 
+    /// True while the window frame is animating between tiers.
+    ///
+    /// Enter and exit events cannot be trusted during that: the tracking area
+    /// is torn down and rebuilt as the view resizes, and AppKit delivers the
+    /// exit from the old area without an enter for the new one while the
+    /// pointer has not moved. Acting on those made the notch flicker open and
+    /// shut under a stationary pointer — the exit collapsed it, the collapse
+    /// reconciled back to hovering, and round it went. The controller sets
+    /// this, and reconciles once the frame has settled.
+    var isFrameAnimating = false
+
     private var hoverTrackingArea: NSTrackingArea?
     private let shapeMask = CAShapeLayer()
+    /// Last value handed to `onHoverChange`, so repeats are dropped and a
+    /// reconcile costs nothing when it agrees with what is already known.
+    private var reportedHover = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -63,24 +77,39 @@ final class HoverView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        onHoverChange?(true)
+        handleTransientHover(true)
     }
 
     override func mouseExited(with event: NSEvent) {
-        onHoverChange?(false)
+        handleTransientHover(false)
+    }
+
+    /// An enter or exit delivered by the tracking area.
+    ///
+    /// Dropped entirely while the frame is animating — see `isFrameAnimating`.
+    /// Internal rather than private so the gate can be tested without
+    /// manufacturing tracking-area events.
+    func handleTransientHover(_ hovering: Bool) {
+        guard !isFrameAnimating else { return }
+        report(hovering)
     }
 
     /// Reconcile the hover flag with where the pointer actually is.
     ///
-    /// Called once the window has finished moving, not from `layout()`: every
-    /// frame of a resize is a layout pass, and each one asked this question
-    /// against a frame still in flight. The answers were wrong often enough to
-    /// start a collapse in the middle of an expansion.
+    /// Called once the window has finished moving rather than from `layout()`:
+    /// every frame of a resize is a layout pass, and each one asked this
+    /// question against a frame still in flight.
     func syncHoverState() {
         guard let window else { return }
         let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
         let mouse = convert(windowPoint, from: nil)
-        onHoverChange?(bounds.contains(mouse))
+        report(bounds.contains(mouse))
+    }
+
+    private func report(_ hovering: Bool) {
+        guard hovering != reportedHover else { return }
+        reportedHover = hovering
+        onHoverChange?(hovering)
     }
 
     private func configureLayer() {
