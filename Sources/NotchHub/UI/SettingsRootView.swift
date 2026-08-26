@@ -79,7 +79,7 @@ private struct ScreenshotSection: View {
         ) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("The copy waits for the floating preview to fade, which takes a few seconds.")
-                    .foregroundStyle(NotchTheme.secondaryText)
+                    .foregroundStyle(.secondary)
                 Button("Open Screenshot…") { ScreenshotPreviewHint.openScreenshotApp() }
             }
         }
@@ -88,7 +88,7 @@ private struct ScreenshotSection: View {
     @ViewBuilder
     private var status: some View {
         if let note = screenshots.statusNote {
-            Text(note).foregroundStyle(NotchTheme.secondaryText)
+            Text(note).foregroundStyle(.secondary)
         }
         if let failure = screenshots.lastError {
             Text(failure).foregroundStyle(.red)
@@ -162,7 +162,7 @@ private struct ShortcutSection: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("The double tap cannot see keystrokes until NotchHub has Accessibility. "
                     + "The shortcut above keeps working without it.")
-                    .foregroundStyle(NotchTheme.secondaryText)
+                    .foregroundStyle(.secondary)
                 Button("Allow Accessibility…") { permissions.request(.accessibility) }
             }
         }
