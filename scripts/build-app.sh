@@ -100,6 +100,18 @@ if [[ -f "$ROOT/Resources/AppIcon.icns" ]]; then
   cp "$ROOT/Resources/AppIcon.icns" "$TMP_APP/Contents/Resources/AppIcon.icns"
 fi
 
+# Animations
+# ----------
+# Bodymovin JSON the notch draws with. Copied by hand for the same reason the
+# adapter script is: this package declares no SwiftPM resources, so nothing
+# copies them for us. A missing file is a supported state — the view that
+# wanted it simply draws nothing — but that would ship an app quietly missing
+# its artwork, so the copy is not conditional.
+if [[ -d "$ROOT/Resources/Animations" ]]; then
+  mkdir -p "$TMP_APP/Contents/Resources/Animations"
+  cp "$ROOT/Resources/Animations/"*.json "$TMP_APP/Contents/Resources/Animations/"
+fi
+
 # MediaRemote adapter
 # -------------------
 # The script and the framework it loads are *bundled, never linked*: NotchHub

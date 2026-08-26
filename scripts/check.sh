@@ -41,8 +41,12 @@ if $SF Sources Tests --lint; then echo "✓ formatting clean"; else echo "✗ fo
 
 hr "4/6 Strict-concurrency (informational — legacy debt)"
 swift package clean >/dev/null 2>&1 || true
-SC=$(swift build -Xswiftc -strict-concurrency=complete 2>&1 | grep -c "warning:" || true)
-echo "  $SC strict-concurrency warnings (target: 0)"
+# Scoped to our own sources on purpose. The flag applies to every target in the
+# graph, so an unscoped count would be dominated by the Lottie dependency and
+# stop being a number about NotchHub's migration debt.
+SC=$(swift build -Xswiftc -strict-concurrency=complete 2>&1 \
+  | grep "warning:" | grep -c "Sources/NotchHub/" || true)
+echo "  $SC strict-concurrency warnings in Sources/NotchHub (target: 0)"
 
 hr "5/6 SwiftLint"
 if [[ "$HAS_XCODE" == "1" ]]; then

@@ -166,58 +166,6 @@ struct ExpandedDashboardView: View {
     }
 }
 
-// MARK: - Media (real now-playing + transport)
-
-private struct MediaModuleView: View {
-    @ObservedObject var media: MediaService
-
-    var body: some View {
-        if let np = media.nowPlaying {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(np.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-                    Text(np.artist.isEmpty ? np.app.name : np.artist)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                HStack(spacing: 14) {
-                    TransportButton(symbol: "backward.fill") { media.previous() }
-                    TransportButton(symbol: np.isPlaying ? "pause.fill" : "play.fill") { media.playPause() }
-                    TransportButton(symbol: "forward.fill") { media.next() }
-                }
-            }
-            .foregroundStyle(.white)
-        } else if let reason = media.unavailableReason {
-            // Denied Automation is not the same as an idle player. Saying
-            // "play something" while music is audibly playing is a lie the
-            // user has no way to diagnose — macOS never re-prompts.
-            EmptyHint(symbol: "hand.raised.fill", text: reason)
-        } else {
-            EmptyHint(symbol: "play.slash", text: media.emptyHint)
-        }
-    }
-}
-
-private struct TransportButton: View {
-    let symbol: String
-    let action: () -> Void
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 30, height: 30)
-                .background(Circle().fill(Color.white.opacity(0.1)))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 // MARK: - Calendar (real EventKit)
 
 private struct CalendarModuleView: View {
@@ -462,7 +410,7 @@ private struct ClipTile: View {
     }
 }
 
-private struct EmptyHint: View {
+struct EmptyHint: View {
     let symbol: String
     let text: String
     var body: some View {
