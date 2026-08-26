@@ -178,8 +178,60 @@ struct ClipPickerKeyTests {
     func everythingElseIsLeftAlone() {
         #expect(NotchViewModel.pickerAction(forKeyCode: 29, characters: "0") == nil)
         #expect(NotchViewModel.pickerAction(forKeyCode: 0, characters: "a") == nil)
-        #expect(NotchViewModel.pickerAction(forKeyCode: 49, characters: " ") == nil)
-        #expect(NotchViewModel.pickerAction(forKeyCode: 36, characters: nil) == nil)
+    }
+
+    /// ⌘1 is switch-to-first-tab in every browser. The picker has no
+    /// auto-dismiss and sits on every Space, so one left open unnoticed turned
+    /// a tab switch into a paste of the newest clip — and swallowed the
+    /// shortcut, so the tab never switched and the user pressed it again.
+    @Test
+    func commandDigitsBelongToTheAppUnderneath() {
+        #expect(NotchViewModel.pickerAction(forKeyCode: 18, characters: "1", modifiers: .command) == nil)
+        #expect(NotchViewModel.pickerAction(forKeyCode: 18, characters: "1", modifiers: .option) == nil)
+        #expect(NotchViewModel.pickerAction(forKeyCode: 18, characters: "1", modifiers: .control) == nil)
+    }
+
+    /// Shift is how a digit is typed at all on some layouts, so it has to pass
+    /// through — and on a US layout it produces "!", which picks nothing.
+    @Test
+    func shiftIsLeftToTheLayout() {
+        #expect(NotchViewModel.pickerAction(forKeyCode: 18, characters: "1", modifiers: .shift) == .select(1))
+        #expect(NotchViewModel.pickerAction(forKeyCode: 18, characters: "!", modifiers: .shift) == nil)
+    }
+
+    /// With Full Keyboard Access on, Return and Space activate whichever row
+    /// SwiftUI focused first — the top one — so leaving them unhandled was a
+    /// silent pick of the newest clip.
+    @Test
+    func returnAndSpaceCloseRatherThanPickSilently() {
+        #expect(NotchViewModel.pickerAction(forKeyCode: 49, characters: " ") == .dismiss)
+        #expect(NotchViewModel.pickerAction(forKeyCode: 36, characters: nil) == .dismiss)
+        #expect(NotchViewModel.pickerAction(forKeyCode: 76, characters: nil) == .dismiss)
+    }
+
+    /// Carbon repeats the pressed event while a chord is held, and the handler
+    /// is a toggle — holding the shortcut flickered the picker open and shut.
+    @Test
+    func holdingTheChordFiresOnce() {
+        let pressed = UInt32(kEventHotKeyPressed)
+        let released = UInt32(kEventHotKeyReleased)
+        #expect(CarbonHotKey.shouldFire(kind: pressed, isHeld: false, sinceLastPress: 5))
+        #expect(CarbonHotKey.shouldFire(kind: pressed, isHeld: true, sinceLastPress: 0.05) == false)
+        #expect(CarbonHotKey.shouldFire(kind: released, isHeld: true, sinceLastPress: 0.05) == false)
+    }
+
+    /// The release half of the gate cannot be relied on — Carbon's released
+    /// event is documented but not dependable. Waiting for one that never
+    /// arrives would leave the shortcut working exactly once per launch, so a
+    /// chord not heard from in a while is treated as let go.
+    @Test
+    func aChordNotHeardFromIsTreatedAsReleased() {
+        let pressed = UInt32(kEventHotKeyPressed)
+        #expect(CarbonHotKey.shouldFire(
+            kind: pressed,
+            isHeld: true,
+            sinceLastPress: CarbonHotKey.holdExpiry + 0.1
+        ))
     }
 
     /// The picker gets its own window size. `isExpanded` still outranks it in
@@ -208,6 +260,33 @@ struct ClipPickerKeyTests {
                 hudContent: presentation.hudContent
             ) == .picker
         )
+    }
+
+    /// Opening the picker from the dashboard must not dip through a smaller
+    /// tier on the way.
+    ///
+    /// Both properties publish in willSet, so the window controller sees each
+    /// assignment on its own. Clearing `isExpanded` first published a state
+    /// that maps to `.collapsed`, starting a window animation the picker's own
+    /// animation then had to fight — and the frame could settle on the smaller
+    /// of the two while the content stayed picker-sized, which put most of the
+    /// list above the top of the screen. Raising `hudContent` first keeps the
+    /// intermediate state on the tier already showing.
+    @Test
+    func openingThePickerNeverDipsThroughASmallerTier() {
+        let presentation = NotchViewModel.clipPickerPresentation
+        // The order the assignments are published in, as `showClipPicker`
+        // writes them: hudContent first, then isExpanded.
+        let steps = [
+            NotchWindowController.tier(isExpanded: true, hudContent: presentation.hudContent),
+            NotchWindowController.tier(
+                isExpanded: presentation.isExpanded,
+                hudContent: presentation.hudContent
+            )
+        ]
+
+        #expect(steps == [.expanded, .picker])
+        #expect(!steps.contains(.collapsed))
     }
 
     /// The keyboard is borrowed for the picker and has to be handed straight

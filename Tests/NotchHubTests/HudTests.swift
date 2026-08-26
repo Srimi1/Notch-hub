@@ -7,6 +7,18 @@ import Testing
 @MainActor
 struct HudTests {
 
+    /// The key monitors follow the HUD tier from one table. Two of them leaked
+    /// when this lived at the call sites, so the mapping is pinned here.
+    @Test
+    func monitorsAreDerivedFromTheHudTier() {
+        let clip = ClipboardService.Clip(id: UUID(), kind: .text("x"), date: .now)
+        #expect(NotchViewModel.monitorPolicy(for: .clip(clip)) == (paste: true, picker: false))
+        #expect(NotchViewModel.monitorPolicy(for: .clipPicker) == (paste: false, picker: true))
+        #expect(NotchViewModel.monitorPolicy(for: .peek) == (paste: false, picker: false))
+        #expect(NotchViewModel.monitorPolicy(for: .charging) == (paste: false, picker: false))
+        #expect(NotchViewModel.monitorPolicy(for: nil) == (paste: false, picker: false))
+    }
+
     @Test
     func popupShowsOnlyWhenEnabledAndCollapsed() {
         #expect(NotchViewModel.shouldShowCopyHUD(popupEnabled: true, isExpanded: false, hudContent: nil))

@@ -32,20 +32,41 @@ extension NotchViewModel {
             hudContent: hudContent
         ) else { return }
         pendingHudDismiss?.cancel()
+        // Setting hudContent starts the paste monitor through its didSet.
         withAnimation(transitionAnimation) { hudContent = .clip(clip) }
         armHudDismiss()
-        pasteMonitor.start()
     }
 
     func dismissHUD() {
-        pasteMonitor.stop()
-        pickerKeyMonitor.stop()
         pendingHudDismiss?.cancel()
         pendingHudDismiss = nil
         pendingPeekPromotion?.cancel()
         pendingPeekPromotion = nil
         guard hudContent != nil else { return }
         withAnimation(transitionAnimation) { hudContent = nil }
+    }
+
+    /// Which global hooks may live for a given HUD tier. Static so the rule is
+    /// testable without building the service graph.
+    ///
+    /// The paste monitor watches for the ⌘V that means a copy popup's clip was
+    /// used; the picker's monitor reads the digit keys that pick from it.
+    /// Nothing else keeps a system-wide keyDown hook installed.
+    static func monitorPolicy(for content: HudContent?) -> (paste: Bool, picker: Bool) {
+        switch content {
+        case .clip: (paste: true, picker: false)
+        case .clipPicker: (paste: false, picker: true)
+        case .peek, .charging, .none: (paste: false, picker: false)
+        }
+    }
+
+    /// Reconcile the monitors with the current tier. Called only from
+    /// `hudContent`'s didSet — the one place either monitor starts or stops, so
+    /// no mutation path can leave one running.
+    func applyMonitorPolicy() {
+        let policy = Self.monitorPolicy(for: hudContent)
+        if policy.paste { pasteMonitor.start() } else { pasteMonitor.stop() }
+        if policy.picker { pickerKeyMonitor.start() } else { pickerKeyMonitor.stop() }
     }
 
     /// Hovering the popup pauses the countdown so it can be read or dragged
@@ -74,6 +95,8 @@ extension NotchViewModel {
     func expandFromHUD() {
         pendingHudDismiss?.cancel()
         pendingHudDismiss = nil
+        // Clearing hudContent below takes down whichever monitor the HUD being
+        // expanded away from was using, through its didSet.
         if preferences.isVisible(.clipboard) { select(.clipboard) }
         beginInteractiveIfNeeded()
         // Deliberately NOT pinned. Clicking the popup means "show me the
@@ -94,9 +117,12 @@ extension NotchViewModel {
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    /// Clicking a peek card puts that clip back on the pasteboard.
+    /// Clicking a peek card puts that clip back on the pasteboard — and stops
+    /// there, for the same reason as `copyWithoutPaste`: the click just made
+    /// the non-activating panel key without borrowing focus from anywhere, so
+    /// a synthesized ⌘V would land on the overlay, not the user's document.
     func restoreFromPeek(_ clip: ClipboardService.Clip) {
-        pick(clip)
+        copyWithoutPaste(clip)
         dismissHUD()
     }
 
@@ -106,17 +132,42 @@ extension NotchViewModel {
     ///
     /// Without the grant the clip is still copied; the hint says so once rather
     /// than leaving the pick looking like it did nothing.
+    ///
+    /// Only a path that borrowed key focus (the picker) or never took it (the
+    /// global shortcut) may call this. A pick reached by *clicking* the panel
+    /// has nowhere to hand the keyboard back to, so the ⌘V lands on the overlay
+    /// itself — those paths use `copyWithoutPaste` instead.
     func pick(
         _ clip: ClipboardService.Clip,
         pasteAfter delay: TimeInterval = PasteSynthesizer.defaultDelay
     ) {
-        services.clipboard.copy(clip)
+        let token = services.clipboard.copy(clip)
         guard services.hudPreferences.autoPaste else { return }
-        if pasteSynthesizer.pasteToFrontmostApp(after: delay) {
+        let clipboard = services.clipboard
+        // Only paste if this clip is still what the pasteboard is offering.
+        // Something else can write in the beat between the two — Universal
+        // Clipboard, another manager — and pasting anyway would put content
+        // in the document that the user never picked.
+        let paste = pasteSynthesizer.pasteToFrontmostApp(after: delay) {
+            clipboard.changeCount == token
+        }
+        if paste {
             pasteHint = nil
         } else if pasteHint == nil {
             pasteHint = "Copied. Grant Accessibility to paste automatically."
         }
+    }
+
+    /// Puts a clip back on the pasteboard and stops there.
+    ///
+    /// The dashboard's clipboard tiles use this rather than `pick`. Reaching
+    /// them means clicking the panel, which makes the notch the key window
+    /// without it having borrowed focus from anywhere — so there is nowhere to
+    /// hand the keyboard back to, and the synthesized ⌘V was delivered to the
+    /// overlay itself. Copying and saying so is honest; pasting into thin air
+    /// is not.
+    func copyWithoutPaste(_ clip: ClipboardService.Clip) {
+        services.clipboard.copy(clip)
     }
 
     // MARK: - Clipboard picker
@@ -129,10 +180,35 @@ extension NotchViewModel {
 
     /// Pure so the key mapping is testable without an event or a window.
     ///
-    /// Digits pick; Escape closes. Everything else is ignored rather than
-    /// swallowed, since the picker sits over whatever the user was doing.
-    static func pickerAction(forKeyCode keyCode: UInt16, characters: String?) -> PickerAction? {
-        if keyCode == 53 { return .dismiss } // kVK_Escape
+    /// Digits pick; Escape, Return and Space close. Everything else is ignored
+    /// rather than swallowed, since the picker sits over whatever the user was
+    /// doing.
+    ///
+    /// Modifiers are the reason this takes them. A bare digit picks, but ⌘1 is
+    /// switch-to-first-tab in every browser and something of its own in most
+    /// other apps — and the picker has no auto-dismiss, sits on every Space,
+    /// and is easy not to notice. Reading ⌘1 as "pick the first clip" meant an
+    /// unnoticed picker turned a tab switch into a paste of whatever was
+    /// copied first, and swallowed the shortcut on the way.
+    ///
+    /// Shift is allowed through: on layouts where the number row is shifted,
+    /// Shift is how a digit is typed at all. `characters` rather than
+    /// `charactersIgnoringModifiers` keeps ⇧1 on a US layout as "!", which
+    /// selects nothing.
+    ///
+    /// Return and Space dismiss rather than select. With Full Keyboard Access
+    /// on they activate whichever row SwiftUI focused first — the top one — so
+    /// leaving them unhandled meant a silent pick of the newest clip.
+    static func pickerAction(
+        forKeyCode keyCode: UInt16,
+        characters: String?,
+        modifiers: NSEvent.ModifierFlags = []
+    ) -> PickerAction? {
+        switch keyCode {
+        case 53, 36, 76, 49: return .dismiss // Escape, Return, keypad Enter, Space
+        default: break
+        }
+        guard modifiers.isDisjoint(with: [.command, .control, .option]) else { return nil }
         guard let digit = characters.flatMap(Int.init), (1 ... 9).contains(digit) else { return nil }
         return .select(digit)
     }
@@ -167,7 +243,6 @@ extension NotchViewModel {
         pendingPeekPromotion?.cancel()
         pendingPeekPromotion = nil
         cancelPendingCollapse()
-        pasteMonitor.stop()
         // The chord is global, so it has to work while the dashboard happens to
         // be open — and `isExpanded` outranks `hudContent` in the tier map. Set
         // both in one animation: leaving `isExpanded` true showed nothing at
@@ -178,17 +253,32 @@ extension NotchViewModel {
         isManuallyPinned = false
         // No auto-dismiss timer: unlike the copy popup, this one is waiting for
         // the user to choose something.
+        // Order matters, and it is the opposite of how it reads. Both
+        // properties publish in willSet, so the window controller sees each
+        // assignment separately: setting `isExpanded` first published a state
+        // with no HUD content and nothing expanded — the collapsed tier — and
+        // the picker's own tier a moment later, so two window animations ran
+        // against each other and the frame could settle on the smaller one
+        // while the content stayed picker-sized. Raising `hudContent` first
+        // leaves the intermediate state on the tier it is already showing, and
+        // the picker arrives in a single step. Same reason as `expandFromHUD`
+        // and `armPeekPromotion` below.
+        // Setting hudContent to .clipPicker starts the picker's key monitor
+        // through its didSet.
         withAnimation(transitionAnimation) {
-            isExpanded = Self.clipPickerPresentation.isExpanded
             hudContent = Self.clipPickerPresentation.hudContent
+            isExpanded = Self.clipPickerPresentation.isExpanded
         }
-        pickerKeyMonitor.start()
     }
 
     /// Act on a key press while the picker is showing.
-    func handlePickerKey(code: UInt16, characters: String?) -> Bool {
+    func handlePickerKey(
+        code: UInt16,
+        characters: String?,
+        modifiers: NSEvent.ModifierFlags = []
+    ) -> Bool {
         guard case .clipPicker = hudContent else { return false }
-        switch Self.pickerAction(forKeyCode: code, characters: characters) {
+        switch Self.pickerAction(forKeyCode: code, characters: characters, modifiers: modifiers) {
         case .dismiss:
             dismissHUD()
             return true

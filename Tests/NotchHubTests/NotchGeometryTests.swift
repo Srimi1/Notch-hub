@@ -130,3 +130,63 @@ struct SystemMonitorMachTests {
         #expect(used ?? 1 > 0)
     }
 }
+
+/// Hovering the notch made it flicker open and shut under a stationary
+/// pointer. Resizing the overlay tears down and rebuilds the tracking area,
+/// and AppKit delivers the exit from the old one without an enter for the new
+/// one — so the collapse that exit caused was immediately undone by the
+/// reconcile, and round it went.
+@Suite("Notch hover gating")
+@MainActor
+struct HoverGatingTests {
+
+    private func makeView() -> (HoverView, Box) {
+        let view = HoverView(frame: NSRect(x: 0, y: 0, width: 179, height: 32))
+        let box = Box()
+        view.onHoverChange = { box.values.append($0) }
+        return (view, box)
+    }
+
+    final class Box {
+        var values: [Bool] = []
+    }
+
+    /// Enter and exit events that arrive while the frame is moving are the
+    /// unreliable ones, so they are dropped rather than acted on.
+    @Test
+    func eventsDuringAFrameAnimationAreIgnored() {
+        let (view, box) = makeView()
+
+        view.isFrameAnimating = true
+        view.handleTransientHover(true)
+        view.handleTransientHover(false)
+
+        #expect(box.values.isEmpty)
+    }
+
+    /// Once the frame settles the events are honoured again.
+    @Test
+    func eventsAreHonouredOnceTheFrameSettles() {
+        let (view, box) = makeView()
+
+        view.isFrameAnimating = false
+        view.handleTransientHover(true)
+
+        #expect(box.values == [true])
+    }
+
+    /// Repeats say nothing new. Dropping them keeps the reconcile after every
+    /// animation free, and stops a reconcile that agrees with the current
+    /// state from restarting anything.
+    @Test
+    func onlyChangesAreReported() {
+        let (view, box) = makeView()
+
+        view.handleTransientHover(true)
+        view.handleTransientHover(true)
+        view.handleTransientHover(false)
+        view.handleTransientHover(false)
+
+        #expect(box.values == [true, false])
+    }
+}

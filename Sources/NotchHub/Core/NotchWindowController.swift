@@ -15,6 +15,9 @@ final class NotchWindowController {
     private var geometry: NotchGeometry
     private weak var hoverView: HoverView?
     private weak var hostingView: NSHostingView<NotchContainerView>?
+    /// Identifies the in-flight frame animation, so a completion that has been
+    /// overtaken by a newer one does nothing.
+    private var frameGeneration = 0
 
     static let expandedSize = CGSize(
         width: NotchTheme.expandedWidth,
@@ -126,10 +129,15 @@ final class NotchWindowController {
         viewModel.$showCollapsedWings
             .removeDuplicates()
             .dropFirst()
-            .sink { [weak self] _ in
+            .sink { [weak self] wings in
                 guard let self, !self.viewModel.isExpanded,
                       self.viewModel.hudContent == nil else { return }
-                self.animateFrame(tier: .collapsed)
+                // Size the pill from the value being published, not from the
+                // property: @Published emits in willSet, so re-reading it here
+                // returns the *previous* state. The frame ran one transition
+                // behind — widening for wings just as they went away, which
+                // left an oversized pill with nothing in it.
+                self.animateFrame(tier: .collapsed, showWings: wings)
             }
             .store(in: &cancellables)
     }
@@ -137,7 +145,7 @@ final class NotchWindowController {
     // MARK: - Public
 
     func show() {
-        panel.setFrame(collapsedFrame(), display: true)
+        panel.setFrame(collapsedFrame(showWings: viewModel.showCollapsedWings), display: true)
         panel.claimInteractionLayer()
         panel.yieldToPeerOverlays()
     }
@@ -171,14 +179,58 @@ final class NotchWindowController {
 
     // MARK: - Frame animation
 
-    private func animateFrame(tier: Tier) {
-        let target: NSRect
-        switch tier {
-        case .collapsed: target = collapsedFrame()
-        case .hud: target = hudFrame()
-        case .picker: target = pickerFrame()
-        case .expanded: target = expandedFrame()
+    private func animateFrame(tier: Tier, showWings: Bool? = nil) {
+        let target = frame(for: tier, showWings: showWings)
+        applyChrome(for: tier)
+        // The content view is laid out from the window's bottom-left, and the
+        // window's top edge is welded to the top of the screen — so content
+        // taller than the window does not overhang downwards, it runs off the
+        // top of the display where it cannot be seen. Grow the content first so
+        // it is ready when the window reaches it, but shrink it only once the
+        // window has, and never below the window in between.
+        //
+        // The generation guard covers a retarget: if a newer, larger frame is
+        // already on its way when a shrink completes, honouring the stale
+        // completion would cut the content out from under it.
+        frameGeneration += 1
+        let generation = frameGeneration
+        let grows = target.width >= panel.frame.width && target.height >= panel.frame.height
+        if grows { resizeContent(to: target.size) }
+        // Enter and exit events are not to be trusted while the frame moves;
+        // the completion below reconciles from the pointer's real position.
+        hoverView?.isFrameAnimating = true
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.01 : 0.28
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.allowsImplicitAnimation = true
+            panel.animator().setFrame(target, display: true)
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                // A newer frame is already on its way: leave the content and
+                // the hover gate to whichever animation finishes last.
+                guard let self, self.frameGeneration == generation else { return }
+                self.resizeContent(to: target.size)
+                // Reconcile hover from where the pointer actually is, now that
+                // the frame has stopped moving and the tracking area is stable.
+                self.hoverView?.isFrameAnimating = false
+                self.hoverView?.syncHoverState()
+                if tier == .collapsed { self.panel.yieldToPeerOverlays() }
+            }
         }
+    }
+
+    private func frame(for tier: Tier, showWings: Bool?) -> NSRect {
+        switch tier {
+        case .collapsed: collapsedFrame(showWings: showWings ?? viewModel.showCollapsedWings)
+        case .hud: hudFrame()
+        case .picker: pickerFrame()
+        case .expanded: expandedFrame()
+        }
+    }
+
+    /// Interaction, keyboard, and corner rounding for a tier.
+    private func applyChrome(for tier: Tier) {
         // The popup takes clicks and drags, so it needs the interaction layer
         // exactly like the dashboard does.
         if tier != .collapsed { panel.claimInteractionLayer() }
@@ -194,16 +246,6 @@ final class NotchWindowController {
         case .hud: 18
         case .picker, .expanded: 24
         }
-        resizeContent(to: target.size)
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.01 : 0.28
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            context.allowsImplicitAnimation = true
-            panel.animator().setFrame(target, display: true)
-        } completionHandler: { [weak self] in
-            guard tier == .collapsed else { return }
-            Task { @MainActor [weak self] in self?.panel.yieldToPeerOverlays() }
-        }
     }
 
     private func resizeContent(to size: CGSize) {
@@ -214,14 +256,30 @@ final class NotchWindowController {
 
     // MARK: - Frames (top-centered on the active screen)
 
-    private func collapsedFrame() -> NSRect {
+    private func collapsedFrame(showWings: Bool) -> NSRect {
         var size = geometry.notchSize
-        if viewModel.showCollapsedWings {
-            // Symmetric wings keep the black notch body centered over the
-            // physical camera housing.
-            size.width += viewModel.collapsedWingWidth * 2
-        }
+        size.width = Self.collapsedWidth(
+            notchWidth: size.width,
+            showWings: showWings,
+            wingWidth: viewModel.collapsedWingWidth,
+            wingPadding: viewModel.collapsedWingPadding
+        )
         return Self.topCentered(size: size, on: geometry.screen)
+    }
+
+    /// Window width for the collapsed pill. Symmetric wings keep the black
+    /// body centered over the physical camera housing, and each wing needs its
+    /// outer padding as well as its own width — budgeting only the wing slid
+    /// the last few characters of the clock and the activity label under the
+    /// housing, where they cannot be read.
+    static func collapsedWidth(
+        notchWidth: CGFloat,
+        showWings: Bool,
+        wingWidth: CGFloat,
+        wingPadding: CGFloat
+    ) -> CGFloat {
+        guard showWings else { return notchWidth }
+        return notchWidth + (wingWidth + wingPadding) * 2
     }
 
     private func hudFrame() -> NSRect {
@@ -241,17 +299,23 @@ final class NotchWindowController {
     }
 
     private func expandedFrame() -> NSRect {
-        let size = Self.expandedSize(forScreenWidth: geometry.screen.frame.width)
+        let size = Self.expandedSize(
+            forScreenWidth: geometry.screen.frame.width,
+            notchHeight: geometry.notchSize.height
+        )
         return Self.topCentered(
             size: size,
             on: geometry.screen
         )
     }
 
-    static func expandedSize(forScreenWidth screenWidth: CGFloat) -> CGSize {
+    static func expandedSize(
+        forScreenWidth screenWidth: CGFloat,
+        notchHeight: CGFloat = NotchTheme.navigationHeight
+    ) -> CGSize {
         CGSize(
             width: min(expandedSize.width, max(0, screenWidth - 40)),
-            height: expandedSize.height
+            height: NotchTheme.expandedHeight(notchHeight: notchHeight)
         )
     }
 

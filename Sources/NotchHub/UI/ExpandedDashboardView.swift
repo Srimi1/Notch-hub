@@ -25,7 +25,7 @@ struct ExpandedDashboardView: View {
     }
 
     private var moduleDashboard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NotchTheme.dashboardRowSpacing) {
             toggleBand
 
             if visibleModules.isEmpty {
@@ -158,8 +158,8 @@ struct ExpandedDashboardView: View {
         case .clipboard:
             ClipboardModuleView(
                 clipboard: services.clipboard,
-                hint: viewModel.pasteHint
-            ) { viewModel.pick($0) }
+                hint: "Click to copy. The clipboard shortcut picks and pastes in one go."
+            ) { viewModel.copyWithoutPaste($0) }
         case .focus:
             FocusModuleView(focus: services.focus)
         }
@@ -370,7 +370,7 @@ private struct FocusModuleView: View {
 
 private struct ClipboardModuleView: View {
     @ObservedObject var clipboard: ClipboardService
-    let hint: String?
+    let hint: String
     let onPick: (ClipboardService.Clip) -> Void
 
     var body: some View {
@@ -379,12 +379,10 @@ private struct ClipboardModuleView: View {
                 EmptyHint(symbol: "doc.on.clipboard", text: "Copy text, an image, or a file to collect it here.")
             } else {
                 clipRow
-                if let hint {
-                    Text(hint)
-                        .font(.system(size: 10))
-                        .foregroundStyle(NotchTheme.secondaryText)
-                        .lineLimit(1)
-                }
+                Text(hint)
+                    .font(.system(size: 10))
+                    .foregroundStyle(NotchTheme.secondaryText)
+                    .lineLimit(1)
             }
         }
     }

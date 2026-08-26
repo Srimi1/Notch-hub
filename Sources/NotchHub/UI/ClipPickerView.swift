@@ -20,7 +20,10 @@ struct ClipPickerView: View {
             footer
         }
         .padding(.horizontal, NotchTheme.horizontalPadding)
-        .padding(.top, 8)
+        // Clear the camera housing. The picker hangs from the top of the
+        // screen, so eight points of padding put the first row — the one the
+        // digit 1 selects — behind the notch itself.
+        .padding(.top, viewModel.notchSize.height + 8)
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .transition(.asymmetric(

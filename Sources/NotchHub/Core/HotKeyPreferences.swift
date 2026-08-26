@@ -9,10 +9,16 @@ final class HotKeyPreferences {
     private enum Key {
         static let clipPickerEnabled = "hotkey.clipPicker.enabled"
         static let clipPickerSpec = "hotkey.clipPicker.spec"
+        static let clipPickerDoubleTapN = "hotkey.clipPicker.doubleTapN"
     }
 
     var clipPickerEnabled: Bool {
         didSet { defaults.set(clipPickerEnabled, forKey: Key.clipPickerEnabled) }
+    }
+
+    /// Whether tapping N twice opens the picker as well as the chord.
+    var clipPickerDoubleTapN: Bool {
+        didSet { defaults.set(clipPickerDoubleTapN, forKey: Key.clipPickerDoubleTapN) }
     }
 
     /// The id of the chosen preset. Stored by id rather than by key code so a
@@ -30,6 +36,7 @@ final class HotKeyPreferences {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         clipPickerEnabled = defaults.object(forKey: Key.clipPickerEnabled) as? Bool ?? true
+        clipPickerDoubleTapN = defaults.object(forKey: Key.clipPickerDoubleTapN) as? Bool ?? true
         clipPickerSpecID = defaults.string(forKey: Key.clipPickerSpec) ?? HotKeyCenter.defaultSpec.id
     }
 }

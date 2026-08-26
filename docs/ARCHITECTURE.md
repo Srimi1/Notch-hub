@@ -61,7 +61,15 @@ active-display follower or screen picker.
 | --- | --- |
 | Collapsed | Matches the physical camera area. Notchless displays use a chip 190 points wide and at least 32 points tall. Non-ambient activity can add symmetric wings. |
 | HUD | A 520 × 104 point temporary surface for copy feedback, clipboard preview, or a charging event. |
-| Expanded | An 860 × 136 point dashboard, with width clamped to the display width minus 40 points. |
+| Picker | A 560 × 360 point clipboard history, opened by the global chord or by tapping N twice. It borrows key status so it can read digit keys, and hands it back on the way out. |
+| Expanded | An 860 point dashboard, 136 points tall or as tall as the notch requires, with width clamped to the display width minus 40 points. |
+
+Both properties behind the tier map are separately published and `isExpanded`
+outranks `hudContent`, so a presentation that changes both has to set them in
+the order that keeps the intermediate state on a tier already showing.
+Otherwise the window animates towards one size while the content is laid out
+for another, and since the panel hangs from the top of the screen the excess
+runs off the display rather than overhanging below it.
 
 Hover expands the interface and pointer exit schedules collapse after 0.15
 seconds. **Toggle Notch** pins the expanded tier until toggled again. A clipboard

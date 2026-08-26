@@ -61,6 +61,22 @@ struct PasteSynthesizerTests {
         #expect(recorder.events[1].type == .keyUp)
     }
 
+    /// The pasteboard is written a beat before the keystroke, and that beat is
+    /// long enough for something else to write over it — Universal Clipboard
+    /// handing over a phone's clipboard, another manager, an app that copies
+    /// on selection. Pasting anyway put content in the document that the user
+    /// had not picked.
+    @Test
+    func aClipOvertakenBeforeTheKeystrokeIsNotPasted() {
+        let recorder = Recorder()
+        let synthesizer = makeSynthesizer(trusted: true, recorder: recorder)
+
+        #expect(synthesizer.pasteToFrontmostApp(isStillCurrent: { false }))
+
+        #expect(recorder.scheduledDelays.count == 1)
+        #expect(recorder.events.isEmpty)
+    }
+
     /// The keystroke waits a beat so the pasteboard write and the picker
     /// dismissal land first.
     @Test

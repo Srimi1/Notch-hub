@@ -28,7 +28,16 @@ final class NotchViewModel: ObservableObject {
     @Published var isExpanded = false
     /// The middle presentation tier: bigger than the collapsed pill, far
     /// smaller than the dashboard. `isExpanded` always wins over it.
-    @Published var hudContent: HudContent?
+    ///
+    /// The global key monitors are derived from this rather than started and
+    /// stopped at each call site: two of them leaked that way — the picker's,
+    /// then the paste watcher — each a keyDown hook that outlived its popup
+    /// because one mutation path forgot its `stop()`. `didSet` makes the tier
+    /// the single source of truth, so no path can forget again.
+    @Published var hudContent: HudContent? {
+        didSet { applyMonitorPolicy() }
+    }
+
     @Published var activeModule: FeatureModule = .dashboard
     @Published private(set) var presentedActivityID: String?
     @Published private(set) var actionError: String?
@@ -51,11 +60,17 @@ final class NotchViewModel: ObservableObject {
     /// physical camera housing.
     @Published private(set) var showCollapsedWings = false
     let collapsedWingWidth: CGFloat = 112
+    /// Outer padding on each wing. The window has to budget for it too, or the
+    /// text runs under the camera housing.
+    let collapsedWingPadding: CGFloat = 12
 
     /// Physical notch size on the active screen, published by the window
     /// controller. The expanded dashboard uses the width to leave a gap in the
     /// middle of its toggle row so buttons never hide behind the camera.
-    @Published var notchSize: CGSize = CGSize(width: 200, height: 32)
+    @Published var notchSize = CGSize(
+        width: NotchGeometry.fallbackWidth,
+        height: NotchGeometry.fallbackHeight
+    )
 
     /// Small grace period before collapsing, so brushing past the edge of the
     /// expanded panel doesn't cause it to flicker shut.
@@ -119,7 +134,12 @@ final class NotchViewModel: ObservableObject {
         pickerKeyMonitor.onKeyDown = { [weak self] event in
             self?.handlePickerKey(
                 code: event.keyCode,
-                characters: event.charactersIgnoringModifiers
+                // `characters`, not `charactersIgnoringModifiers`: shifted
+                // number rows are how digits are typed on some layouts, and on
+                // a US layout ⇧1 reads as "!" and picks nothing, which is what
+                // the user meant by it.
+                characters: event.characters,
+                modifiers: event.modifierFlags
             ) ?? false
         }
         observeCharging()
@@ -208,13 +228,11 @@ final class NotchViewModel: ObservableObject {
         let willExpand = !isExpanded
         if willExpand { presentCurrentActivity() }
         isManuallyPinned = willExpand
-        // Stop the HUD's own timers without letting it animate hudContent to
-        // nil on its own — see the ordering note on `expandFromHUD`. When
-        // expanding, isExpanded has to flip in the SAME animation that clears
-        // hudContent, or the window collapses and re-expands instead of
-        // growing straight from whatever HUD tier was showing (⌘T pressed
-        // while a popup or peek is up).
-        pasteMonitor.stop()
+        // When expanding, isExpanded has to flip in the SAME animation that
+        // clears hudContent, or the window collapses and re-expands instead of
+        // growing straight from whatever HUD tier was showing (⌘T pressed while
+        // a popup or peek is up). Clearing hudContent below takes both key
+        // monitors down through its didSet.
         pendingHudDismiss?.cancel()
         pendingHudDismiss = nil
         pendingPeekPromotion?.cancel()

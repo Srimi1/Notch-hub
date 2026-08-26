@@ -80,6 +80,40 @@ struct AdapterProcessLauncherTests {
         #expect(session.handle.isRunning == false)
     }
 
+    /// A process that bursts far more than a pipe buffer and exits in the same
+    /// breath is the shape that used to interleave: two readers took the same
+    /// descriptor at once, so chunks could land in the accumulator out of order
+    /// — garbled JSON, dropped updates. A distinct fill per line makes any
+    /// interleaving fail the uniformity check, and the loop amplifies a
+    /// probabilistic race into a reliable failure.
+    @Test
+    func aBurstOfLongLinesArrivesIntactAndInOrder() async throws {
+        let (launcher, directory) = try makeLauncher(body: """
+        $| = 1;
+        for my $i (1..8) { print chr(ord("0") + $i) x 65536, "\\n"; }
+        exit 0;
+        """)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        for _ in 0 ..< 5 {
+            let session = try launcher.launch(arguments: [])
+            var events: [AdapterEvent] = []
+            for await event in session.events { events.append(event) }
+
+            #expect(events.count == 9)
+            #expect(events.last == .exited(status: 0))
+            for (index, event) in events.dropLast().enumerated() {
+                guard case let .line(line) = event else {
+                    Issue.record("event \(index) was not a line")
+                    continue
+                }
+                let fill = Character("\(index + 1)")
+                #expect(line.count == 65536)
+                #expect(line.allSatisfy { $0 == fill })
+            }
+        }
+    }
+
     /// A bundle path is full of regex metacharacters, and `pkill -f` takes a
     /// regex. An unescaped dot in `NotchHub.app` would match any character.
     @Test

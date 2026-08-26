@@ -251,22 +251,67 @@ enum SafeExternalURL {
         return !isReservedIPv6Prefix(bytes)
     }
 
+    /// The IPv4 address a transition-prefix IPv6 address embeds, or nil when no
+    /// well-defined embedding applies.
+    ///
+    /// An IPv6 literal can carry an IPv4 address inside it, and several of those
+    /// forms would otherwise read as an ordinary public IPv6 address — so
+    /// `[64:ff9b::7f00:1]` is 127.0.0.1 wearing a public-looking prefix. Only
+    /// prefixes with a single, documented embedding are decoded here; local-use
+    /// and obfuscated transition prefixes are refused wholesale by
+    /// `isReservedIPv6Prefix` instead, since there is no one address to judge.
     private static func embeddedIPv4(_ bytes: [UInt8]) -> UInt32? {
+        // 6to4 (RFC 3056): 2002::/16, tunnel endpoint IPv4 at bytes 2-5.
+        if bytes[0] == 0x20, bytes[1] == 0x02 { return quad(bytes, at: 2) }
+        // NAT64 well-known prefix (RFC 6052): 64:ff9b::a.b.c.d, quad at 12-15.
+        // The zero run rules out the local-use /48 (64:ff9b:1::), refused below.
+        if bytes[0] == 0x00, bytes[1] == 0x64, bytes[2] == 0xFF, bytes[3] == 0x9B,
+           bytes[4 ..< 12].allSatisfy({ $0 == 0 }) {
+            return quad(bytes, at: 12)
+        }
+        // IPv4-translated (RFC 2765): ::ffff:0:a.b.c.d.
+        if bytes[0 ..< 8].allSatisfy({ $0 == 0 }), bytes[8] == 0xFF, bytes[9] == 0xFF,
+           bytes[10] == 0, bytes[11] == 0 {
+            return quad(bytes, at: 12)
+        }
+        // IPv4-mapped / IPv4-compatible (RFC 4291): ::ffff:a.b.c.d and ::a.b.c.d.
         guard bytes[0 ..< 10].allSatisfy({ $0 == 0 }) else { return nil }
         let isMapped = bytes[10] == 0xFF && bytes[11] == 0xFF
         let isCompatible = bytes[10] == 0 && bytes[11] == 0
         guard isMapped || isCompatible else { return nil }
-        return UInt32(bytes[12]) << 24 | UInt32(bytes[13]) << 16
-            | UInt32(bytes[14]) << 8 | UInt32(bytes[15])
+        return quad(bytes, at: 12)
+    }
+
+    private static func quad(_ bytes: [UInt8], at offset: Int) -> UInt32 {
+        UInt32(bytes[offset]) << 24 | UInt32(bytes[offset + 1]) << 16
+            | UInt32(bytes[offset + 2]) << 8 | UInt32(bytes[offset + 3])
     }
 
     private static func isReservedIPv6Prefix(_ bytes: [UInt8]) -> Bool {
         if bytes[0] & 0xFE == 0xFC { return true } // fc00::/7  unique-local
         if bytes[0] == 0xFE, bytes[1] & 0xC0 == 0x80 { return true } // fe80::/10 link-local
         if bytes[0] == 0xFF { return true } // ff00::/8  multicast
+        if isTeredoIPv6(bytes) { return true }
+        if isLocalUseNAT64IPv6(bytes) { return true }
         if isDocumentationIPv6(bytes) { return true } // 2001:db8::/32
         // 100::/64 discard-only
         return bytes[0] == 0x01 && bytes[1] == 0x00 && bytes[2 ... 7].allSatisfy { $0 == 0 }
+    }
+
+    /// Teredo (RFC 4380): 2001::/32. It embeds two IPv4 addresses — the server's
+    /// in clear, the client's XOR-obfuscated — so there is no single address to
+    /// judge. Fail closed. (2001:db8::/32 documentation has a non-zero third
+    /// hextet, so it never collides with this.)
+    private static func isTeredoIPv6(_ bytes: [UInt8]) -> Bool {
+        bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x00 && bytes[3] == 0x00
+    }
+
+    /// Local-use NAT64 (RFC 8215): 64:ff9b:1::/48. Defined for translation
+    /// inside one network, so anything under it points at that network's own
+    /// translator — even an embedded address that reads as public. Fail closed.
+    private static func isLocalUseNAT64IPv6(_ bytes: [UInt8]) -> Bool {
+        bytes[0] == 0x00 && bytes[1] == 0x64 && bytes[2] == 0xFF && bytes[3] == 0x9B
+            && bytes[4] == 0x00 && bytes[5] == 0x01
     }
 
     private static func isDocumentationIPv6(_ bytes: [UInt8]) -> Bool {

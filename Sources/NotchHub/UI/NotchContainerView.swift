@@ -27,7 +27,8 @@ struct NotchContainerView: View {
                     coordinator: viewModel.services.activityCoordinator,
                     battery: viewModel.services.battery,
                     warningPercent: viewModel.services.activityPreferences.batteryWarningPercent,
-                    wingWidth: viewModel.collapsedWingWidth
+                    wingWidth: viewModel.collapsedWingWidth,
+                    wingPadding: viewModel.collapsedWingPadding
                 )
                 .transition(.opacity)
             }
@@ -47,6 +48,7 @@ private struct CollapsedStripView: View {
     @ObservedObject var battery: BatteryService
     let warningPercent: Int
     let wingWidth: CGFloat
+    let wingPadding: CGFloat
 
     var body: some View {
         HStack(spacing: 0) {
@@ -60,7 +62,7 @@ private struct CollapsedStripView: View {
             )
             .frame(width: wingWidth, alignment: .trailing)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, wingPadding)
         .foregroundStyle(.white)
     }
 }
@@ -86,14 +88,21 @@ private struct ActivityWingView: View {
     @ObservedObject var battery: BatteryService
     let warningPercent: Int
 
+    /// Nothing to say means nothing to draw. The strip appears on a published
+    /// flag while the activity itself arrives on its own schedule, so the two
+    /// can disagree for a moment — and a placeholder dot beside an empty label
+    /// is worse than an empty wing. The parent still reserves the slot, so the
+    /// notch body does not shift when the activity lands.
     var body: some View {
-        HStack(spacing: 5) {
-            leading
-            Text(wingText)
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .contentTransition(.numericText())
+        if let activity {
+            HStack(spacing: 5) {
+                leading
+                Text(activity.compactLabel)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .contentTransition(.numericText())
+            }
         }
     }
 
@@ -130,10 +139,6 @@ private struct ActivityWingView: View {
             isLowPowerMode: battery.isLowPowerMode,
             warningPercent: warningPercent
         )
-    }
-
-    private var wingText: String {
-        activity?.compactLabel ?? ""
     }
 }
 

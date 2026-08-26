@@ -37,9 +37,13 @@ final class MediaRemoteAdapterSource: MediaSource {
     nonisolated static let maximumConsecutiveFailures = 5
     nonisolated static let maximumRestartDelay: TimeInterval = 30
 
+    /// How long a run has to last before it counts as healthy.
+    nonisolated static let stabilityWindow: TimeInterval = 30
+
     private let launcher: AdapterLaunching
     private let schedule: @Sendable (TimeInterval, @escaping @Sendable () -> Void) -> Void
     private let resolveApp: (_ bundleId: String?, _ parentBundleId: String?) -> MediaApp
+    private let now: @Sendable () -> Date
 
     /// Whether the stream is up.
     var isStreaming: Bool { readTask != nil }
@@ -48,6 +52,7 @@ final class MediaRemoteAdapterSource: MediaSource {
     private var readTask: Task<Void, Never>?
     private var isStopping = false
     private var consecutiveFailures = 0
+    private var lastLaunchDate: Date?
     private var hasReapedStrays = false
     /// Guards the window between deciding to start and having something to show
     /// for it.
@@ -68,11 +73,13 @@ final class MediaRemoteAdapterSource: MediaSource {
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
             },
         resolveApp: @escaping (_ bundleId: String?, _ parentBundleId: String?) -> MediaApp
-            = { MediaApp.resolve(bundleId: $0, parentBundleId: $1) }
+            = { MediaApp.resolve(bundleId: $0, parentBundleId: $1) },
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.launcher = launcher
         self.schedule = schedule
         self.resolveApp = resolveApp
+        self.now = now
     }
 
     /// `nil` when the adapter is not bundled — a plain `swift run`, or a bundle
@@ -111,6 +118,7 @@ final class MediaRemoteAdapterSource: MediaSource {
 
     private func launch() {
         do {
+            lastLaunchDate = now()
             let session = try launcher.launch(arguments: Self.streamArguments)
             processHandle = session.handle
             readTask = Task { [weak self] in
@@ -137,12 +145,8 @@ final class MediaRemoteAdapterSource: MediaSource {
         case .ignored:
             return
         case .nothingPlaying:
-            // A parsed line means the adapter is alive and talking, whether or
-            // not anything is playing.
-            consecutiveFailures = 0
             update(nil)
         case let .media(payload):
-            consecutiveFailures = 0
             update(NowPlaying(
                 title: payload.title,
                 artist: payload.artist,
@@ -158,7 +162,12 @@ final class MediaRemoteAdapterSource: MediaSource {
         readTask = nil
         guard !isStopping else { return }
 
-        consecutiveFailures += 1
+        let uptime = lastLaunchDate.map { now().timeIntervalSince($0) } ?? 0
+        consecutiveFailures = Self.failures(
+            afterExitWithUptime: uptime,
+            previousFailures: consecutiveFailures
+        )
+        lastLaunchDate = nil
         update(nil)
 
         guard consecutiveFailures < Self.maximumConsecutiveFailures else {
@@ -179,6 +188,25 @@ final class MediaRemoteAdapterSource: MediaSource {
     private func restart() {
         guard !isStopping, !isUnavailable, readTask == nil else { return }
         launch()
+    }
+
+    /// The failure streak after a run ends. A run that lasted counts as
+    /// healthy, so its exit is the first of a fresh streak; a short-lived one
+    /// extends the streak it belongs to.
+    ///
+    /// Surviving, not speaking, is what makes a run healthy. Clearing the
+    /// streak on any parsed line looks reasonable — the adapter is alive and
+    /// talking — but the adapter's own output is drained on the way out, so a
+    /// process that printed one good line and died still cleared the count.
+    /// The ceiling was never reached, the source never went unavailable, and
+    /// the relaunch loop ran for the rest of the session: a new track every
+    /// second or so, and with it a collapsed pill growing and shrinking
+    /// forever.
+    nonisolated static func failures(
+        afterExitWithUptime uptime: TimeInterval,
+        previousFailures: Int
+    ) -> Int {
+        uptime >= stabilityWindow ? 1 : previousFailures + 1
     }
 
     /// Doubling backoff, capped. A player that never starts must not cost a

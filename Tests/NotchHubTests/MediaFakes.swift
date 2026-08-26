@@ -16,6 +16,16 @@ final class Schedule: @unchecked Sendable {
     var delays: [TimeInterval] = []
 }
 
+/// A hand-wound clock, so a test can say how long an adapter run lasted
+/// without waiting for it.
+final class FakeClock: @unchecked Sendable {
+    var now = Date(timeIntervalSinceReferenceDate: 0)
+
+    func advance(_ interval: TimeInterval) {
+        now = now.addingTimeInterval(interval)
+    }
+}
+
 final class FakeLauncherState: @unchecked Sendable {
     var launches: [[String]] = []
     var detached: [[String]] = []

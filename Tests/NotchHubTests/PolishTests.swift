@@ -67,6 +67,47 @@ struct PolishedNotchGeometryTests {
         #expect(compact.width == 660)
         #expect(compact.height == 136)
     }
+
+    /// A taller notch means a taller toggle band, and the window has to grow
+    /// with it or the module row is pushed out through the bottom.
+    @Test
+    @MainActor
+    func expandedHeightGrowsWithATallNotch() {
+        #expect(NotchTheme.expandedHeight(notchHeight: 32) == 136)
+        #expect(NotchTheme.expandedHeight(notchHeight: 38) == 138)
+        #expect(NotchWindowController.expandedSize(
+            forScreenWidth: 1_470,
+            notchHeight: 38
+        ).height == 138)
+    }
+
+    /// Each wing needs its outer padding as well as its own width, or the ends
+    /// of the clock and the activity label sit under the camera housing.
+    @Test
+    @MainActor
+    func collapsedWidthBudgetsBothWingsAndTheirPadding() {
+        let wide = NotchWindowController.collapsedWidth(
+            notchWidth: 179,
+            showWings: true,
+            wingWidth: 112,
+            wingPadding: 12
+        )
+        #expect(wide == CGFloat(179 + (112 + 12) * 2))
+    }
+
+    /// Without an activity the pill is the bare notch — anything wider is an
+    /// empty black slab, because nothing is drawn in the extra space.
+    @Test
+    @MainActor
+    func collapsedWidthWithoutWingsIsTheBareNotch() {
+        let narrow = NotchWindowController.collapsedWidth(
+            notchWidth: 179,
+            showWings: false,
+            wingWidth: 112,
+            wingPadding: 12
+        )
+        #expect(narrow == 179)
+    }
 }
 
 @Suite("Polished Navigation and Settings")

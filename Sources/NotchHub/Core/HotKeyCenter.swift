@@ -125,6 +125,11 @@ final class CarbonHotKey {
     private static var nextID: UInt32 = 1
     private static var handlers: [UInt32: () -> Void] = [:]
     private static var eventHandler: EventHandlerRef?
+    /// Chords currently held down, so auto-repeat fires the handler once.
+    private static var heldIDs: Set<UInt32> = []
+    /// When each held chord was last heard from, so a missing release event
+    /// cannot leave one held forever.
+    private static var lastPress: [UInt32: Date] = [:]
 
     private let id: UInt32
     private var hotKeyRef: EventHotKeyRef?
@@ -156,6 +161,8 @@ final class CarbonHotKey {
         if let hotKeyRef { UnregisterEventHotKey(hotKeyRef) }
         hotKeyRef = nil
         Self.handlers[self.id] = nil
+        Self.heldIDs.remove(self.id)
+        Self.lastPress[self.id] = nil
     }
 
     deinit {
@@ -163,15 +170,50 @@ final class CarbonHotKey {
         // cleanup is hopped to the main actor where it is isolated.
         if let hotKeyRef { UnregisterEventHotKey(hotKeyRef) }
         let id = self.id
-        Task { @MainActor in CarbonHotKey.handlers[id] = nil }
+        Task { @MainActor in
+            CarbonHotKey.handlers[id] = nil
+            CarbonHotKey.heldIDs.remove(id)
+            CarbonHotKey.lastPress[id] = nil
+        }
+    }
+
+    /// How long a chord is assumed held without hearing from it again.
+    ///
+    /// Auto-repeat arrives far faster than this and keeps refreshing the
+    /// assumption, so a genuinely held chord stays gated. The expiry is there
+    /// because the release half of the gate cannot be relied on: Carbon's
+    /// released event is documented but not dependable, and a gate that waits
+    /// for one that never comes would leave the shortcut working exactly once
+    /// per launch — much worse than the repeat it is meant to stop.
+    nonisolated static let holdExpiry: TimeInterval = 1.0
+
+    /// Whether a hot-key event should run the handler.
+    ///
+    /// Carbon repeats `kEventHotKeyPressed` while the chord is held, and the
+    /// handler is a toggle — holding the shortcut for a moment opened and shut
+    /// the picker over and over, each cycle taking and handing back the
+    /// keyboard. Fire on the first press, not on the repeats.
+    nonisolated static func shouldFire(
+        kind: UInt32,
+        isHeld: Bool,
+        sinceLastPress: TimeInterval
+    ) -> Bool {
+        guard kind == UInt32(kEventHotKeyPressed) else { return false }
+        return !isHeld || sinceLastPress >= holdExpiry
     }
 
     private static func installEventHandlerIfNeeded() {
         guard eventHandler == nil else { return }
-        var spec = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
+        var specs = [
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyPressed)
+            ),
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyReleased)
+            )
+        ]
         InstallEventHandler(GetEventDispatcherTarget(), { _, event, _ -> OSStatus in
             var hotKeyID = EventHotKeyID()
             let status = GetEventParameter(
@@ -185,10 +227,29 @@ final class CarbonHotKey {
             )
             guard status == noErr else { return status }
             let id = hotKeyID.id
+            let kind = GetEventKind(event)
             // The Carbon handler runs on the main thread, but the compiler
             // cannot know that, so hop explicitly.
-            Task { @MainActor in CarbonHotKey.handlers[id]?() }
+            Task { @MainActor in CarbonHotKey.dispatch(id: id, kind: kind) }
             return noErr
-        }, 1, &spec, nil, &eventHandler)
+        }, specs.count, &specs, nil, &eventHandler)
+    }
+
+    private static func dispatch(id: UInt32, kind: UInt32) {
+        let now = Date()
+        let sinceLastPress = lastPress[id].map { now.timeIntervalSince($0) } ?? .greatestFiniteMagnitude
+        guard shouldFire(kind: kind, isHeld: heldIDs.contains(id), sinceLastPress: sinceLastPress) else {
+            if kind == UInt32(kEventHotKeyReleased) {
+                heldIDs.remove(id)
+                lastPress[id] = nil
+            } else {
+                // A repeat still counts as the chord being down.
+                lastPress[id] = now
+            }
+            return
+        }
+        heldIDs.insert(id)
+        lastPress[id] = now
+        handlers[id]?()
     }
 }
