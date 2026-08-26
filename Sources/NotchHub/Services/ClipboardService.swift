@@ -70,10 +70,18 @@ final class ClipboardService: ObservableObject {
     /// Lazily-generated thumbnails for image/file clips, keyed by clip id.
     @Published private(set) var thumbnails: [UUID: NSImage] = [:]
 
-    private let pasteboard = NSPasteboard.general
+    private let pasteboard: NSPasteboard
     private var timer: Timer?
-    private var lastChangeCount = NSPasteboard.general.changeCount
+    private var lastChangeCount: Int
     private let historyLimit = 12
+
+    /// The pasteboard is injectable so tests can run against a private named
+    /// pasteboard — a bare `ClipboardService()` in a test used to write its
+    /// fixture strings straight onto the clipboard the user was working with.
+    init(pasteboard: NSPasteboard = .general) {
+        self.pasteboard = pasteboard
+        self.lastChangeCount = pasteboard.changeCount
+    }
 
     /// Pasteboard markers used by password managers / transient producers.
     private let ignoredTypes: Set<String> = [

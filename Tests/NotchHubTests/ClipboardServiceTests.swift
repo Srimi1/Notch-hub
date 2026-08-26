@@ -10,11 +10,20 @@ import Testing
 @MainActor
 struct ClipboardServiceTests {
 
+    /// A private pasteboard per test. Running the suite while NotchHub itself
+    /// is running used to hand the app's poller these fixtures as if the user
+    /// had copied them, so "first" and "alpha" turned up in real documents.
+    private static func makeIsolated() -> (ClipboardService, NSPasteboard) {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("NotchHubTests." + UUID().uuidString))
+        return (ClipboardService(pasteboard: pasteboard), pasteboard)
+    }
+
     /// Picking an entry must leave the list exactly where it was — same order,
     /// same ids — or a second click targets whatever slid under the cursor.
     @Test
     func restoringAClipLeavesTheHistoryOrderAndIdentityAlone() {
-        let clipboard = ClipboardService()
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
         clipboard.add(.text("first"))
         clipboard.add(.text("second"))
         clipboard.add(.text("third"))
@@ -30,20 +39,35 @@ struct ClipboardServiceTests {
     /// the whole gesture.
     @Test
     func restoringAClipWritesThatClipToThePasteboard() {
-        let clipboard = ClipboardService()
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
         clipboard.add(.text("alpha"))
         clipboard.add(.text("omega"))
 
         clipboard.copy(clipboard.clips[1])
 
-        #expect(NSPasteboard.general.string(forType: .string) == "alpha")
+        #expect(pasteboard.string(forType: .string) == "alpha")
+    }
+
+    /// The suite must never touch the clipboard the user is actually using.
+    @Test
+    func restoringAClipLeavesTheGeneralPasteboardAlone() {
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
+        let before = NSPasteboard.general.changeCount
+
+        clipboard.add(.text("fixture that must not escape"))
+        clipboard.copy(clipboard.clips[0])
+
+        #expect(NSPasteboard.general.changeCount == before)
     }
 
     /// Copying the same content again collapses onto one entry rather than
     /// stacking duplicates.
     @Test
     func recopyingTheSameContentDoesNotDuplicateTheEntry() {
-        let clipboard = ClipboardService()
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
         clipboard.add(.text("repeat"))
         clipboard.add(.text("other"))
         clipboard.add(.text("repeat"))
@@ -56,7 +80,8 @@ struct ClipboardServiceTests {
     /// by clip id, so a stale key is a leak nothing can ever render or clear.
     @Test
     func replacingAClipDropsItsThumbnail() {
-        let clipboard = ClipboardService()
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
         clipboard.add(.text("shared"))
         let stale = clipboard.clips[0].id
 
@@ -68,7 +93,8 @@ struct ClipboardServiceTests {
     /// History is bounded, and trimming prunes thumbnails alongside the clips.
     @Test
     func historyStopsAtTheLimitAndPrunesTrimmedThumbnails() {
-        let clipboard = ClipboardService()
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
         for index in 0 ..< 20 { clipboard.add(.text("clip \(index)")) }
 
         #expect(clipboard.clips.count == 12)
@@ -80,7 +106,8 @@ struct ClipboardServiceTests {
     /// Clearing drops both sides of the state together.
     @Test
     func clearingEmptiesClipsAndThumbnails() {
-        let clipboard = ClipboardService()
+        let (clipboard, pasteboard) = Self.makeIsolated()
+        defer { pasteboard.releaseGlobally() }
         clipboard.add(.text("gone"))
 
         clipboard.clear()
