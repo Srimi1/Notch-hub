@@ -76,7 +76,7 @@ Seven built-in modules cover the day-to-day information NotchHub can read locall
 | Module | What it shows | What you can do | Important limits |
 | --- | --- | --- | --- |
 | **Dashboard** | Clock, date, battery on portable Macs, CPU load, and memory use | Read a compact system overview | Disk usage is sampled internally but is not displayed |
-| **Media** | Current title, artist, and player for whatever is playing, including browser tabs and web apps such as YouTube Music, alongside an astronaut listening along | Previous, play or pause, and next | No album artwork; the astronaut holds still under Reduce Motion |
+| **Media** | Current title, artist, and player for whatever is playing, including browser tabs and web apps such as YouTube Music | Previous, play or pause, and next | No artwork or album view |
 | **Calendar** | Up to six upcoming events from the next two days | Join a supported event URL, open a location in Apple Maps, or open Calendar | Full Calendar access is opt-in; all-day events do not enter Next Up |
 | **Todo** | Up to eight incomplete reminders, including undated reminders | Mark a reminder complete | No reminder creation or editing; undated reminders do not enter Next Up |
 | **Pomodoro** | Persistent 5, 15, 25, and 45 minute presets | Start, pause, resume, or dismiss a timer | Up to eight timer records; the current UI has no custom duration or name |
@@ -88,16 +88,6 @@ Seven built-in modules cover the day-to-day information NotchHub can read locall
 Copy feedback grows directly from the notch. Text, images, and file URLs receive a compact preview; file clips include the native icon, name, type, and size. Hover pauses dismissal, and selecting the HUD opens the Clipboard module. If Accessibility permission already exists, pressing <kbd>⌘V</kbd> can dismiss the visible copy HUD. NotchHub never requests Accessibility solely for this behavior.
 
 Connecting power produces a separate 2.5-second charging HUD. A charging event does not replace a copy HUD already on screen. Both HUDs are enabled by default and can be disabled independently.
-
-### Screenshots on the clipboard
-
-macOS saves a screenshot to a folder and, unless you hold <kbd>⌃</kbd> while you shoot, leaves the clipboard alone. NotchHub can close that gap: switch on **Copy screenshots to the clipboard** in Settings and every screenshot is waiting for <kbd>⌘V</kbd>, with the usual copy popup and an entry in the clipboard history.
-
-It is off until you switch it on, because switching it on is what asks macOS for access to the folder your screenshots are saved in. NotchHub reads `com.apple.screencapture` to find that folder, watches only that one, follows it if you move it, and opens a file only once macOS has marked it as a screen capture — so a document you saved to your Desktop is never read. Screen recordings are left alone, and a capture larger than 32 MB is skipped rather than copied.
-
-A second switch, off by default, moves the file to the Trash once its picture is safely on the clipboard. Nothing is ever deleted outright.
-
-One timing note that is macOS, not NotchHub: with the floating screenshot preview enabled, the file is not written until that preview fades, so the copy lands a few seconds after the shutter. Turning the preview off in the Screenshot app makes it immediate.
 
 ## Next Up
 
@@ -173,7 +163,6 @@ NotchHub has no runtime backend, account system, analytics, advertising, remote 
 | **Media** | Track title, artist, playback state, and player name — from Music and Spotify over Apple Events, and from the system's own now-playing state for every other player | Sends local previous, play or pause, and next commands | The system-wide reader needs no permission and runs from launch, so the notch can show a track before you open anything; the Music/Spotify half waits for your first interaction, because its first scan can trigger the macOS Automation prompt |
 | **Focus** | Best-effort Do Not Disturb state | UI-scripts Control Center only when you request a toggle | Accessibility must be granted manually; no named Focus profiles, and the state reads as unknown until a toggle or Full Disk Access supplies it |
 | **Timers** | Timer title, duration, phase, and dates | Up to eight records in `UserDefaults`; local notification on completion | Notification access is requested when the first timer is created |
-| **Screenshots** | The newest file in the screenshot folder, but only once macOS has tagged it as a screen capture | The picture goes on the pasteboard; the file is left where it is unless you switch on trashing, which moves it to the Trash | Off by default. Switching it on opens the folder, which is what raises the macOS Files-and-Folders prompt; the grant is remembered per folder |
 | **Launch at Login** | Login item registration status | Uses the macOS login-item service | Attempted once on first run, then controlled from Settings |
 
 Clipboard entries carrying macOS concealed, transient, or autogenerated markers are ignored. This reduces the chance of retaining password-manager content, but no clipboard monitor can identify every sensitive value. Clipboard history is never written to disk by NotchHub.
@@ -248,15 +237,13 @@ The menu also provides **Toggle Notch** with <kbd>⌘T</kbd> and **Quit NotchHub
 | Urgent activity over media | Enabled |
 | Copy popup | Enabled |
 | Power-connection popup | Enabled |
-| Copy screenshots to the clipboard | Disabled |
-| Move the screenshot file to the Trash after copying | Disabled |
 | Launch at Login | Registration is attempted once on first run, then remains user-controlled |
 
-Preferences include module visibility, the last selected module, activity types and thresholds, popup choices, screenshot copying and the folders you have allowed for it, and launch-at-login state. Timer records also persist in `UserDefaults`. Clipboard content, media metadata, events, and reminder lists are not persisted by NotchHub.
+Preferences include module visibility, the last selected module, activity types and thresholds, popup choices, and launch-at-login state. Timer records also persist in `UserDefaults`. Clipboard content, media metadata, events, and reminder lists are not persisted by NotchHub.
 
 ## Build, test, and package
 
-NotchHub is a Swift Package Manager executable. AppKit provides the application lifecycle and overlay window; SwiftUI provides the modules and activity surfaces. EventKit, IOKit, Security, ServiceManagement, SQLite3, Quick Look, User Notifications, Combine, and Observation provide the system integrations. SwiftFormat and SwiftLint are tooling dependencies. The app has one third-party runtime package, [Lottie](https://github.com/airbnb/lottie-ios), linked statically to play the bundled animation exactly as its designer authored it.
+NotchHub is a Swift Package Manager executable. AppKit provides the application lifecycle and overlay window; SwiftUI provides the modules and activity surfaces. EventKit, IOKit, Security, ServiceManagement, SQLite3, Quick Look, User Notifications, Combine, and Observation provide the system integrations. SwiftFormat and SwiftLint are tooling dependencies only; the app has no third-party runtime package.
 
 ### Development commands
 
@@ -283,12 +270,12 @@ swift package \
 Notch-hub/
 ├── Sources/NotchHub/
 │   ├── Core/          overlay state, geometry, activities, preferences
-│   ├── Services/      Calendar, Reminders, Media, Clipboard, Screenshots, battery, timers
+│   ├── Services/      Calendar, Reminders, Media, Clipboard, battery, timers
 │   ├── UI/            dashboard modules, HUDs, activity detail, settings
 │   ├── AppDelegate.swift
 │   └── main.swift
 ├── Tests/NotchHubTests/
-├── Resources/         app icon, bundle metadata, signing entitlement, animations
+├── Resources/         app icon, bundle metadata, signing entitlement
 ├── scripts/           app, DMG, quality, and pre-push helpers
 ├── docs/
 └── Package.swift
