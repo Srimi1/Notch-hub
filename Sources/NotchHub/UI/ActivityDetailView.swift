@@ -13,7 +13,7 @@ struct ActivityDetailView: View {
             queue
                 .frame(maxWidth: 220)
             Button("Dashboard") { viewModel.dismissActivity() }
-                .buttonStyle(.plain)
+                .buttonStyle(NotchButtonStyle(shape: .bare))
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(NotchTheme.secondaryText)
                 .help("Show the module dashboard")
@@ -28,7 +28,7 @@ struct ActivityDetailView: View {
             HStack(spacing: 10) {
                 icon(for: activity, size: 19, glyphHeight: 15)
                     .frame(width: 34, height: 34)
-                    .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.1)))
+                    .background(RoundedRectangle(cornerRadius: NotchTheme.cardRadius).fill(Color.white.opacity(0.1)))
                 VStack(alignment: .leading, spacing: 3) {
                     Text(activity.title)
                         .font(.system(size: 14, weight: .semibold))
@@ -53,9 +53,8 @@ struct ActivityDetailView: View {
                             .font(.system(size: 11, weight: .semibold))
                             .padding(.horizontal, 10)
                             .frame(height: 30)
-                            .background(Capsule().fill(Color.white.opacity(0.12)))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NotchButtonStyle(shape: .capsule))
                     .foregroundStyle(.white)
                     .notchPrimaryAction(action == activity.actions.first)
                 }
@@ -98,12 +97,12 @@ struct ActivityDetailView: View {
                             .background(
                                 Circle().fill(
                                     activity.id == viewModel.presentedActivity?.id
-                                        ? Color.white.opacity(0.2)
-                                        : Color.white.opacity(0.07)
+                                        ? NotchTheme.selectedSurface
+                                        : NotchTheme.subtleSurface
                                 )
                             )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NotchButtonStyle(shape: .bare))
                     .help("\(activity.kind.title): \(activity.title)")
                 }
             }

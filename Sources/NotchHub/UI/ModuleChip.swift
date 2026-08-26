@@ -28,7 +28,7 @@ struct ModuleChip: View {
             .background(chipBackground)
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NotchButtonStyle(shape: .bare))
         .help(module.title)
         .accessibilityLabel(module.title)
         .accessibilityValue(isSelected ? "Selected" : "")
@@ -43,7 +43,7 @@ struct ModuleChip: View {
                 .fill(NotchTheme.selectedSurface)
                 .matchedGeometryEffect(id: "selectedChip", in: selectionNamespace)
         } else {
-            Capsule().fill(isHovered ? Color.white.opacity(0.12) : NotchTheme.subtleSurface)
+            Capsule().fill(isHovered ? NotchTheme.hoverSurface : NotchTheme.subtleSurface)
         }
     }
 }

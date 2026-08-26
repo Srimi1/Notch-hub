@@ -114,7 +114,7 @@ private struct CopyHUDRow: View {
             Image(nsImage: thumbnail)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: NotchTheme.cardRadius))
         } else if case .file(let url) = clip.kind {
             // NSWorkspace answers synchronously, so the popup never waits on
             // the QuickLook thumbnail that will replace this a beat later.
@@ -190,13 +190,12 @@ private struct PeekRow: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(NotchTheme.subtleSurface))
                     // The whole card picks, padding included — a click that
                     // lands a pixel off the text must not fall through to the
-                    // container's expand gesture.
-                    .contentShape(RoundedRectangle(cornerRadius: 8))
+                    // container's expand gesture. The style owns both the fill
+                    // and the hit shape, so they cannot drift apart.
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NotchButtonStyle(shape: .card))
                 .help("Copy again: \(clip.preview)")
             }
         }
@@ -213,7 +212,7 @@ private struct PeekRow: View {
             Image(nsImage: thumbnail)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .clipShape(RoundedRectangle(cornerRadius: NotchTheme.innerRadius))
         } else {
             Image(systemName: clip.symbol)
                 .font(.system(size: 13, weight: .medium))

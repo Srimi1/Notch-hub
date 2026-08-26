@@ -83,7 +83,7 @@ struct StatTile<Icon: View>: View {
         .foregroundStyle(.white)
         .frame(maxWidth: .infinity, minHeight: 38, maxHeight: 38, alignment: .topLeading)
         .padding(5)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.07)))
+        .background(RoundedRectangle(cornerRadius: NotchTheme.cardRadius).fill(Color.white.opacity(0.07)))
     }
 }
 
