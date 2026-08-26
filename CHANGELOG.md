@@ -16,6 +16,11 @@ and interface continue to mature before 1.0.
 
 ### Fixed
 
+- Fixed IPv6 transition addresses slipping past the meeting-link guard. NAT64,
+  6to4 and IPv4-translated spellings could dress a loopback or link-local IPv4
+  address up as a public IPv6 one, and a crafted invite's Join chip would have
+  opened it. The embedded address is now judged where the embedding is
+  well-defined, and Teredo and the local-use NAT64 prefix are refused outright.
 - Fixed the copy popup's system-wide key monitor staying installed after the
   popup was clicked open into the dashboard. It kept watching every keystroke
   for a ⌘V until one eventually arrived somewhere.
