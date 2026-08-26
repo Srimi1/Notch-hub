@@ -169,10 +169,12 @@ struct AstronautInkTests {
             var width: Int
             var lastFrame: Int
         }
+        enum CompositionError: Error { case notAnObject }
         func shape(_ data: Data) throws -> Composition {
-            let root = try #require(
-                try JSONSerialization.jsonObject(with: data) as? [String: Any]
-            )
+            let object = try JSONSerialization.jsonObject(with: data)
+            guard let root = object as? [String: Any] else {
+                throw CompositionError.notAnObject
+            }
             return Composition(
                 layers: (root["layers"] as? [Any])?.count ?? -1,
                 width: root["w"] as? Int ?? -1,
