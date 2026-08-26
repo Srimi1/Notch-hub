@@ -16,6 +16,10 @@ and interface continue to mature before 1.0.
 
 ### Fixed
 
+- Fixed clicking a peek card typing its ⌘V into the notch itself. The click
+  makes the panel the key window without borrowing focus from anywhere, so
+  there is nowhere to hand the keyboard back to; the card now copies and says
+  so, like the dashboard's clipboard tiles.
 - Fixed the collapsed notch appearing as an oversized empty black slab. The
   subscription that resizes the pill read the "show wings" flag back off the
   view model instead of using the value it was handed, and that property

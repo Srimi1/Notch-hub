@@ -97,9 +97,12 @@ extension NotchViewModel {
             && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    /// Clicking a peek card puts that clip back on the pasteboard.
+    /// Clicking a peek card puts that clip back on the pasteboard — and stops
+    /// there, for the same reason as `copyWithoutPaste`: the click just made
+    /// the non-activating panel key without borrowing focus from anywhere, so
+    /// a synthesized ⌘V would land on the overlay, not the user's document.
     func restoreFromPeek(_ clip: ClipboardService.Clip) {
-        pick(clip)
+        copyWithoutPaste(clip)
         dismissHUD()
     }
 
@@ -109,6 +112,11 @@ extension NotchViewModel {
     ///
     /// Without the grant the clip is still copied; the hint says so once rather
     /// than leaving the pick looking like it did nothing.
+    ///
+    /// Only a path that borrowed key focus (the picker) or never took it (the
+    /// global shortcut) may call this. A pick reached by *clicking* the panel
+    /// has nowhere to hand the keyboard back to, so the ⌘V lands on the overlay
+    /// itself — those paths use `copyWithoutPaste` instead.
     func pick(
         _ clip: ClipboardService.Clip,
         pasteAfter delay: TimeInterval = PasteSynthesizer.defaultDelay
