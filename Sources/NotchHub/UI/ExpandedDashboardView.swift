@@ -25,7 +25,7 @@ struct ExpandedDashboardView: View {
     }
 
     private var moduleDashboard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NotchTheme.dashboardRowSpacing) {
             toggleBand
 
             if visibleModules.isEmpty {

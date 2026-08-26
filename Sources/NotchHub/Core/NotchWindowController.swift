@@ -287,17 +287,23 @@ final class NotchWindowController {
     }
 
     private func expandedFrame() -> NSRect {
-        let size = Self.expandedSize(forScreenWidth: geometry.screen.frame.width)
+        let size = Self.expandedSize(
+            forScreenWidth: geometry.screen.frame.width,
+            notchHeight: geometry.notchSize.height
+        )
         return Self.topCentered(
             size: size,
             on: geometry.screen
         )
     }
 
-    static func expandedSize(forScreenWidth screenWidth: CGFloat) -> CGSize {
+    static func expandedSize(
+        forScreenWidth screenWidth: CGFloat,
+        notchHeight: CGFloat = NotchTheme.navigationHeight
+    ) -> CGSize {
         CGSize(
             width: min(expandedSize.width, max(0, screenWidth - 40)),
-            height: expandedSize.height
+            height: NotchTheme.expandedHeight(notchHeight: notchHeight)
         )
     }
 

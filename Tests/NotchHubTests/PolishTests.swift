@@ -68,6 +68,19 @@ struct PolishedNotchGeometryTests {
         #expect(compact.height == 136)
     }
 
+    /// A taller notch means a taller toggle band, and the window has to grow
+    /// with it or the module row is pushed out through the bottom.
+    @Test
+    @MainActor
+    func expandedHeightGrowsWithATallNotch() {
+        #expect(NotchTheme.expandedHeight(notchHeight: 32) == 136)
+        #expect(NotchTheme.expandedHeight(notchHeight: 38) == 138)
+        #expect(NotchWindowController.expandedSize(
+            forScreenWidth: 1_470,
+            notchHeight: 38
+        ).height == 138)
+    }
+
     /// Each wing needs its outer padding as well as its own width, or the ends
     /// of the clock and the activity label sit under the camera housing.
     @Test
