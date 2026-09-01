@@ -12,6 +12,7 @@ struct ClipPickerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            header
             if clipboard.clips.isEmpty {
                 empty
             } else {
@@ -30,6 +31,24 @@ struct ClipPickerView: View {
             insertion: .move(edge: .top).combined(with: .opacity),
             removal: .opacity
         ))
+    }
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Label("Clipboard", systemImage: "doc.on.clipboard")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+            Spacer()
+            Text(itemCountLabel)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(NotchTheme.secondaryText)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var itemCountLabel: String {
+        let count = clipboard.clips.count
+        return "\(count) \(count == 1 ? "item" : "items")"
     }
 
     private var empty: some View {
@@ -61,14 +80,22 @@ struct ClipPickerView: View {
                         )
                     }
                     .buttonStyle(NotchButtonStyle(shape: .card))
+                    .help("Paste \(clip.preview)")
+                    .accessibilityLabel(rowAccessibilityLabel(clip: clip, index: index))
+                    .accessibilityHint("Pastes this clipboard item and closes the picker.")
                 }
             }
         }
     }
 
+    private func rowAccessibilityLabel(clip: ClipboardService.Clip, index: Int) -> String {
+        guard index < 9 else { return clip.preview }
+        return "\(index + 1), \(clip.preview)"
+    }
+
     private var footer: some View {
         HStack(spacing: 8) {
-            Text("1–9 to paste · esc to close")
+            Text("1–9 Paste · Esc Close")
                 .font(.system(size: 10))
                 .foregroundStyle(NotchTheme.secondaryText)
             Spacer()

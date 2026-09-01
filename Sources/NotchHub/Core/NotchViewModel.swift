@@ -79,9 +79,8 @@ final class NotchViewModel: ObservableObject {
 
     // HUD-tier state. Internal (not private) because the behavior lives in
     // NotchViewModel+HUD.swift and `private` is file-scoped in Swift.
-    /// How long a copy popup lingers before sliding away on its own.
-    let hudDismissDelay: TimeInterval = 4.0
     var pendingHudDismiss: DispatchWorkItem?
+    var hudDismissCountdown = HUDDismissCountdown()
     /// Sustained hover on the peek promotes it to the full dashboard.
     let peekPromotionDelay: TimeInterval = 0.6
     var pendingPeekPromotion: DispatchWorkItem?
@@ -97,7 +96,7 @@ final class NotchViewModel: ObservableObject {
     @Published var pasteHint: String?
 
     /// Tracks live hover so we know whether to collapse once a pin is released.
-    private var isHovering = false
+    var isHovering = false
     /// The menu-bar "Toggle Notch" action is intentional, not hover-driven. Keep
     /// that expanded state pinned until the user toggles it again.
     var isManuallyPinned = false
@@ -233,8 +232,7 @@ final class NotchViewModel: ObservableObject {
         // growing straight from whatever HUD tier was showing (⌘T pressed while
         // a popup or peek is up). Clearing hudContent below takes both key
         // monitors down through its didSet.
-        pendingHudDismiss?.cancel()
-        pendingHudDismiss = nil
+        cancelHudDismiss()
         pendingPeekPromotion?.cancel()
         pendingPeekPromotion = nil
         withAnimation(transitionAnimation) {

@@ -6,51 +6,54 @@ import SwiftUI
 /// `ExpandedDashboardView` to keep that file under the 500-line lint cap;
 /// nothing else moved with it.
 struct DashboardModuleView: View {
-    @ObservedObject var services: ServiceHub
+    @ObservedObject var time: TimeService
+    @ObservedObject var battery: BatteryService
+    @ObservedObject var system: SystemMonitorService
+    let batteryWarningPercent: Int
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 8) {
-            StatTile(symbol: "clock", title: services.time.clock, subtitle: services.time.dateLabel)
+            StatTile(symbol: "clock", title: time.clock, subtitle: time.dateLabel)
                 .contentTransition(.numericText())
-            if services.battery.hasBattery {
+            if battery.hasBattery {
                 StatTile(
-                    symbol: services.battery.symbol,
-                    title: "\(services.battery.percent)%",
+                    symbol: battery.symbol,
+                    title: "\(battery.percent)%",
                     subtitle: batterySub
                 ) {
                     BatteryGlyphView(
-                        level: services.battery.level,
+                        level: battery.level,
                         state: batteryState,
                         height: 13
                     )
                 }
             }
-            StatTile(symbol: "cpu", title: "\(Int(services.system.cpuUsage * 100))%", subtitle: "CPU")
+            StatTile(symbol: "cpu", title: "\(Int(system.cpuUsage * 100))%", subtitle: "CPU")
                 .contentTransition(.numericText())
-            StatTile(symbol: "memorychip", title: "\(Int(services.system.memoryUsage * 100))%", subtitle: "RAM")
+            StatTile(symbol: "memorychip", title: "\(Int(system.memoryUsage * 100))%", subtitle: "RAM")
                 .contentTransition(.numericText())
         }
         // `contentTransition` only animates inside an animated change, so the
         // ticking values need one driving them.
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: services.time.clock)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: services.battery.percent)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: time.clock)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: battery.percent)
     }
 
     private var batteryState: BatteryGlyphState {
         BatteryGlyphState.resolve(
-            percent: services.battery.percent,
-            isCharging: services.battery.isCharging,
-            isCharged: services.battery.isCharged,
-            isLowPowerMode: services.battery.isLowPowerMode,
-            warningPercent: services.activityPreferences.batteryWarningPercent
+            percent: battery.percent,
+            isCharging: battery.isCharging,
+            isCharged: battery.isCharged,
+            isLowPowerMode: battery.isLowPowerMode,
+            warningPercent: batteryWarningPercent
         )
     }
 
     private var batterySub: String {
-        if services.battery.isCharging { return "Charging" }
-        if let minutes = services.battery.minutesRemaining {
+        if battery.isCharging { return "Charging" }
+        if let minutes = battery.minutesRemaining {
             return "\(minutes / 60)h \(minutes % 60)m"
         }
         return "Battery"

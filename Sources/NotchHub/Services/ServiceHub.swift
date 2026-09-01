@@ -50,6 +50,7 @@ final class ServiceHub: ObservableObject {
     private var started = false
     private var startedInteractive = false
     private var cancellables = Set<AnyCancellable>()
+    private var pendingActivityRefresh: DispatchWorkItem?
     /// Owns the activation observer so it is unregistered when the hub goes
     /// away. Deregistering from `ServiceHub.deinit` directly would mean touching
     /// main-actor state from a nonisolated deinit, which is an error under
@@ -65,20 +66,19 @@ final class ServiceHub: ObservableObject {
         activityCoordinator = ActivityCoordinator(preferences: activityPreferences)
         screenshots = ScreenshotService(preferences: screenshotPreferences)
 
-        // Re-publish whenever any child service changes, so container views
-        // that switch on cross-service state (the live strip, the collapsed
-        // wing selector) stay reactive without observing each child directly.
-        let forward: () -> Void = { [weak self] in self?.objectWillChange.send() }
-        let publishers: [ObservableObjectPublisher] = [
-            time.objectWillChange, system.objectWillChange, battery.objectWillChange,
-            media.objectWillChange, calendar.objectWillChange,
-            clipboard.objectWillChange, focus.objectWillChange
+        // Only services that can change an ActivitySnapshot rebuild the queue.
+        // Clipboard and system-stat publications used to trigger the same work
+        // even though neither contributes a candidate. Scheduling on the next
+        // main-run-loop turn also folds a service's related @Published fields
+        // into one rebuild.
+        let activityPublishers: [ObservableObjectPublisher] = [
+            time.objectWillChange, battery.objectWillChange, media.objectWillChange,
+            calendar.objectWillChange, focus.objectWillChange
         ]
-        for publisher in publishers {
+        for publisher in activityPublishers {
             publisher
                 .sink { [weak self] in
-                    forward()
-                    Task { @MainActor [weak self] in self?.refreshActivities() }
+                    self?.scheduleActivityRefresh()
                 }
                 .store(in: &cancellables)
         }
@@ -87,11 +87,11 @@ final class ServiceHub: ObservableObject {
         screenshots.onChange = { [weak self] in self?.objectWillChange.send() }
         screenshotPreferences.onChange = { [weak self] in self?.applyScreenshotWatching() }
 
-        timers.onChange = { [weak self] in self?.refreshActivities() }
-        reminders.onChange = { [weak self] in self?.refreshActivities() }
+        timers.onChange = { [weak self] in self?.scheduleActivityRefresh() }
+        reminders.onChange = { [weak self] in self?.scheduleActivityRefresh() }
         activityPreferences.onChange = { [weak self] in
             self?.activityCoordinator.refreshForPreferences()
-            self?.refreshActivities()
+            self?.scheduleActivityRefresh()
         }
 
         modulePreferences?.$visibleModules
@@ -194,6 +194,8 @@ final class ServiceHub: ObservableObject {
     /// exits without terminating it, so a quit would leave a stray
     /// `mediaremote-adapter` behind for every launch.
     func shutDown() {
+        pendingActivityRefresh?.cancel()
+        pendingActivityRefresh = nil
         media.stop()
         screenshots.stop()
         clipboard.stop()
@@ -210,6 +212,17 @@ final class ServiceHub: ObservableObject {
         if isVisible(.media) { media.start() }
         if isVisible(.calendar) { calendar.start() }
         reminders.refreshAuthorization()
+    }
+
+    private func scheduleActivityRefresh() {
+        guard pendingActivityRefresh == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingActivityRefresh = nil
+            self.refreshActivities()
+        }
+        pendingActivityRefresh = work
+        DispatchQueue.main.async(execute: work)
     }
 
     /// macOS never tells an app that its Calendar/Reminders switch changed in
