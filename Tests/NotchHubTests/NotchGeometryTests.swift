@@ -175,6 +175,25 @@ struct HoverGatingTests {
         #expect(box.values == [true])
     }
 
+    /// Settling the frame drops the gate, so hover works again even when the
+    /// settle comes from the controller's fallback rather than the animation's
+    /// own completion. Without a window the reconcile inside it is a no-op, which
+    /// is exactly what isolates the gate-clearing behaviour under test.
+    @Test
+    func settlingTheFrameClearsTheGate() {
+        let (view, box) = makeView()
+
+        view.isFrameAnimating = true
+        view.handleTransientHover(true) // dropped while the frame moves
+        #expect(box.values.isEmpty)
+
+        view.endFrameAnimation()
+        #expect(view.isFrameAnimating == false)
+
+        view.handleTransientHover(true) // honoured again
+        #expect(box.values == [true])
+    }
+
     /// Repeats say nothing new. Dropping them keeps the reconcile after every
     /// animation free, and stops a reconcile that agrees with the current
     /// state from restarting anything.
