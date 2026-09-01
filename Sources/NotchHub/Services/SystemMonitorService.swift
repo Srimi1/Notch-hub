@@ -25,6 +25,11 @@ final class SystemMonitorService: ObservableObject {
     private var timer: Timer?
     private var previousCPUTicks: host_cpu_load_info?
     private let totalRAM = Double(ProcessInfo.processInfo.physicalMemory)
+    /// Guards against overlapping off-main disk reads.
+    private var diskInFlight = false
+    /// Counts samples so the disk read can run on a slower cadence than the
+    /// cheap CPU and memory reads.
+    private var sampleCount = 0
 
     func start() {
         guard timer == nil else { return }
@@ -44,7 +49,33 @@ final class SystemMonitorService: ObservableObject {
     private func sample() {
         cpuUsage = readCPU() ?? cpuUsage
         readMemory()
-        readDisk()
+        sampleDiskIfDue()
+    }
+
+    /// The CPU and memory reads are cheap Mach calls and stay on the main thread,
+    /// but the disk read touches the filesystem — it used to hitch the main
+    /// thread every 2s, including as the notch opened. Disk usage changes
+    /// slowly, so read it off the main thread and only every ~10s (every fifth
+    /// 2s sample). Published values are still assigned on the main thread.
+    private func sampleDiskIfDue() {
+        defer { sampleCount += 1 }
+        guard sampleCount % 5 == 0, !diskInFlight else { return }
+        diskInFlight = true
+        DispatchQueue.global(qos: .utility).async {
+            let capacity = Self.homeVolumeCapacity()
+            DispatchQueue.main.async { [weak self] in
+                self?.applyDiskCapacity(capacity)
+            }
+        }
+    }
+
+    private func applyDiskCapacity(_ capacity: (total: Double, free: Double)?) {
+        diskInFlight = false
+        guard let capacity,
+              let metrics = Self.diskMetrics(total: capacity.total, free: capacity.free)
+        else { return }
+        diskUsage = metrics.usage
+        diskFreeGB = metrics.freeGB
     }
 
     // MARK: - CPU
@@ -128,16 +159,30 @@ final class SystemMonitorService: ObservableObject {
 
     // MARK: - Disk
 
-    private func readDisk() {
+    /// Total and available capacity of the home volume, in bytes.
+    ///
+    /// `nonisolated static` so the filesystem read runs on a background queue
+    /// (see `sampleDiskIfDue`) and returns a `Sendable` value.
+    static func homeVolumeCapacity() -> (total: Double, free: Double)? {
         let url = URL(fileURLWithPath: NSHomeDirectory())
         guard let values = try? url.resourceValues(forKeys: [
             .volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey
-        ]) else { return }
+        ]) else { return nil }
 
         let total = Double(values.volumeTotalCapacity ?? 0)
         let free = Double(values.volumeAvailableCapacityForImportantUsage ?? 0)
-        guard total > 0 else { return }
-        diskFreeGB = free / 1_073_741_824
-        diskUsage = min((total - free) / total, 1)
+        return (total, free)
+    }
+
+    /// Used fraction and free gigabytes from a raw capacity sample. Pure, so the
+    /// arithmetic — including the divide-by-zero guard — is unit-tested directly.
+    static func diskMetrics(total: Double, free: Double) -> (usage: Double, freeGB: Double)? {
+        guard total > 0 else { return nil }
+        // Clamp to 0...1: `volumeAvailableCapacityForImportantUsage` counts
+        // purgeable space, so it can exceed raw free space (a negative "used")
+        // or be negative under pressure, and a bar wants a real fraction.
+        let usage = min(max((total - free) / total, 0), 1)
+        let freeGB = free / 1_073_741_824
+        return (usage, freeGB)
     }
 }
