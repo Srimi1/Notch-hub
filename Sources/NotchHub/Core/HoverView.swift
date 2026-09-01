@@ -94,6 +94,19 @@ final class HoverView: NSView {
         report(hovering)
     }
 
+    /// The frame has settled: drop the gate and reconcile from the real pointer.
+    ///
+    /// Called from the controller both on the animation's own completion and
+    /// from a fallback timer, so the gate can never stay stuck true if a
+    /// completion is delayed or dropped (display sleep or disconnect mid-move) —
+    /// which used to leave hover dead until the next successful animation.
+    /// Idempotent: running it twice reconciles to the same state and the report
+    /// dedup makes the second run a no-op.
+    func endFrameAnimation() {
+        isFrameAnimating = false
+        syncHoverState()
+    }
+
     /// Reconcile the hover flag with where the pointer actually is.
     ///
     /// Called once the window has finished moving rather than from `layout()`:

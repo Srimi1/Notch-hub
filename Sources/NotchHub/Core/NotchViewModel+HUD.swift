@@ -31,19 +31,29 @@ extension NotchViewModel {
             isExpanded: isExpanded,
             hudContent: hudContent
         ) else { return }
-        pendingHudDismiss?.cancel()
+        cancelHudDismissTimers()
         // Setting hudContent starts the paste monitor through its didSet.
         withAnimation(transitionAnimation) { hudContent = .clip(clip) }
         armHudDismiss()
+        armHudHardDismiss()
     }
 
     func dismissHUD() {
-        pendingHudDismiss?.cancel()
-        pendingHudDismiss = nil
+        cancelHudDismissTimers()
         pendingPeekPromotion?.cancel()
         pendingPeekPromotion = nil
         guard hudContent != nil else { return }
         withAnimation(transitionAnimation) { hudContent = nil }
+    }
+
+    /// Cancel both copy-popup dismiss timers together. The soft one is paused by
+    /// hover; the hard one is not — anything that clears or replaces the popup
+    /// content has to drop both, or a stale timer fires against the new state.
+    func cancelHudDismissTimers() {
+        pendingHudDismiss?.cancel()
+        pendingHudDismiss = nil
+        pendingHudHardDismiss?.cancel()
+        pendingHudHardDismiss = nil
     }
 
     /// Which global hooks may live for a given HUD tier. Static so the rule is
@@ -93,8 +103,7 @@ extension NotchViewModel {
     /// `hudContent` afterward is a no-op tier-wise. Same fix as
     /// `armPeekPromotion` below.
     func expandFromHUD() {
-        pendingHudDismiss?.cancel()
-        pendingHudDismiss = nil
+        cancelHudDismissTimers()
         // Clearing hudContent below takes down whichever monitor the HUD being
         // expanded away from was using, through its didSet.
         if preferences.isVisible(.clipboard) { select(.clipboard) }
@@ -238,8 +247,7 @@ extension NotchViewModel {
     static let clipPickerPresentation = Presentation(isExpanded: false, hudContent: .clipPicker)
 
     func showClipPicker() {
-        pendingHudDismiss?.cancel()
-        pendingHudDismiss = nil
+        cancelHudDismissTimers()
         pendingPeekPromotion?.cancel()
         pendingPeekPromotion = nil
         cancelPendingCollapse()
@@ -326,6 +334,17 @@ extension NotchViewModel {
         DispatchQueue.main.asyncAfter(deadline: .now() + hudDismissDelay, execute: work)
     }
 
+    /// The hover-proof ceiling. Armed once when the popup appears and left to run
+    /// even while the pointer pauses the ordinary dismiss, so the popup can never
+    /// hang open. Cleared only when the popup content is cleared or replaced,
+    /// through `cancelHudDismissTimers`.
+    func armHudHardDismiss() {
+        pendingHudHardDismiss?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.dismissHUD() }
+        pendingHudHardDismiss = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + hudMaxLifetime, execute: work)
+    }
+
     /// Announce the cable. `isCharging` flips instantly thanks to the battery
     /// service's IOKit callback, so the moment lands while the connector is
     /// still in hand — the Dynamic Island beat, not a delayed echo of it.
@@ -347,7 +366,7 @@ extension NotchViewModel {
         // picker is something the user is actively reading; don't replace either.
         if case .clip = hudContent { return }
         if case .clipPicker = hudContent { return }
-        pendingHudDismiss?.cancel()
+        cancelHudDismissTimers()
         withAnimation(transitionAnimation) { hudContent = .charging }
         let work = DispatchWorkItem { [weak self] in self?.dismissHUD() }
         pendingHudDismiss = work

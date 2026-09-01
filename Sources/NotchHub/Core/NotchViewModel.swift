@@ -80,8 +80,18 @@ final class NotchViewModel: ObservableObject {
     // HUD-tier state. Internal (not private) because the behavior lives in
     // NotchViewModel+HUD.swift and `private` is file-scoped in Swift.
     /// How long a copy popup lingers before sliding away on its own.
-    let hudDismissDelay: TimeInterval = 4.0
+    let hudDismissDelay: TimeInterval = 2.0
     var pendingHudDismiss: DispatchWorkItem?
+    /// Absolute ceiling on how long a copy popup can stay, hover or no hover.
+    ///
+    /// The ordinary dismiss is paused while the pointer is over the popup so it
+    /// can be read or dragged from — but the popup is a wide box welded to the
+    /// top-centre of the screen, right where the cursor rests near the notch, so
+    /// a stationary pointer used to pause it with no timeout and leave it hanging
+    /// open. This second timer is never cancelled by hover, only when the popup's
+    /// content is actually cleared, so the popup always goes away on its own.
+    let hudMaxLifetime: TimeInterval = 4.0
+    var pendingHudHardDismiss: DispatchWorkItem?
     /// Sustained hover on the peek promotes it to the full dashboard.
     let peekPromotionDelay: TimeInterval = 0.6
     var pendingPeekPromotion: DispatchWorkItem?
@@ -101,11 +111,9 @@ final class NotchViewModel: ObservableObject {
     /// The menu-bar "Toggle Notch" action is intentional, not hover-driven. Keep
     /// that expanded state pinned until the user toggles it again.
     var isManuallyPinned = false
-    var transitionAnimation: Animation {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            ? .linear(duration: 0.01)
-            : .spring(response: 0.35, dampingFraction: 0.82)
-    }
+    /// One shared timeline for the content and the window frame — see
+    /// `NotchMotion`, which both this and `NotchWindowController` read from.
+    var transitionAnimation: Animation { NotchMotion.swiftUI }
 
     var cancellables = Set<AnyCancellable>()
 
@@ -233,8 +241,7 @@ final class NotchViewModel: ObservableObject {
         // growing straight from whatever HUD tier was showing (⌘T pressed while
         // a popup or peek is up). Clearing hudContent below takes both key
         // monitors down through its didSet.
-        pendingHudDismiss?.cancel()
-        pendingHudDismiss = nil
+        cancelHudDismissTimers()
         pendingPeekPromotion?.cancel()
         pendingPeekPromotion = nil
         withAnimation(transitionAnimation) {
