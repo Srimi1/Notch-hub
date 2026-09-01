@@ -79,8 +79,9 @@ final class NotchViewModel: ObservableObject {
 
     // HUD-tier state. Internal (not private) because the behavior lives in
     // NotchViewModel+HUD.swift and `private` is file-scoped in Swift.
-    /// How long a copy popup lingers before sliding away on its own.
-    let hudDismissDelay: TimeInterval = 2.0
+    /// How long a copy popup lingers before sliding away on its own. Static so
+    /// the timing can be checked without building the service graph.
+    static let hudDismissDelay: TimeInterval = 2.0
     var pendingHudDismiss: DispatchWorkItem?
     /// Absolute ceiling on how long a copy popup can stay, hover or no hover.
     ///
@@ -90,7 +91,7 @@ final class NotchViewModel: ObservableObject {
     /// a stationary pointer used to pause it with no timeout and leave it hanging
     /// open. This second timer is never cancelled by hover, only when the popup's
     /// content is actually cleared, so the popup always goes away on its own.
-    let hudMaxLifetime: TimeInterval = 4.0
+    static let hudMaxLifetime: TimeInterval = 4.0
     var pendingHudHardDismiss: DispatchWorkItem?
     /// Sustained hover on the peek promotes it to the full dashboard.
     let peekPromotionDelay: TimeInterval = 0.6

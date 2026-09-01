@@ -331,7 +331,7 @@ extension NotchViewModel {
         pendingHudDismiss?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.dismissHUD() }
         pendingHudDismiss = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + hudDismissDelay, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hudDismissDelay, execute: work)
     }
 
     /// The hover-proof ceiling. Armed once when the popup appears and left to run
@@ -342,7 +342,7 @@ extension NotchViewModel {
         pendingHudHardDismiss?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.dismissHUD() }
         pendingHudHardDismiss = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + hudMaxLifetime, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hudMaxLifetime, execute: work)
     }
 
     /// Announce the cable. `isCharging` flips instantly thanks to the battery

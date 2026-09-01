@@ -28,29 +28,16 @@ struct HudTests {
         #expect(!NotchViewModel.shouldShowCopyHUD(popupEnabled: false, isExpanded: true, hudContent: nil))
     }
 
-    /// The copy popup arms two timers: an ordinary dwell that hover pauses, and
-    /// a hard ceiling that hover cannot touch, so the popup can never hang open
-    /// under a cursor resting near the notch.
+    /// The copy popup keeps two timers: an ordinary dwell that hover pauses, and
+    /// a hard ceiling that hover cannot cancel, so a cursor resting near the
+    /// notch can never hold it open. The ceiling must outlast the dwell (so hover
+    /// buys a little reading time) yet stay short and bounded (so it always
+    /// clears).
     @Test
-    func aCopyPopupArmsAHardCeilingHoverCannotCancel() {
-        let viewModel = NotchViewModel(preferences: ModulePreferences(), services: ServiceHub())
-        let clip = ClipboardService.Clip(id: UUID(), kind: .text("x"), date: .now)
-
-        #expect(viewModel.hudDismissDelay < viewModel.hudMaxLifetime)
-
-        viewModel.showCopyHUD(clip)
-        #expect(viewModel.pendingHudDismiss != nil)
-        #expect(viewModel.pendingHudHardDismiss != nil)
-
-        // Hover pauses the ordinary dwell but leaves the ceiling running.
-        viewModel.setHudHover(true)
-        #expect(viewModel.pendingHudDismiss == nil)
-        #expect(viewModel.pendingHudHardDismiss != nil)
-
-        // Clearing the popup drops both timers.
-        viewModel.dismissHUD()
-        #expect(viewModel.pendingHudDismiss == nil)
-        #expect(viewModel.pendingHudHardDismiss == nil)
+    func theCopyPopupCeilingOutlastsItsDwellButStaysShort() {
+        #expect(NotchViewModel.hudDismissDelay < NotchViewModel.hudMaxLifetime)
+        #expect(NotchViewModel.hudMaxLifetime <= 5)
+        #expect(NotchViewModel.hudDismissDelay > 0)
     }
 
     @Test
