@@ -4,6 +4,36 @@ Notable user-facing changes are recorded here. NotchHub follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while the public API
 and interface continue to mature before 1.0.
 
+## [0.7.0] - 2026-09-01
+
+### Fixed
+
+- The notch is more reliable to open. Hovering it sometimes did nothing: while
+  the panel was mid-animation all hover was ignored, and recovery hung on a
+  single animation callback that a display sleeping or disconnecting could drop,
+  leaving hover dead until the next open. A fallback now settles the frame even
+  if that callback never arrives, and a cursor already resting over the notch at
+  launch, wake, or a Space switch is registered instead of ignored until it
+  moves.
+- Opening the notch no longer stutters. The black window frame and the interface
+  inside it animated on two different systems — a 0.28s ease-out against a 0.35s
+  spring — so they settled on different timelines. Both now share one crisp
+  ease-out. The first open also no longer waits on a calendar read run on the
+  main thread, and the activity list no longer rebuilds on every clipboard or
+  system-stat change, with the remaining rebuilds coalesced onto a single pass.
+- The copy popup clears faster and is now yours to tune. Its default dwell
+  dropped from four seconds to about one and a half, with Brief, Standard, and
+  Long options in Settings, and it counts down on a monotonic clock so a change
+  to the system time can no longer stretch it. Hovering the popup still pauses
+  the countdown so a clip can be read or dragged from, but a hover-proof ceiling
+  now clears it even if the pointer keeps resting over it, so it can never hang
+  open.
+
+### Changed
+
+- Releases are now cut by a GitHub Actions workflow that builds the DMG on macOS
+  and publishes it when a version tag is pushed.
+
 ## [0.6.0] - 2026-08-26
 
 ### Added

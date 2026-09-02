@@ -172,6 +172,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        // A cursor resting over the notch after the app is reactivated (or after
+        // wake) may have missed its enter event, so reconcile from the real
+        // pointer position rather than waiting for the next mouse move.
+        notchController?.reconcileHover()
         guard hotKeyPreferences.clipPickerDoubleTapN else { return }
         doubleTapMonitor.start()
     }

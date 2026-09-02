@@ -28,9 +28,14 @@ final class CalendarService: ObservableObject {
     @Published private(set) var lastError: String?
 
     private let store = EKEventStore()
+    private let reader = CalendarEventReader()
     private var timer: Timer?
     private var eventStoreObserver: NSObjectProtocol?
     private var lastKnownStatus: EKAuthorizationStatus?
+    /// Guards against overlapping off-main reads: a 60s tick or a change
+    /// notification that lands while a read is in flight is skipped rather than
+    /// stacked, since the in-flight read already publishes fresh data.
+    private var reloadInFlight = false
 
     func start() {
         refreshAuthorization()
@@ -115,7 +120,7 @@ final class CalendarService: ObservableObject {
     }
 
     private func reload() {
-        guard access == .granted else { return }
+        guard access == .granted, !reloadInFlight else { return }
         let calendar = Calendar.current
         let start = Date()
         guard let end = calendar.date(byAdding: .day, value: 2, to: calendar.startOfDay(for: start)) else {
@@ -123,36 +128,44 @@ final class CalendarService: ObservableObject {
             return
         }
 
-        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
-        // `EKEvent.startDate`/`endDate` are `null_unspecified` in EventKit's
-        // headers, so Swift imports them as implicitly-unwrapped optionals.
-        // Subscribed .ics feeds, CalDAV accounts, and detached recurrence
-        // occurrences can carry a nil date, which would nil-trap the whole app
-        // on a refresh tick. Bind them before use rather than trusting the IUO.
-        let mapped = store.events(matching: predicate)
-            .compactMap { ek -> Event? in
-                guard let startDate = ek.startDate as Date?,
-                      let endDate = ek.endDate as Date?
-                else {
-                    return nil
-                }
-                let title = DisplaySanitizer.text(ek.title, limit: 120)
-                return Event(
-                    id: ek.eventIdentifier ?? "\(startDate.timeIntervalSince1970).\(title)",
-                    title: title.isEmpty ? "Untitled event" : title,
-                    start: startDate,
-                    end: endDate,
-                    isAllDay: ek.isAllDay,
-                    calendarColorHex: ek.calendar?.color?.hexString,
-                    location: DisplaySanitizer.text(ek.structuredLocation?.title ?? ek.location, limit: 300),
-                    url: ek.url
-                )
-            }
-            .sorted { $0.start < $1.start }
-            .prefix(8)
-        let result = Array(mapped)
-        events = result
-        lastError = nil
+        reloadInFlight = true
+        // The EventKit query is a synchronous database read that used to run on
+        // the main actor and stall the notch's first open. Run it on the reader
+        // actor and only assign the Sendable result back here on the main actor.
+        Task { [weak self] in
+            guard let self else { return }
+            let events = await self.reader.fetch(start: start, end: end)
+            self.events = events
+            self.lastError = nil
+            self.reloadInFlight = false
+        }
+    }
+
+    /// Map one EventKit event to a display `Event`, dropping any with a nil date.
+    ///
+    /// `EKEvent.startDate`/`endDate` are `null_unspecified` in EventKit's
+    /// headers, so Swift imports them as implicitly-unwrapped optionals.
+    /// Subscribed .ics feeds, CalDAV accounts, and detached recurrence
+    /// occurrences can carry a nil date, which would nil-trap the whole app.
+    /// Bind them before use rather than trusting the IUO. Nonisolated so the
+    /// reader actor can call it off the main actor.
+    nonisolated static func map(_ ek: EKEvent) -> Event? {
+        guard let startDate = ek.startDate as Date?,
+              let endDate = ek.endDate as Date?
+        else {
+            return nil
+        }
+        let title = DisplaySanitizer.text(ek.title, limit: 120)
+        return Event(
+            id: ek.eventIdentifier ?? "\(startDate.timeIntervalSince1970).\(title)",
+            title: title.isEmpty ? "Untitled event" : title,
+            start: startDate,
+            end: endDate,
+            isAllDay: ek.isAllDay,
+            calendarColorHex: ek.calendar?.color?.hexString,
+            location: DisplaySanitizer.text(ek.structuredLocation?.title ?? ek.location, limit: 300),
+            url: ek.url
+        )
     }
 
     private func handleAccessResult(granted: Bool, errorMessage: String?) {
@@ -177,6 +190,26 @@ final class CalendarService: ObservableObject {
     private func report(_ message: String) {
         lastError = message
         NSLog("NotchHub calendar: %@", message)
+    }
+}
+
+/// Reads EventKit off the main actor.
+///
+/// `EKEventStore.events(matching:)` is a synchronous database read; on the main
+/// actor it stalled the notch's first open. This actor owns its own store —
+/// EventKit authorization is process-global, so a second, read-only store sees
+/// the same grant — and hands back already-`Sendable` `Event` values, so the
+/// service only assigns the result.
+private actor CalendarEventReader {
+    private let store = EKEventStore()
+
+    func fetch(start: Date, end: Date) -> [CalendarService.Event] {
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        let mapped = store.events(matching: predicate)
+            .compactMap(CalendarService.map)
+            .sorted { $0.start < $1.start }
+            .prefix(8)
+        return Array(mapped)
     }
 }
 

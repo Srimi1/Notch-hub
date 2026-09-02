@@ -80,6 +80,10 @@ extension NotchViewModel {
             paused: isHovering
         )
         if let delay { armHudDismiss(after: delay) }
+        // The ordinary dismiss above pauses while the pointer is over the popup;
+        // this ceiling does not, so a cursor resting near the notch can no longer
+        // hold the popup open indefinitely.
+        armHudHardDismiss()
     }
 
     func dismissHUD() {
@@ -373,6 +377,8 @@ extension NotchViewModel {
     func cancelHudDismiss() {
         pendingHudDismiss?.cancel()
         pendingHudDismiss = nil
+        pendingHudHardDismiss?.cancel()
+        pendingHudHardDismiss = nil
         hudDismissCountdown.clear()
     }
 
@@ -381,6 +387,17 @@ extension NotchViewModel {
         let work = DispatchWorkItem { [weak self] in self?.dismissHUD() }
         pendingHudDismiss = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// The hover-proof ceiling on the copy popup. Armed once when the popup
+    /// appears and left to run even while the pointer pauses the ordinary
+    /// countdown, so the popup can never hang open. It is dropped only through
+    /// `cancelHudDismiss`, i.e. whenever the popup content is cleared or replaced.
+    private func armHudHardDismiss() {
+        pendingHudHardDismiss?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.dismissHUD() }
+        pendingHudHardDismiss = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hudHoverCeiling, execute: work)
     }
 
     /// Announce the cable. `isCharging` flips instantly thanks to the battery

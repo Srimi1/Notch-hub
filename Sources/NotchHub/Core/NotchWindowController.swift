@@ -18,6 +18,9 @@ final class NotchWindowController {
     /// Identifies the in-flight frame animation, so a completion that has been
     /// overtaken by a newer one does nothing.
     private var frameGeneration = 0
+    /// Fallback that settles the frame if the animation's own completion is late
+    /// or never arrives — see `animateFrame`.
+    private var pendingSettle: DispatchWorkItem?
 
     static let expandedSize = CGSize(
         width: NotchTheme.expandedWidth,
@@ -148,6 +151,19 @@ final class NotchWindowController {
         panel.setFrame(collapsedFrame(showWings: viewModel.showCollapsedWings), display: true)
         panel.claimInteractionLayer()
         panel.yieldToPeerOverlays()
+        // A cursor already resting over the notch at launch produces no
+        // mouseEntered until it moves, so read the real pointer position once
+        // the panel is on screen.
+        hoverView?.syncHoverState()
+    }
+
+    /// Re-read hover from the pointer's true position.
+    ///
+    /// Used after moments the tracking area's enter/exit can miss — app
+    /// activation, a display change, wake — where a cursor already sitting over
+    /// the notch would otherwise never register until it moved.
+    func reconcileHover() {
+        hoverView?.syncHoverState()
     }
 
     func toggle() {
@@ -197,27 +213,45 @@ final class NotchWindowController {
         let grows = target.width >= panel.frame.width && target.height >= panel.frame.height
         if grows { resizeContent(to: target.size) }
         // Enter and exit events are not to be trusted while the frame moves;
-        // the completion below reconciles from the pointer's real position.
+        // the settle below reconciles from the pointer's real position.
         hoverView?.isFrameAnimating = true
 
+        let duration = NotchMotion.currentDuration
+
+        // A fallback in case the animation's own completion is late or never
+        // fires (display sleep or disconnect mid-move): the frame still settles,
+        // so the hover gate cannot stay stuck true. Whichever runs first settles;
+        // the other is cancelled or no-ops on the generation guard.
+        let settle = DispatchWorkItem { [weak self] in
+            self?.settleFrame(generation: generation, target: target, tier: tier)
+        }
+        pendingSettle = settle
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.05, execute: settle)
+
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.01 : 0.28
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.duration = duration
+            context.timingFunction = NotchMotion.timingFunction
             context.allowsImplicitAnimation = true
             panel.animator().setFrame(target, display: true)
         } completionHandler: { [weak self] in
             Task { @MainActor [weak self] in
-                // A newer frame is already on its way: leave the content and
-                // the hover gate to whichever animation finishes last.
-                guard let self, self.frameGeneration == generation else { return }
-                self.resizeContent(to: target.size)
-                // Reconcile hover from where the pointer actually is, now that
-                // the frame has stopped moving and the tracking area is stable.
-                self.hoverView?.isFrameAnimating = false
-                self.hoverView?.syncHoverState()
-                if tier == .collapsed { self.panel.yieldToPeerOverlays() }
+                self?.settleFrame(generation: generation, target: target, tier: tier)
             }
         }
+    }
+
+    /// Finish a frame animation: resize content to the final size, drop the
+    /// hover gate, and reconcile hover. Guarded by `frameGeneration` so a stale
+    /// completion (a newer, larger frame already on its way) does not cut the
+    /// content out from under it. Idempotent, so the animation completion and
+    /// the fallback timer can both call it.
+    private func settleFrame(generation: Int, target: NSRect, tier: Tier) {
+        guard frameGeneration == generation else { return }
+        pendingSettle?.cancel()
+        pendingSettle = nil
+        resizeContent(to: target.size)
+        hoverView?.endFrameAnimation()
+        if tier == .collapsed { panel.yieldToPeerOverlays() }
     }
 
     private func frame(for tier: Tier, showWings: Bool?) -> NSRect {

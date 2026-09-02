@@ -1,0 +1,97 @@
+name: Release
+
+# Builds the DMG on macOS and publishes it as a GitHub release. Fires when a
+# version tag is pushed (e.g. `v0.7.0`), or on demand for an existing tag.
+#
+# Without signing secrets the DMG is ad-hoc signed and Gatekeeper blocks it on
+# other Macs — the release notes say so. Provide these repository secrets for a
+# notarized, distributable build:
+#   MACOS_CERTIFICATE_P12       base64 of a Developer ID Application .p12
+#   MACOS_CERTIFICATE_PASSWORD  its export password
+#   NOTCHHUB_SIGNING_IDENTITY   e.g. "Developer ID Application: Name (TEAMID)"
+#   NOTCHHUB_NOTARY_PROFILE     a notarytool keychain profile name
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build the release from (e.g. v0.7.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build DMG & publish release
+    runs-on: macos-latest
+    timeout-minutes: 40
+    env:
+      HAS_CERT: ${{ secrets.MACOS_CERTIFICATE_P12 != '' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Import signing certificate
+        id: signing
+        if: ${{ env.HAS_CERT == 'true' }}
+        env:
+          CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/notchhub.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          printf '%s' "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Build DMG
+        id: build
+        env:
+          NOTCHHUB_SIGNING_IDENTITY: ${{ secrets.NOTCHHUB_SIGNING_IDENTITY }}
+          NOTCHHUB_NOTARY_PROFILE: ${{ secrets.NOTCHHUB_NOTARY_PROFILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/build-dmg.sh release
+          DMG_PATH="$(ls dist/NotchHub-*.dmg | head -n1)"
+          echo "dmg_path=$DMG_PATH" >> "$GITHUB_OUTPUT"
+          shasum -a 256 "$DMG_PATH" | tee "$DMG_PATH.sha256"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+          SIGNED: ${{ steps.signing.outcome }}
+          DMG: ${{ steps.build.outputs.dmg_path }}
+        run: |
+          set -euo pipefail
+          NOTES="Automated release built from \`$TAG\`."
+          if [ "$SIGNED" != "success" ]; then
+            NOTES="$NOTES
+
+          > This DMG is ad-hoc signed and not notarized, so Gatekeeper blocks it on a Mac that did not build it. Approve it under System Settings ▸ Privacy & Security ▸ Open Anyway, or build from source. Add the signing secrets to publish a notarized build."
+          fi
+          gh release create "$TAG" \
+            "$DMG" "$DMG.sha256" \
+            --title "NotchHub $TAG" \
+            --notes "$NOTES" \
+            --verify-tag \
+            --draft
