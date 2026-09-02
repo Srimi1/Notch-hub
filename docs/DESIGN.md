@@ -185,7 +185,9 @@ from it.
 Timings that are behaviour rather than decoration, from `NotchViewModel`:
 `collapseDelay 0.15s`, `peekPromotionDelay 0.6s`. The copy popup's dwell is
 `copyPopupDuration` (Brief 1.5s, Standard 2.5s, Long 4.0s; default Brief),
-counted down on a monotonic clock so a system-time change cannot stretch it.
+counted down on a monotonic clock so a system-time change cannot stretch it, with
+a hover-proof `hudHoverCeiling` (6.0s) that clears it even while the pointer
+pauses that countdown.
 
 **Rule 2.6.1** — Every animation **must** be gated on
 `@Environment(\.accessibilityReduceMotion)`. Five views do this today. The house
@@ -227,7 +229,7 @@ deliberately asymmetric and **must** stay that way.
 | State | Behaviour |
 | --- | --- |
 | default | Auto-dismisses after `copyPopupDuration` (default Brief, 1.5s; Standard/Long in Settings) |
-| hover | Dismissal pauses so the popup can be read or dragged from; when the pointer leaves it resumes with the time that was left |
+| hover | Dismissal pauses so the popup can be read or dragged from; when the pointer leaves it resumes with the time that was left, and a hover-proof `hudHoverCeiling` (6.0s) clears it regardless so a resting cursor cannot hold it open |
 | click | Expands to the dashboard — but only on genuinely empty space |
 
 **Rule 3.2.1** — Interactive children **must** win the click. The expand gesture

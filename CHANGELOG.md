@@ -25,7 +25,9 @@ and interface continue to mature before 1.0.
   dropped from four seconds to about one and a half, with Brief, Standard, and
   Long options in Settings, and it counts down on a monotonic clock so a change
   to the system time can no longer stretch it. Hovering the popup still pauses
-  the countdown so a clip can be read or dragged from.
+  the countdown so a clip can be read or dragged from, but a hover-proof ceiling
+  now clears it even if the pointer keeps resting over it, so it can never hang
+  open.
 
 ### Changed
 
