@@ -2,26 +2,18 @@ import Combine
 import Darwin
 import Foundation
 
-/// Live system health: CPU load, memory pressure, and disk usage — all via
-/// public Mach / BSD APIs (no private frameworks, no permissions).
+/// Live system health: CPU load and memory pressure via public Mach APIs
+/// (no private frameworks or permissions).
 ///
 /// Mirrors MacNotch's `SystemMonitorService`. CPU is computed as a delta of
 /// cumulative host CPU ticks between samples (an instantaneous read is
-/// meaningless); memory uses `host_statistics64` vm counters; disk uses the
-/// resource-values API on the home volume.
+/// meaningless); memory uses `host_statistics64` VM counters.
 final class SystemMonitorService: ObservableObject {
 
     /// 0…1 fraction of CPU in use across all cores.
     @Published private(set) var cpuUsage: Double = 0
     /// 0…1 fraction of physical RAM in use ("used" = active + wired + compressed).
     @Published private(set) var memoryUsage: Double = 0
-    /// 0…1 fraction of the boot volume consumed.
-    @Published private(set) var diskUsage: Double = 0
-
-    @Published private(set) var memoryUsedGB: Double = 0
-    @Published private(set) var memoryTotalGB: Double = 0
-    @Published private(set) var diskFreeGB: Double = 0
-
     private var timer: Timer?
     private var previousCPUTicks: host_cpu_load_info?
     private let totalRAM = Double(ProcessInfo.processInfo.physicalMemory)
@@ -44,7 +36,6 @@ final class SystemMonitorService: ObservableObject {
     private func sample() {
         cpuUsage = readCPU() ?? cpuUsage
         readMemory()
-        readDisk()
     }
 
     // MARK: - CPU
@@ -99,8 +90,6 @@ final class SystemMonitorService: ObservableObject {
 
     private func readMemory() {
         guard let used = Self.usedMemoryBytes() else { return }
-        memoryUsedGB = Double(used) / 1_073_741_824
-        memoryTotalGB = totalRAM / 1_073_741_824
         memoryUsage = totalRAM > 0 ? min(Double(used) / totalRAM, 1) : 0
     }
 
@@ -124,20 +113,5 @@ final class SystemMonitorService: ObservableObject {
         let pageSize = UInt64(vm_kernel_page_size)
         return (UInt64(snapshot.active_count) + UInt64(snapshot.wire_count)
             + UInt64(snapshot.compressor_page_count)) * pageSize
-    }
-
-    // MARK: - Disk
-
-    private func readDisk() {
-        let url = URL(fileURLWithPath: NSHomeDirectory())
-        guard let values = try? url.resourceValues(forKeys: [
-            .volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey
-        ]) else { return }
-
-        let total = Double(values.volumeTotalCapacity ?? 0)
-        let free = Double(values.volumeAvailableCapacityForImportantUsage ?? 0)
-        guard total > 0 else { return }
-        diskFreeGB = free / 1_073_741_824
-        diskUsage = min((total - free) / total, 1)
     }
 }

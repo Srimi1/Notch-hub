@@ -146,7 +146,12 @@ struct ExpandedDashboardView: View {
     private var moduleBody: some View {
         switch viewModel.activeModule {
         case .dashboard:
-            DashboardModuleView(services: services)
+            DashboardModuleView(
+                time: services.time,
+                battery: services.battery,
+                system: services.system,
+                batteryWarningPercent: services.activityPreferences.batteryWarningPercent
+            )
         case .media:
             MediaModuleView(media: services.media)
         case .calendar:

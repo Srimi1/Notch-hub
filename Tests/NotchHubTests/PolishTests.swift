@@ -48,6 +48,43 @@ struct ActivityPresentationTests {
         #expect(NotchViewModel.shouldShowCollapsedWings(urgent))
         #expect(NotchViewModel.shouldPresentActivity(urgent))
     }
+
+    /// A playing track is shown by the Media module, so it must not also take
+    /// the expanded panel over — that put a second dashboard in front of the
+    /// real one. It still rides in the collapsed pill, which is the whole
+    /// point of the notch while it is shut.
+    @Test
+    @MainActor
+    func musicRidesTheCollapsedPillWithoutTakingOverThePanel() {
+        let playing = ActivitySnapshot(
+            id: "media.current",
+            kind: .media,
+            priority: .foreground,
+            title: "Believer",
+            detail: "Imagine Dragons",
+            symbol: "waveform",
+            actions: [.toggleMedia, .navigate(.media)]
+        )
+
+        #expect(NotchViewModel.shouldPresentActivity(playing) == false)
+        #expect(NotchViewModel.shouldShowCollapsedWings(playing))
+    }
+
+    /// The exclusion is by kind, not by priority: a meeting about to start is
+    /// still worth the panel, or the detail view would have no callers left.
+    @Test
+    @MainActor
+    func aMeetingStillEarnsThePanel() {
+        let meeting = ActivitySnapshot(
+            id: "calendar.next",
+            kind: .calendar,
+            priority: .timeSensitive,
+            title: "Standup",
+            detail: "in 5 min"
+        )
+
+        #expect(NotchViewModel.shouldPresentActivity(meeting))
+    }
 }
 
 @Suite("Polished Notch Geometry")

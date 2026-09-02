@@ -203,6 +203,16 @@ private struct PopupSection: View {
     var body: some View {
         Section {
             Toggle("Show a popup when you copy", isOn: $preferences.copyPopup)
+            if preferences.copyPopup {
+                Picker("Copy popup duration", selection: $preferences.copyPopupDuration) {
+                    ForEach(CopyPopupDurationPreset.allCases) { preset in
+                        Text(preset.title).tag(preset)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .help("Brief: 1.5 seconds · Standard: 2.5 seconds · Long: 4 seconds")
+                .accessibilityHint("Choose how long copy confirmations remain visible.")
+            }
             Toggle("Show a popup when power connects", isOn: $preferences.chargingPopup)
             Toggle("Paste automatically when you pick a clip", isOn: $preferences.autoPaste)
         } header: {
@@ -211,7 +221,8 @@ private struct PopupSection: View {
             Text("The popup only announces what was copied — hiding the Clipboard "
                 + "module stops pasteboard reading entirely, popup or not. Automatic "
                 + "pasting types the ⌘V for you and needs Accessibility; without it "
-                + "the clip is still copied.")
+                + "the clip is still copied. Hovering pauses a copy confirmation without "
+                + "restarting its full duration.")
         }
     }
 }

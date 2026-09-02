@@ -2,6 +2,46 @@ import AppKit
 import Combine
 import SwiftUI
 
+/// Monotonic state for the copy popup's dismiss timer. Wall-clock changes must
+/// not lengthen or shorten a transient UI countdown, so callers provide system
+/// uptime (or a deterministic value in tests) rather than `Date`.
+struct HUDDismissCountdown: Equatable {
+    private(set) var remaining: TimeInterval?
+    private(set) var deadline: TimeInterval?
+
+    /// Starts a fresh countdown. A popup born under the pointer keeps the full
+    /// duration in reserve until the pointer leaves.
+    mutating func start(duration: TimeInterval, now: TimeInterval, paused: Bool) -> TimeInterval? {
+        let duration = max(0, duration)
+        remaining = duration
+        deadline = paused ? nil : now + duration
+        return paused ? nil : duration
+    }
+
+    mutating func pause(now: TimeInterval) {
+        guard let deadline else { return }
+        remaining = max(0, deadline - now)
+        self.deadline = nil
+    }
+
+    mutating func resume(now: TimeInterval) -> TimeInterval? {
+        guard deadline == nil, let remaining else { return nil }
+        guard remaining > 0 else { return 0 }
+        deadline = now + remaining
+        return remaining
+    }
+
+    func remaining(at now: TimeInterval) -> TimeInterval? {
+        if let deadline { return max(0, deadline - now) }
+        return remaining
+    }
+
+    mutating func clear() {
+        remaining = nil
+        deadline = nil
+    }
+}
+
 /// The transient popup tier — copy popup, hover peek, and the charge moment.
 /// Split from the main class body: presentation state lives there, the
 /// behavior lives here.
@@ -31,15 +71,19 @@ extension NotchViewModel {
             isExpanded: isExpanded,
             hudContent: hudContent
         ) else { return }
-        pendingHudDismiss?.cancel()
+        cancelHudDismiss()
         // Setting hudContent starts the paste monitor through its didSet.
         withAnimation(transitionAnimation) { hudContent = .clip(clip) }
-        armHudDismiss()
+        let delay = hudDismissCountdown.start(
+            duration: services.hudPreferences.copyPopupDuration.duration,
+            now: ProcessInfo.processInfo.systemUptime,
+            paused: isHovering
+        )
+        if let delay { armHudDismiss(after: delay) }
     }
 
     func dismissHUD() {
-        pendingHudDismiss?.cancel()
-        pendingHudDismiss = nil
+        cancelHudDismiss()
         pendingPeekPromotion?.cancel()
         pendingPeekPromotion = nil
         guard hudContent != nil else { return }
@@ -72,12 +116,21 @@ extension NotchViewModel {
     /// Hovering the popup pauses the countdown so it can be read or dragged
     /// from; leaving re-arms it.
     func setHudHover(_ hovering: Bool) {
-        guard hudContent != nil else { return }
+        guard case .clip = hudContent else { return }
+        isHovering = hovering
         if hovering {
             pendingHudDismiss?.cancel()
             pendingHudDismiss = nil
+            hudDismissCountdown.pause(now: ProcessInfo.processInfo.systemUptime)
         } else {
-            armHudDismiss()
+            guard let delay = hudDismissCountdown.resume(
+                now: ProcessInfo.processInfo.systemUptime
+            ) else { return }
+            if delay > 0 {
+                armHudDismiss(after: delay)
+            } else {
+                dismissHUD()
+            }
         }
     }
 
@@ -93,8 +146,7 @@ extension NotchViewModel {
     /// `hudContent` afterward is a no-op tier-wise. Same fix as
     /// `armPeekPromotion` below.
     func expandFromHUD() {
-        pendingHudDismiss?.cancel()
-        pendingHudDismiss = nil
+        cancelHudDismiss()
         // Clearing hudContent below takes down whichever monitor the HUD being
         // expanded away from was using, through its didSet.
         if preferences.isVisible(.clipboard) { select(.clipboard) }
@@ -238,8 +290,7 @@ extension NotchViewModel {
     static let clipPickerPresentation = Presentation(isExpanded: false, hudContent: .clipPicker)
 
     func showClipPicker() {
-        pendingHudDismiss?.cancel()
-        pendingHudDismiss = nil
+        cancelHudDismiss()
         pendingPeekPromotion?.cancel()
         pendingPeekPromotion = nil
         cancelPendingCollapse()
@@ -319,11 +370,17 @@ extension NotchViewModel {
         DispatchQueue.main.asyncAfter(deadline: .now() + peekPromotionDelay, execute: work)
     }
 
-    func armHudDismiss() {
+    func cancelHudDismiss() {
+        pendingHudDismiss?.cancel()
+        pendingHudDismiss = nil
+        hudDismissCountdown.clear()
+    }
+
+    private func armHudDismiss(after delay: TimeInterval) {
         pendingHudDismiss?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.dismissHUD() }
         pendingHudDismiss = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + hudDismissDelay, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     /// Announce the cable. `isCharging` flips instantly thanks to the battery
@@ -347,7 +404,7 @@ extension NotchViewModel {
         // picker is something the user is actively reading; don't replace either.
         if case .clip = hudContent { return }
         if case .clipPicker = hudContent { return }
-        pendingHudDismiss?.cancel()
+        cancelHudDismiss()
         withAnimation(transitionAnimation) { hudContent = .charging }
         let work = DispatchWorkItem { [weak self] in self?.dismissHUD() }
         pendingHudDismiss = work
