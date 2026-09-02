@@ -183,8 +183,9 @@ Real durations in the tree, and what they are for:
 from it.
 
 Timings that are behaviour rather than decoration, from `NotchViewModel`:
-`collapseDelay 0.15s`, `peekPromotionDelay 0.6s`, `hudDismissDelay 2.0s`,
-`hudMaxLifetime 4.0s` (the hover-proof ceiling on the copy popup).
+`collapseDelay 0.15s`, `peekPromotionDelay 0.6s`. The copy popup's dwell is
+`copyPopupDuration` (Brief 1.5s, Standard 2.5s, Long 4.0s; default Brief),
+counted down on a monotonic clock so a system-time change cannot stretch it.
 
 **Rule 2.6.1** — Every animation **must** be gated on
 `@Environment(\.accessibilityReduceMotion)`. Five views do this today. The house
@@ -225,8 +226,8 @@ deliberately asymmetric and **must** stay that way.
 
 | State | Behaviour |
 | --- | --- |
-| default | Auto-dismisses after `hudDismissDelay` (2.0s) |
-| hover | The ordinary dismiss pauses so the popup can be read or dragged from, but a hover-proof `hudMaxLifetime` (4.0s) ceiling still clears it — a cursor resting near the notch can no longer hold it open |
+| default | Auto-dismisses after `copyPopupDuration` (default Brief, 1.5s; Standard/Long in Settings) |
+| hover | Dismissal pauses so the popup can be read or dragged from; when the pointer leaves it resumes with the time that was left |
 | click | Expands to the dashboard — but only on genuinely empty space |
 
 **Rule 3.2.1** — Interactive children **must** win the click. The expand gesture

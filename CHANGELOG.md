@@ -19,14 +19,13 @@ and interface continue to mature before 1.0.
   inside it animated on two different systems — a 0.28s ease-out against a 0.35s
   spring — so they settled on different timelines. Both now share one crisp
   ease-out. The first open also no longer waits on a calendar read run on the
-  main thread, the once-a-second rebuild of the whole activity list is gone (the
-  clock and system monitor no longer trigger it), and the disk-usage read has
-  moved off the main thread onto a slower cadence.
-- The copy popup no longer lingers. Its dwell dropped from four seconds to two,
-  and a hard ceiling was added that the pointer cannot pause: the popup sits
-  right where the cursor rests near the notch, and a resting cursor used to pause
-  its dismiss with no timeout and hold it open indefinitely. It now always goes
-  away on its own.
+  main thread, and the activity list no longer rebuilds on every clipboard or
+  system-stat change, with the remaining rebuilds coalesced onto a single pass.
+- The copy popup clears faster and is now yours to tune. Its default dwell
+  dropped from four seconds to about one and a half, with Brief, Standard, and
+  Long options in Settings, and it counts down on a monotonic clock so a change
+  to the system time can no longer stretch it. Hovering the popup still pauses
+  the countdown so a clip can be read or dragged from.
 
 ### Changed
 

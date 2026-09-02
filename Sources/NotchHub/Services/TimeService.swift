@@ -12,21 +12,20 @@ final class TimeService: ObservableObject {
 
     private var timer: Timer?
     private let timeFormatter: DateFormatter
+    private let meridiemFormatter: DateFormatter
     private let dateFormatter: DateFormatter
 
     init() {
         timeFormatter = DateFormatter()
         timeFormatter.dateFormat = "h:mm"
+        meridiemFormatter = DateFormatter()
+        meridiemFormatter.dateFormat = "a"
         dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "EEE d MMM"
     }
 
     var clock: String { timeFormatter.string(from: now) }
-    var meridiem: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "a"
-        return formatter.string(from: now)
-    }
+    var meridiem: String { meridiemFormatter.string(from: now) }
 
     var dateLabel: String { dateFormatter.string(from: now) }
 

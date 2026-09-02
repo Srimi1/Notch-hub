@@ -50,12 +50,7 @@ final class ServiceHub: ObservableObject {
     private var started = false
     private var startedInteractive = false
     private var cancellables = Set<AnyCancellable>()
-    /// Coalescing flag for activity rebuilds — see `setNeedsActivityRefresh`.
-    private var activityRefreshScheduled = false
-    /// A slow timer so time-relative activity windows (a meeting entering its
-    /// lead time, a reminder coming due) still advance without a data change
-    /// driving them — see `startAmbient`.
-    private var activityTimer: Timer?
+    private var pendingActivityRefresh: DispatchWorkItem?
     /// Owns the activation observer so it is unregistered when the hub goes
     /// away. Deregistering from `ServiceHub.deinit` directly would mean touching
     /// main-actor state from a nonisolated deinit, which is an error under
@@ -71,32 +66,19 @@ final class ServiceHub: ObservableObject {
         activityCoordinator = ActivityCoordinator(preferences: activityPreferences)
         screenshots = ScreenshotService(preferences: screenshotPreferences)
 
-        // Re-publish whenever any child service changes, so container views
-        // that switch on cross-service state (the live strip, the collapsed
-        // wing selector) stay reactive without observing each child directly.
-        //
-        // Only the services whose data actually feeds an activity snapshot also
-        // request an activity rebuild — see `ActivityRelevance`. The clock, the
-        // system monitor and the clipboard do not, and letting the 1s clock
-        // rebuild and re-rank every activity on each tick was needless
-        // main-thread churn that showed up as a stutter as the notch opened.
-        let labelledPublishers: [(String, ObservableObjectPublisher)] = [
-            ("time", time.objectWillChange),
-            ("system", system.objectWillChange),
-            ("battery", battery.objectWillChange),
-            ("media", media.objectWillChange),
-            ("calendar", calendar.objectWillChange),
-            ("clipboard", clipboard.objectWillChange),
-            ("focus", focus.objectWillChange)
+        // Only services that can change an ActivitySnapshot rebuild the queue.
+        // Clipboard and system-stat publications used to trigger the same work
+        // even though neither contributes a candidate. Scheduling on the next
+        // main-run-loop turn also folds a service's related @Published fields
+        // into one rebuild.
+        let activityPublishers: [ObservableObjectPublisher] = [
+            time.objectWillChange, battery.objectWillChange, media.objectWillChange,
+            calendar.objectWillChange, focus.objectWillChange
         ]
-        for (label, publisher) in labelledPublishers {
-            let drivesActivities = ActivityRelevance.drivesActivities(label)
+        for publisher in activityPublishers {
             publisher
                 .sink { [weak self] in
-                    self?.objectWillChange.send()
-                    if drivesActivities {
-                        Task { @MainActor [weak self] in self?.setNeedsActivityRefresh() }
-                    }
+                    self?.scheduleActivityRefresh()
                 }
                 .store(in: &cancellables)
         }
@@ -105,11 +87,11 @@ final class ServiceHub: ObservableObject {
         screenshots.onChange = { [weak self] in self?.objectWillChange.send() }
         screenshotPreferences.onChange = { [weak self] in self?.applyScreenshotWatching() }
 
-        timers.onChange = { [weak self] in self?.setNeedsActivityRefresh() }
-        reminders.onChange = { [weak self] in self?.setNeedsActivityRefresh() }
+        timers.onChange = { [weak self] in self?.scheduleActivityRefresh() }
+        reminders.onChange = { [weak self] in self?.scheduleActivityRefresh() }
         activityPreferences.onChange = { [weak self] in
             self?.activityCoordinator.refreshForPreferences()
-            self?.setNeedsActivityRefresh()
+            self?.scheduleActivityRefresh()
         }
 
         modulePreferences?.$visibleModules
@@ -150,34 +132,7 @@ final class ServiceHub: ObservableObject {
         if startedInteractive {
             setRunning(calendar.start, calendar.stop, visible.contains(.calendar))
         }
-        setNeedsActivityRefresh()
-    }
-
-    /// Whether a change from a given service should trigger an activity rebuild.
-    ///
-    /// Activity snapshots are built from calendar, reminders, timers, battery,
-    /// media and focus. The clock, the system monitor and the clipboard never
-    /// change activity content, so a change from them must not rebuild and
-    /// re-rank the whole activity set — the 1s clock doing exactly that, forever,
-    /// was pure churn and part of why opening the notch stuttered.
-    enum ActivityRelevance {
-        static let excluded: Set<String> = ["time", "system", "clipboard"]
-
-        static func drivesActivities(_ service: String) -> Bool {
-            !excluded.contains(service)
-        }
-    }
-
-    /// Collapse a burst of service changes into a single activity rebuild on the
-    /// next main-actor turn, instead of rebuilding once per publisher per tick.
-    func setNeedsActivityRefresh() {
-        guard !activityRefreshScheduled else { return }
-        activityRefreshScheduled = true
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            self.activityRefreshScheduled = false
-            self.refreshActivities()
-        }
+        refreshActivities()
     }
 
     /// A screenshot NotchHub noticed, on its way to the pasteboard.
@@ -230,29 +185,7 @@ final class ServiceHub: ObservableObject {
         // Deliberately not module-gated — see `applyScreenshotWatching`.
         applyScreenshotWatching()
         observeActivation()
-
-        // Time-relative activity windows advance on a slow tick rather than on
-        // the 1s clock (see the forwarder above). 20s is plenty at minute-scale
-        // lead times, and keeps the clock off the activity-rebuild path.
-        let activityTimer = Timer(timeInterval: 20.0, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.setNeedsActivityRefresh() }
-        }
-        RunLoop.main.add(activityTimer, forMode: .common)
-        self.activityTimer = activityTimer
-
-        prewarmMediaAnimation()
         refreshActivities()
-    }
-
-    /// Decode the astronaut animation once at launch so the first dashboard open
-    /// — or the first collapsed now-playing pill — does not pay the Lottie
-    /// decode. The result is cached inside `AstronautAnimation`.
-    private func prewarmMediaAnimation() {
-        guard isVisible(.media) else { return }
-        Task { @MainActor in
-            _ = await AstronautAnimation.load(.asDrawn)
-            _ = await AstronautAnimation.load(.white)
-        }
     }
 
     /// Stops everything that holds a resource beyond this process.
@@ -261,8 +194,8 @@ final class ServiceHub: ObservableObject {
     /// exits without terminating it, so a quit would leave a stray
     /// `mediaremote-adapter` behind for every launch.
     func shutDown() {
-        activityTimer?.invalidate()
-        activityTimer = nil
+        pendingActivityRefresh?.cancel()
+        pendingActivityRefresh = nil
         media.stop()
         screenshots.stop()
         clipboard.stop()
@@ -279,6 +212,17 @@ final class ServiceHub: ObservableObject {
         if isVisible(.media) { media.start() }
         if isVisible(.calendar) { calendar.start() }
         reminders.refreshAuthorization()
+    }
+
+    private func scheduleActivityRefresh() {
+        guard pendingActivityRefresh == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingActivityRefresh = nil
+            self.refreshActivities()
+        }
+        pendingActivityRefresh = work
+        DispatchQueue.main.async(execute: work)
     }
 
     /// macOS never tells an app that its Calendar/Reminders switch changed in

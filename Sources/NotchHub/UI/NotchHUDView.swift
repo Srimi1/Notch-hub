@@ -69,6 +69,7 @@ private struct CopyHUDRow: View {
     let thumbnail: NSImage?
 
     var body: some View {
+        let details = HudClipDetails.make(for: clip)
         HStack(spacing: 12) {
             icon
                 .frame(width: 44, height: 44)
@@ -89,12 +90,16 @@ private struct CopyHUDRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("Copied")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(NotchTheme.secondaryText)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(NotchTheme.subtleSurface))
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("Copied")
+                    .foregroundStyle(NotchTheme.secondaryText)
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(NotchTheme.subtleSurface))
         }
         // Grows out of the notch; leaves by sliding down through the pill's
         // bottom edge, which the window mask clips — the "swallowed" dismissal.
@@ -102,10 +107,10 @@ private struct CopyHUDRow: View {
             insertion: .move(edge: .top).combined(with: .opacity),
             removal: .move(edge: .bottom).combined(with: .opacity)
         ))
-    }
-
-    private var details: HudClipDetails {
-        HudClipDetails.make(for: clip)
+        .help("Open clipboard history")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Copied: \(details.title)")
+        .accessibilityHint("Click to open clipboard history.")
     }
 
     @ViewBuilder
