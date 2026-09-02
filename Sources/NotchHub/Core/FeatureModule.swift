@@ -50,7 +50,7 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
         case .clipboard:
             "Recent clipboard items with one-click restore."
         case .focus:
-            "Do Not Disturb status and controls."
+            "Do Not Disturb, and the cache your Mac can rebuild."
         }
     }
 }

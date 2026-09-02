@@ -166,7 +166,11 @@ struct ExpandedDashboardView: View {
                 hint: "Click to copy. The clipboard shortcut picks and pastes in one go."
             ) { viewModel.copyWithoutPaste($0) }
         case .focus:
-            FocusModuleView(focus: services.focus)
+            FocusModuleView(
+                focus: services.focus,
+                cleanup: services.cacheCleanup,
+                preferences: services.cleanupPreferences
+            )
         }
     }
 }
@@ -215,107 +219,6 @@ private struct CalendarModuleView: View {
                     }
                 }
             }
-        }
-    }
-}
-
-// MARK: - Focus (Do Not Disturb toggle)
-
-private struct FocusModuleView: View {
-    @ObservedObject var focus: FocusService
-
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(statusTitle)
-                    .font(.system(size: 13, weight: .semibold))
-                Text(statusSubtitle)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(2)
-            }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if let pane = focus.lastError?.settingsPane {
-                Button("Fix…") {
-                    if pane == .accessibility {
-                        focus.requestAccessibility()
-                    }
-                    pane.open()
-                }
-                .buttonStyle(NotchButtonStyle(shape: .capsule))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .frame(height: 32)
-            }
-
-            toggleButton
-        }
-        .onAppear { focus.refreshAccessibility() }
-    }
-
-    private var toggleButton: some View {
-        Button {
-            focus.toggle()
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "moon.fill")
-                Text(toggleTitle)
-            }
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(isShowingOn ? .black : .white)
-            .padding(.horizontal, 12)
-            .frame(height: 32)
-            .background(
-                Capsule().fill(isShowingOn ? Color.purple.opacity(0.9) : NotchTheme.hoverSurface)
-            )
-        }
-        .buttonStyle(NotchButtonStyle(shape: .bare))
-        .disabled(focus.isToggling)
-    }
-
-    /// Only claim "on" when the state was actually read; otherwise the button
-    /// would promise the opposite of what the click does.
-    private var isShowingOn: Bool { focus.isStateKnown && focus.isOn }
-
-    private var toggleTitle: String {
-        guard focus.isStateKnown else { return "Toggle" }
-        return focus.isOn ? "Turn Off" : "Turn On"
-    }
-
-    private var statusTitle: String {
-        if focus.isToggling { return "Switching Do Not Disturb…" }
-        switch focus.lastError {
-        case .accessibilityDenied: return "Accessibility permission needed"
-        case .automationDenied: return "Automation permission needed"
-        case .controlNotFound: return "Could not find the Focus control"
-        case .scriptFailed: return "Could not switch Do Not Disturb"
-        case nil:
-            guard focus.isStateKnown else { return "Do Not Disturb" }
-            return focus.isOn ? "Do Not Disturb is on" : "Do Not Disturb is off"
-        }
-    }
-
-    private var statusSubtitle: String {
-        switch focus.lastError {
-        case .accessibilityDenied:
-            return "Allow NotchHub in \(SystemSettingsPane.accessibility.settingsPath), then try again."
-        case .automationDenied:
-            return "Allow NotchHub to control System Events in "
-                + "\(SystemSettingsPane.automation.settingsPath), then try again."
-        case .controlNotFound:
-            return "Control Center did not show a Do Not Disturb control. "
-                + "On a Mac that isn't set to English, macOS may name it differently."
-        case .scriptFailed:
-            return "macOS refused the request. Try again in a moment."
-        case nil:
-            guard focus.isStateKnown else {
-                return "Silences notifications across your Mac. Reading whether it's already on "
-                    + "needs \(SystemSettingsPane.fullDiskAccess.settingsPath)."
-            }
-            return "Silences notifications across your Mac."
         }
     }
 }

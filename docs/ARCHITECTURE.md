@@ -16,6 +16,7 @@ supplies local state to both interfaces.
 | Activity ranking | [`ActivitySnapshotFactory.swift`](../Sources/NotchHub/Core/ActivitySnapshotFactory.swift), [`ActivityCoordinator.swift`](../Sources/NotchHub/Core/ActivityCoordinator.swift) |
 | Dashboard and Settings | [`ExpandedDashboardView.swift`](../Sources/NotchHub/UI/ExpandedDashboardView.swift), [`SettingsRootView.swift`](../Sources/NotchHub/UI/SettingsRootView.swift) |
 | External-input checks | [`UntrustedInput.swift`](../Sources/NotchHub/Core/UntrustedInput.swift), [`EventKitAccess.swift`](../Sources/NotchHub/Core/EventKitAccess.swift) |
+| Cache cleanup | [`CacheCleanupService.swift`](../Sources/NotchHub/Services/CacheCleanupService.swift) holds the state machine, [`CacheCleanupEngine.swift`](../Sources/NotchHub/Services/CacheCleanupEngine.swift) does the scan and the moves, [`CacheSafetyPolicy.swift`](../Sources/NotchHub/Core/CacheSafetyPolicy.swift) owns the rules, `Core/CacheCatalog*.swift` the folder catalog |
 | Screenshot auto-copy | `Sources/NotchHub/Services/Screenshots/*` — [`ScreenshotService.swift`](../Sources/NotchHub/Services/Screenshots/ScreenshotService.swift) orchestrates, [`DirectoryWatcher.swift`](../Sources/NotchHub/Services/Screenshots/DirectoryWatcher.swift) owns the descriptor |
 | Bundled animation | [`AnimationLocator.swift`](../Sources/NotchHub/Core/AnimationLocator.swift), [`MediaModuleView.swift`](../Sources/NotchHub/UI/MediaModuleView.swift) |
 
@@ -94,6 +95,7 @@ service instead of merely hiding its view.
 | Reminders | App launch when Todo is visible | Authorization check and EventKit refresh every 60 seconds | Yes |
 | Calendar | First interaction when Calendar is visible | EventKit every 60 seconds plus store-change notifications | Yes |
 | Media | First interaction when Media is visible | AppleScript query of running Music or Spotify every 2 seconds | Yes |
+| Cache cleanup | First time the Focus panel appears, and only when its switch is on | One detached scan per stale open, and one per clean; nothing periodic | Yes — hiding it in Settings stops a scan in flight |
 | Screenshot watch | When switched on in Settings, and only for a folder already allowed | A directory event source, plus a 30-second reconcile that re-reads the save location | No — it follows its own switch, not a module |
 
 Calendar and Reminder refreshes re-read authorization without prompting. Their
@@ -114,7 +116,7 @@ Modules are compile-time routes, not plugins. `FeatureModule` has seven cases an
 | Todo | `ReminderModuleView` with `ReminderService` |
 | Pomodoro | `TimerModuleView` with `ActivityTimerService` |
 | Clipboard | `ClipboardModuleView` with `ClipboardService` |
-| Focus | `FocusModuleView` with `FocusService` |
+| Focus | `FocusModuleView` with `FocusService`, plus a cache cleanup segment backed by `CacheCleanupService` when its switch is on |
 
 Visibility is configured in Settings. The dashboard shows visible modules in
 canonical enum order. Module chips and <kbd>⌘1</kbd> through <kbd>⌘9</kbd> select a
@@ -145,7 +147,7 @@ or a validated external Calendar action.
 
 | Store | Data | Lifetime and bounds |
 | --- | --- | --- |
-| `UserDefaults` | Module layout, activity settings, popup settings, timer JSON, migration flags | Persists across launches; identifiers and numeric preferences are validated; timer records are capped at eight |
+| `UserDefaults` | Module layout, activity settings, popup settings, timer JSON, migration flags, cache-cleanup switches and the last scan and clean (`cleanup.*`) | Persists across launches; identifiers and numeric preferences are validated; timer records are capped at eight |
 | Process memory | Clipboard text, raw images, file URLs, and thumbnails | Capped at 12 entries and cleared on quit; up to four files are accepted from one copy event |
 | EventKit | Upcoming events and incomplete reminders | Owned by macOS; NotchHub reads after an explicit grant and writes only reminder completion requested by the user |
 | Login Keychain | Legacy provider keys only | Current code stores no secrets and performs a one-time deletion of keys written by the removed v0.1 credit tracker |
@@ -200,6 +202,20 @@ Focus toggles Do Not Disturb through Accessibility-driven Control Center scripti
 Its state begins with a best-effort read of the protected Do Not Disturb assertions
 file, so it can be stale when Full Disk Access is unavailable or another app
 changes Focus later.
+
+Cache cleanup is the second feature that writes outside `UserDefaults`, and it
+does so only through `FileManager.trashItem`. A folder is offered only if
+`CacheSafetyPolicy` recognises it: protected account and identity names are
+refused first (by exact name and by substring, so a daemon nobody has catalogued
+yet is refused by default), then the converted Purge catalog decides, then a
+short tier list, and anything still unrecognised is left out entirely. Developer
+caches need their own switch; sandboxed containers are entered only when
+`FullDiskAccess.isGranted()` already answers yes, so the scan cannot raise a
+folder prompt. Every path is then re-checked immediately before it is trashed —
+standardised so `..` cannot walk it elsewhere, refused unless it is a direct
+child of a scan root or an exact entry in the developer table — and refusals are
+counted and logged rather than dropped. Check-first folders are counted for the
+panel but can never be moved.
 
 See [`SECURITY.md`](../SECURITY.md) for the complete access and reporting policy.
 

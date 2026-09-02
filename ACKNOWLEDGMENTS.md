@@ -20,6 +20,23 @@ The sources are vendored under [`Vendor/mediaremote-adapter`](Vendor/mediaremote
 and built into `NotchHub.app/Contents/Frameworks` at package time. NotchHub does
 not link against the framework.
 
+## Purge
+
+- Source: <https://github.com/jithin-sabu/purge-app> (commit `dedb5936`)
+- Author: Jithin Sabu
+- License: MIT — [`Vendor/purge-app/LICENSE`](Vendor/purge-app/LICENSE)
+
+The cache cleanup in the Focus panel is built on Purge's safety work: its
+250-entry catalog of which cache folders are safe to clear and which are worth
+checking first, the list of account and identity daemons whose caches must never
+be touched, the never-delete paths, and the locations of the developer caches.
+
+None of Purge's code is compiled or shipped here. The catalog was converted into
+Swift tables by [`scripts/generate-cache-catalog.py`](scripts/generate-cache-catalog.py)
+and the rules were rewritten to this project's file, concurrency, and testing
+rules. [`Vendor/purge-app/README.md`](Vendor/purge-app/README.md) records exactly
+what was taken and how to refresh it.
+
 ## Lottie
 
 - Source: <https://github.com/airbnb/lottie-ios> (4.6.1)
