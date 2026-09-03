@@ -1,0 +1,446 @@
+import CryptoKit
+import Darwin
+import Foundation
+
+public struct LocalBridgeHelperInstallationFileSystem: BridgeHelperInstallationFileSystem {
+    public init() {}
+
+    public func stageCopy(
+        from sourceURL: URL,
+        nextTo destinationURL: URL,
+        maximumBytes: Int,
+        fileMode: UInt16
+    ) throws -> BridgeHelperStagedCopy {
+        try validateFileURL(sourceURL)
+        try validateFileURL(destinationURL)
+        guard fileMode == 0o700 else {
+            throw BridgeHelperInstallerError.invalidPath
+        }
+        let data = try readSource(sourceURL, maximumBytes: maximumBytes)
+        let destinationDirectory = destinationURL.deletingLastPathComponent().standardizedFileURL
+        let temporaryName = ".notchhub-bridge-\(UUID().uuidString).tmp"
+        try withAbsoluteDirectory(
+            destinationDirectory,
+            createMissing: true,
+            requireCurrentOwner: true
+        ) { directoryDescriptor in
+            try writeStaged(
+                data,
+                directoryDescriptor: directoryDescriptor,
+                name: temporaryName,
+                fileMode: fileMode
+            )
+        }
+        return BridgeHelperStagedCopy(
+            url: destinationDirectory.appendingPathComponent(temporaryName),
+            byteCount: data.count,
+            contentDigest: Data(SHA256.hash(data: data))
+        )
+    }
+
+    public func commit(
+        _ stagedCopy: BridgeHelperStagedCopy,
+        to destinationURL: URL
+    ) throws {
+        let stagedParent = stagedCopy.url.deletingLastPathComponent().standardizedFileURL
+        let destinationParent = destinationURL.deletingLastPathComponent().standardizedFileURL
+        guard stagedParent == destinationParent,
+              isTemporaryName(stagedCopy.url.lastPathComponent)
+        else {
+            throw BridgeHelperInstallerError.invalidPath
+        }
+        try withAbsoluteDirectory(
+            destinationParent,
+            createMissing: false,
+            requireCurrentOwner: true
+        ) { directoryDescriptor in
+            let stagedIdentity = try verifyStagedCopy(stagedCopy, directoryDescriptor: directoryDescriptor)
+            if let destinationStatus = try statusAt(
+                directoryDescriptor: directoryDescriptor,
+                name: destinationURL.lastPathComponent
+            ) {
+                try validateRegularFile(destinationStatus, owner: .current, requiredMode: nil)
+            }
+            guard let immediatelyBeforeRename = try statusAt(
+                directoryDescriptor: directoryDescriptor,
+                name: stagedCopy.url.lastPathComponent
+            ),
+                fileIdentity(immediatelyBeforeRename) == stagedIdentity
+            else {
+                throw BridgeHelperInstallerError.fileSystemFailure(operation: "stage-race", code: ESTALE)
+            }
+            guard renameat(
+                directoryDescriptor,
+                stagedCopy.url.lastPathComponent,
+                directoryDescriptor,
+                destinationURL.lastPathComponent
+            ) == 0 else {
+                throw mappedErrno(operation: "rename")
+            }
+            guard fsync(directoryDescriptor) == 0 else {
+                throw mappedErrno(operation: "sync-directory")
+            }
+        }
+    }
+
+    public func discard(_ stagedCopy: BridgeHelperStagedCopy) throws {
+        guard isTemporaryName(stagedCopy.url.lastPathComponent) else {
+            throw BridgeHelperInstallerError.invalidPath
+        }
+        let parent = stagedCopy.url.deletingLastPathComponent().standardizedFileURL
+        try withAbsoluteDirectory(parent, createMissing: false, requireCurrentOwner: true) { descriptor in
+            guard unlinkat(descriptor, stagedCopy.url.lastPathComponent, 0) == 0 else {
+                if errno == ENOENT { return }
+                throw mappedErrno(operation: "discard")
+            }
+        }
+    }
+}
+
+private extension LocalBridgeHelperInstallationFileSystem {
+    enum OwnerPolicy {
+        case current
+        case currentOrRoot
+    }
+
+    func readSource(_ sourceURL: URL, maximumBytes: Int) throws -> Data {
+        let parent = sourceURL.deletingLastPathComponent().standardizedFileURL
+        return try withAbsoluteDirectory(parent, createMissing: false, requireCurrentOwner: false) { descriptor in
+            guard let listedStatus = try statusAt(
+                directoryDescriptor: descriptor,
+                name: sourceURL.lastPathComponent
+            ) else {
+                throw BridgeHelperInstallerError.fileSystemFailure(operation: "source", code: ENOENT)
+            }
+            try validateRegularFile(listedStatus, owner: .currentOrRoot, requiredMode: nil)
+            guard listedStatus.st_size <= Int64(maximumBytes) else {
+                throw BridgeHelperInstallerError.sourceTooLarge(limit: maximumBytes)
+            }
+            let sourceDescriptor = openat(
+                descriptor,
+                sourceURL.lastPathComponent,
+                O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
+            )
+            guard sourceDescriptor >= 0 else {
+                throw mappedErrno(operation: "open-source")
+            }
+            return try withDescriptor(sourceDescriptor, operation: "close-source") { fileDescriptor in
+                var initialStatus = stat()
+                guard fstat(fileDescriptor, &initialStatus) == 0 else {
+                    throw mappedErrno(operation: "stat-source")
+                }
+                try validateRegularFile(initialStatus, owner: .currentOrRoot, requiredMode: nil)
+                guard fileIdentity(initialStatus) == fileIdentity(listedStatus) else {
+                    throw BridgeHelperInstallerError.fileSystemFailure(operation: "source-race", code: ESTALE)
+                }
+                let data = try readAll(fileDescriptor, maximumBytes: maximumBytes)
+                var finalStatus = stat()
+                guard fstat(fileDescriptor, &finalStatus) == 0 else {
+                    throw mappedErrno(operation: "stat-source")
+                }
+                guard fileIdentity(initialStatus) == fileIdentity(finalStatus) else {
+                    throw BridgeHelperInstallerError.fileSystemFailure(operation: "source-race", code: ESTALE)
+                }
+                return data
+            }
+        }
+    }
+
+    func verifyStagedCopy(
+        _ stagedCopy: BridgeHelperStagedCopy,
+        directoryDescriptor: Int32
+    ) throws -> String {
+        guard let listedStatus = try statusAt(
+            directoryDescriptor: directoryDescriptor,
+            name: stagedCopy.url.lastPathComponent
+        ) else {
+            throw BridgeHelperInstallerError.fileSystemFailure(operation: "commit", code: ENOENT)
+        }
+        try validateRegularFile(listedStatus, owner: .current, requiredMode: 0o700)
+        let descriptor = openat(
+            directoryDescriptor,
+            stagedCopy.url.lastPathComponent,
+            O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
+        )
+        guard descriptor >= 0 else {
+            throw mappedErrno(operation: "open-stage")
+        }
+        return try withDescriptor(descriptor, operation: "close-stage") { fileDescriptor in
+            var initialStatus = stat()
+            guard fstat(fileDescriptor, &initialStatus) == 0 else {
+                throw mappedErrno(operation: "stat-stage")
+            }
+            try validateRegularFile(initialStatus, owner: .current, requiredMode: 0o700)
+            guard fileIdentity(initialStatus) == fileIdentity(listedStatus) else {
+                throw BridgeHelperInstallerError.fileSystemFailure(operation: "stage-race", code: ESTALE)
+            }
+            let contents = try readAll(fileDescriptor, maximumBytes: stagedCopy.byteCount)
+            var finalStatus = stat()
+            guard fstat(fileDescriptor, &finalStatus) == 0 else {
+                throw mappedErrno(operation: "stat-stage")
+            }
+            guard fileIdentity(initialStatus) == fileIdentity(finalStatus),
+                  contents.count == stagedCopy.byteCount,
+                  Data(SHA256.hash(data: contents)) == stagedCopy.contentDigest
+            else {
+                throw BridgeHelperInstallerError.fileSystemFailure(operation: "stage-race", code: ESTALE)
+            }
+            return fileIdentity(finalStatus)
+        }
+    }
+
+    func writeStaged(
+        _ data: Data,
+        directoryDescriptor: Int32,
+        name: String,
+        fileMode: UInt16
+    ) throws {
+        let descriptor = openat(
+            directoryDescriptor,
+            name,
+            O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+            mode_t(fileMode)
+        )
+        guard descriptor >= 0 else {
+            throw mappedErrno(operation: "open-stage")
+        }
+        do {
+            try withDescriptor(descriptor, operation: "close-stage") { fileDescriptor in
+                guard fchmod(fileDescriptor, mode_t(fileMode)) == 0 else {
+                    throw mappedErrno(operation: "chmod-stage")
+                }
+                try writeAll(data, descriptor: fileDescriptor)
+                guard fsync(fileDescriptor) == 0 else {
+                    throw mappedErrno(operation: "sync-stage")
+                }
+            }
+        } catch {
+            let operationError = error
+            let unlinkResult = unlinkat(directoryDescriptor, name, 0)
+            let unlinkCode = errno
+            if unlinkResult != 0, unlinkCode != ENOENT {
+                throw BridgeHelperInstallerError.fileSystemFailure(operation: "cleanup-stage", code: unlinkCode)
+            }
+            throw operationError
+        }
+    }
+
+    func withAbsoluteDirectory<T>(
+        _ url: URL,
+        createMissing: Bool,
+        requireCurrentOwner: Bool,
+        operation: (Int32) throws -> T
+    ) throws -> T {
+        try validateFileURL(url)
+        let descriptor = try openAbsoluteDirectory(url, createMissing: createMissing)
+        return try withDescriptor(descriptor, operation: "close-directory") { directoryDescriptor in
+            var status = stat()
+            guard fstat(directoryDescriptor, &status) == 0 else {
+                throw mappedErrno(operation: "stat-directory")
+            }
+            try validateDirectory(status)
+            if requireCurrentOwner {
+                try validateOwnedNode(status)
+            }
+            return try operation(directoryDescriptor)
+        }
+    }
+
+    func openAbsoluteDirectory(_ url: URL, createMissing: Bool) throws -> Int32 {
+        var descriptor = Darwin.open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard descriptor >= 0 else {
+            throw mappedErrno(operation: "open-root")
+        }
+        for component in url.pathComponents.dropFirst() {
+            let status: stat
+            do {
+                if let existing = try statusAt(directoryDescriptor: descriptor, name: component) {
+                    status = existing
+                } else if createMissing {
+                    guard mkdirat(descriptor, component, mode_t(0o700)) == 0 else {
+                        throw mappedErrno(operation: "mkdir")
+                    }
+                    guard let created = try statusAt(directoryDescriptor: descriptor, name: component) else {
+                        throw BridgeHelperInstallerError.fileSystemFailure(
+                            operation: "mkdir-verify",
+                            code: ENOENT
+                        )
+                    }
+                    status = created
+                } else {
+                    throw BridgeHelperInstallerError.fileSystemFailure(operation: "directory", code: ENOENT)
+                }
+                try validateDirectory(status)
+            } catch {
+                let operationError = error
+                let closeResult = Darwin.close(descriptor)
+                let closeCode = errno
+                if closeResult != 0 {
+                    throw BridgeHelperInstallerError.fileSystemFailure(operation: "close-directory", code: closeCode)
+                }
+                throw operationError
+            }
+            let nextDescriptor = openat(
+                descriptor,
+                component,
+                O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+            )
+            if nextDescriptor < 0 {
+                let operationError = mappedErrno(operation: "open-directory")
+                let closeResult = Darwin.close(descriptor)
+                let closeCode = errno
+                if closeResult != 0 {
+                    throw BridgeHelperInstallerError.fileSystemFailure(operation: "close-directory", code: closeCode)
+                }
+                throw operationError
+            }
+            let closeResult = Darwin.close(descriptor)
+            let closeCode = errno
+            if closeResult != 0 {
+                let nextCloseResult = Darwin.close(nextDescriptor)
+                let nextCloseCode = errno
+                if nextCloseResult != 0 {
+                    throw BridgeHelperInstallerError.fileSystemFailure(
+                        operation: "close-directory",
+                        code: nextCloseCode
+                    )
+                }
+                throw BridgeHelperInstallerError.fileSystemFailure(operation: "close-directory", code: closeCode)
+            }
+            descriptor = nextDescriptor
+        }
+        return descriptor
+    }
+
+    func withDescriptor<T>(
+        _ descriptor: Int32,
+        operation: String,
+        body: (Int32) throws -> T
+    ) throws -> T {
+        let outcome: Result<T, any Error>
+        do {
+            outcome = .success(try body(descriptor))
+        } catch {
+            outcome = .failure(error)
+        }
+        let closeResult = Darwin.close(descriptor)
+        let closeCode = errno
+        guard closeResult == 0 else {
+            throw BridgeHelperInstallerError.fileSystemFailure(operation: operation, code: closeCode)
+        }
+        return try outcome.get()
+    }
+
+    func readAll(_ descriptor: Int32, maximumBytes: Int) throws -> Data {
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: min(maximumBytes, 16_384))
+        while true {
+            let count = Darwin.read(descriptor, &buffer, buffer.count)
+            if count == 0 { return result }
+            if count < 0, errno == EINTR { continue }
+            guard count > 0 else { throw mappedErrno(operation: "read-source") }
+            guard result.count + count <= maximumBytes else {
+                throw BridgeHelperInstallerError.sourceTooLarge(limit: maximumBytes)
+            }
+            result.append(buffer, count: count)
+        }
+    }
+
+    func writeAll(_ data: Data, descriptor: Int32) throws {
+        try data.withUnsafeBytes { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            var offset = 0
+            while offset < buffer.count {
+                let count = Darwin.write(
+                    descriptor,
+                    baseAddress.advanced(by: offset),
+                    buffer.count - offset
+                )
+                if count < 0, errno == EINTR { continue }
+                guard count > 0 else { throw mappedErrno(operation: "write-stage") }
+                offset += count
+            }
+        }
+    }
+
+    func statusAt(directoryDescriptor: Int32, name: String) throws -> stat? {
+        var status = stat()
+        guard fstatat(directoryDescriptor, name, &status, AT_SYMLINK_NOFOLLOW) == 0 else {
+            if errno == ENOENT { return nil }
+            throw mappedErrno(operation: "stat")
+        }
+        return status
+    }
+
+    func validateDirectory(_ status: stat) throws {
+        let kind = status.st_mode & S_IFMT
+        guard kind != S_IFLNK else {
+            throw BridgeHelperInstallerError.fileSystemFailure(
+                operation: "debug-directory-symlink",
+                code: Int32(status.st_mode)
+            )
+        }
+        guard kind == S_IFDIR else { throw BridgeHelperInstallerError.unsupportedFileType }
+    }
+
+    func validateRegularFile(
+        _ status: stat,
+        owner: OwnerPolicy,
+        requiredMode: UInt16?
+    ) throws {
+        let kind = status.st_mode & S_IFMT
+        guard kind != S_IFLNK else {
+            throw BridgeHelperInstallerError.fileSystemFailure(
+                operation: "debug-file-symlink",
+                code: Int32(status.st_mode)
+            )
+        }
+        guard kind == S_IFREG else { throw BridgeHelperInstallerError.unsupportedFileType }
+        let ownerIsValid = switch owner {
+        case .current: status.st_uid == geteuid()
+        case .currentOrRoot: status.st_uid == geteuid() || status.st_uid == 0
+        }
+        guard ownerIsValid, status.st_mode & mode_t(0o022) == 0 else {
+            throw BridgeHelperInstallerError.permissionDenied
+        }
+        if let requiredMode, status.st_mode & mode_t(0o777) != mode_t(requiredMode) {
+            throw BridgeHelperInstallerError.permissionDenied
+        }
+    }
+
+    func validateOwnedNode(_ status: stat) throws {
+        guard status.st_uid == geteuid(), status.st_mode & mode_t(0o022) == 0 else {
+            throw BridgeHelperInstallerError.permissionDenied
+        }
+    }
+
+    func validateFileURL(_ url: URL) throws {
+        guard url.isFileURL,
+              url.path.hasPrefix("/"),
+              !url.path.contains("\0"),
+              url.standardizedFileURL.path != "/"
+        else {
+            throw BridgeHelperInstallerError.invalidPath
+        }
+    }
+
+    func isTemporaryName(_ name: String) -> Bool {
+        name.hasPrefix(".notchhub-bridge-") && name.hasSuffix(".tmp") && !name.contains("/")
+    }
+
+    func fileIdentity(_ status: stat) -> String {
+        [
+            String(status.st_dev), String(status.st_ino), String(status.st_mode),
+            String(status.st_uid), String(status.st_size),
+            String(status.st_mtimespec.tv_sec), String(status.st_mtimespec.tv_nsec),
+            String(status.st_ctimespec.tv_sec), String(status.st_ctimespec.tv_nsec),
+        ].joined(separator: ":")
+    }
+
+    func mappedErrno(operation: String) -> BridgeHelperInstallerError {
+        let code = errno
+        if code == ELOOP { return .fileSystemFailure(operation: operation, code: code) }
+        if code == EACCES || code == EPERM { return .permissionDenied }
+        return .fileSystemFailure(operation: operation, code: code)
+    }
+}
