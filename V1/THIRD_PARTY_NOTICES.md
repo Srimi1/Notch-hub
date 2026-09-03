@@ -5,7 +5,7 @@
 CodexBar is used as a public behavioral and performance reference. No CodexBar
 runtime or source code is included in NotchHub V1.
 
-Copyright (c) Peter Steinberger
+Copyright (c) 2026 Peter Steinberger
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -28,5 +28,5 @@ SOFTWARE.
 ## Sparkle
 
 The direct-distribution build includes Sparkle for signed application updates.
-Its license and bundled third-party notices are included as
-`Sparkle-LICENSE.txt` beside this file in the application resources.
+The Direct bundle includes its license and bundled third-party notices as
+`ThirdParty/Sparkle-LICENSE.txt`. The Lite edition does not include Sparkle.

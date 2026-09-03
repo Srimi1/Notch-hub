@@ -96,7 +96,7 @@ public enum LegacyPreferencesMigrator {
             values.append(capability)
         }
         if values.count == 1, rawModules.isEmpty {
-            values.append(contentsOf: [.dashboard, .media, .clipboard, .focus])
+            values.append(contentsOf: [.dashboard, .clipboard, .focus])
         }
         return values
     }
@@ -111,7 +111,6 @@ public enum LegacyPreferencesMigrator {
     private static func mappedCapability(_ rawValue: String) -> AppCapability? {
         switch rawValue {
         case "dashboard": .dashboard
-        case "media": .media
         case "clipboard": .clipboard
         case "focus": .focus
         default: nil

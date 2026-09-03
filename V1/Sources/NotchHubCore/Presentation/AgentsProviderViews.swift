@@ -1,78 +1,107 @@
-import Foundation
+import NotchHubSafeFeatures
 import SwiftUI
 
-struct ProviderGrid: View {
-    let providers: [ProviderCardPresentation]
+struct CompactAgentsRow: View {
+    let model: AppPresentationModel
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            ForEach(providers) { provider in
-                ProviderQuotaCard(provider: provider)
+        if let approval = model.pendingApproval {
+            CompactApprovalRow(model: model, approval: approval)
+        } else {
+            HStack(spacing: 8) {
+                ForEach(model.providers.prefix(2)) { provider in
+                    CompactProviderQuotaCard(provider: provider)
+                }
+                CompactBridgeSessionCard(model: model)
+                    .frame(minWidth: 180, maxWidth: 236)
             }
         }
     }
 }
 
-private struct ProviderQuotaCard: View {
+private struct CompactProviderQuotaCard: View {
     let provider: ProviderCardPresentation
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            providerHeader
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                Image(systemName: provider.symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(provider.name)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                ConnectionDot(connection: provider.connection)
+            }
             if provider.quotaWindows.isEmpty {
                 disconnectedState
             } else {
-                ForEach(provider.quotaWindows) { window in
-                    QuotaWindowRow(window: window)
-                }
+                quotaValues
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(provider.name)
+        .padding(7)
+        .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 58, alignment: .topLeading)
+        .background(
+            CompactNotchTheme.subtleSurface,
+            in: RoundedRectangle(cornerRadius: CompactNotchTheme.cardRadius)
+        )
+        .help(helpText)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(provider.name), \(helpText)")
     }
 
-    private var providerHeader: some View {
-        HStack {
-            Label(provider.name, systemImage: provider.symbol)
-                .font(.subheadline.weight(.semibold))
-            Spacer()
-            ConnectionDot(connection: provider.connection)
+    private var quotaValues: some View {
+        HStack(spacing: 8) {
+            ForEach(provider.quotaWindows.prefix(2)) { window in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(Int(window.usedPercent.rounded()))%")
+                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(utilizationColor(window.usedPercent))
+                    Text(quotaSubtitle(window))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(CompactNotchTheme.secondaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
     private var disconnectedState: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(provider.connection.label)
-                .foregroundStyle(provider.connection.requiresAttention ? .orange : .secondary)
-            Text(setupInstruction)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-            if let setupURL {
-                Link("Open official setup guide", destination: setupURL)
-                    .font(.caption)
-            }
-        }
-        .font(.caption)
-        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+        Text(provider.connection.label)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(provider.connection.requiresAttention ? .orange : CompactNotchTheme.secondaryText)
+            .lineLimit(2)
     }
 
-    private var setupInstruction: String {
-        switch provider.id {
-        case ProviderID.codex.rawValue: "Install Codex, then run codex login in Terminal."
-        case ProviderID.claude.rawValue: "Install Claude Code, then run claude and follow sign-in."
-        default: "Install or sign in with the official CLI to show limits."
+    private var helpText: String {
+        if provider.quotaWindows.isEmpty {
+            return provider.connection.label
         }
+        return provider.quotaWindows.prefix(2).map {
+            let usage = "\($0.label) \(Int($0.usedPercent.rounded())) percent used"
+            guard let resetsAt = $0.resetsAt else { return usage }
+            return "\(usage), resets \(resetsAt.formatted(date: .abbreviated, time: .shortened))"
+        }.joined(separator: ", ")
     }
 
-    private var setupURL: URL? {
-        switch provider.id {
-        case ProviderID.codex.rawValue: URL(string: "https://learn.chatgpt.com/docs/codex/cli")
-        case ProviderID.claude.rawValue: URL(string: "https://code.claude.com/docs/en/setup")
-        default: nil
+    private func compactResetLabel(_ resetsAt: Date?) -> String? {
+        guard let resetsAt else { return nil }
+        let seconds = resetsAt.timeIntervalSinceNow
+        guard seconds.isFinite, seconds > 0 else { return "now" }
+        if seconds < 3_600 {
+            return "\(Int(ceil(seconds / 60)))m"
         }
+        if seconds < 172_800 {
+            return "\(Int(ceil(seconds / 3_600)))h"
+        }
+        return "\(Int(ceil(seconds / 86_400)))d"
+    }
+
+    private func quotaSubtitle(_ window: QuotaWindowPresentation) -> String {
+        guard let reset = compactResetLabel(window.resetsAt) else { return window.label }
+        return "\(window.label) · ↻ \(reset)"
     }
 }
 
@@ -82,38 +111,15 @@ private struct ConnectionDot: View {
     var body: some View {
         Circle()
             .fill(color)
-            .frame(width: 8, height: 8)
+            .frame(width: 7, height: 7)
             .accessibilityLabel(connection.label)
     }
 
     private var color: Color {
         switch connection {
         case .connected: .green
-        case .discovering, .disconnected: .secondary
+        case .discovering, .disconnected: CompactNotchTheme.secondaryText
         case .unavailable, .failed: .orange
         }
-    }
-}
-
-private struct QuotaWindowRow: View {
-    let window: QuotaWindowPresentation
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(window.label).font(.caption.weight(.medium))
-                Spacer()
-                Text("\(Int(window.usedPercent.rounded()))%")
-                    .font(.caption.monospacedDigit().weight(.semibold))
-            }
-            ProgressView(value: window.usedPercent, total: 100)
-                .tint(utilizationColor(window.usedPercent))
-            if let resetsAt = window.resetsAt {
-                Text("Resets \(resetsAt.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .accessibilityElement(children: .combine)
     }
 }

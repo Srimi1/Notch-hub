@@ -1,4 +1,6 @@
 import Foundation
+import NotchHubBridge
+import Security
 import Testing
 @testable import NotchHubCore
 
@@ -14,6 +16,17 @@ struct PresentationModelTests {
         #expect(model.providers.allSatisfy { $0.quotaWindows.isEmpty })
         #expect(model.highestUtilization == nil)
         #expect(!model.hasAttention)
+        #expect(model.edition.capabilities == [.agents, .dashboard, .clipboard, .focus])
+        #expect(model.panelMetrics == .init(width: 190, height: 32))
+
+        model.showDetail()
+        #expect(model.panelMetrics == .init(width: 860, height: 136))
+
+        model.presentApproval(approval())
+        #expect(model.panelMetrics == .init(width: 860, height: 136))
+
+        model.select(.media)
+        #expect(model.selectedCapability == .agents)
     }
 
     @Test("Direct edition retains the injected sandbox-safe workspace")
@@ -41,11 +54,12 @@ struct PresentationModelTests {
     func highestUtilizationWins() {
         let model = AppPresentationModel(edition: .direct)
         model.replaceProviders([
-            provider(id: "codex", usedPercent: 41),
             provider(id: "claude", usedPercent: 86),
+            provider(id: "codex", usedPercent: 41),
         ])
 
         #expect(model.highestUtilization == 86)
+        #expect(model.providers.map(\.id) == ["codex", "claude"])
     }
 
     @Test("Session activity ignores finished work")
@@ -151,6 +165,54 @@ struct PresentationModelTests {
         #expect(
             model.sessionBridgeConnection
                 == .failed("Session setup failed safely; provider prompts remain active.")
+        )
+    }
+
+    @Test("Unavailable session bridge cannot configure provider hooks")
+    func unavailableSessionBridgeHasNoAction() {
+        let model = AppPresentationModel(edition: .direct)
+        let failure = SessionBridgeConnectionPresentation.startupFailure(
+            for: BridgeTransportError.keychainSharingUnavailable(status: errSecMissingEntitlement)
+        )
+
+        model.setSessionBridgeConnection(failure)
+
+        #expect(
+            failure
+                == .unavailable("Session bridge unavailable in this build; provider prompts remain active.")
+        )
+        #expect(model.sessionBridgeConnection.action == nil)
+    }
+
+    @Test("Transient session bridge startup failure offers an explicit retry")
+    func transientSessionBridgeStartupCanRetry() async {
+        let recorder = SessionBridgeRecorder()
+        let model = AppPresentationModel(edition: .direct)
+        let failure = SessionBridgeConnectionPresentation.startupFailure(
+            for: BridgeTransportError.socketPathConflict
+        )
+        model.setSessionBridgeConnection(failure)
+        model.setSessionBridgeHandler { action in
+            recorder.actions.append(action)
+            return .checking
+        }
+
+        await model.performSessionBridgeAction()
+
+        #expect(
+            failure
+                == .startupFailed(
+                    "Session bridge could not start. Retry or restart NotchHub; provider prompts remain active."
+                )
+        )
+        #expect(SessionBridgeAction.retryStartup.buttonLabel == "Retry bridge")
+        #expect(recorder.actions == [.retryStartup])
+        #expect(model.sessionBridgeConnection == .checking)
+        #expect(!model.sessionBridgeSubmissionInProgress)
+        #expect(
+            SessionBridgeConnectionPresentation.startupFailure(
+                for: BridgeTransportError.keychainSharingUnavailable(status: errSecNotAvailable)
+            ).action == .retryStartup
         )
     }
 

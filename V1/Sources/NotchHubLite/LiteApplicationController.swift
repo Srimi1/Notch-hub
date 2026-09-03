@@ -21,13 +21,8 @@ private final class LiteNotchPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
     }
 
-    override var canBecomeKey: Bool {
-        true
-    }
-
-    override var canBecomeMain: Bool {
-        false
-    }
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }
 
 @MainActor
@@ -57,13 +52,13 @@ private struct LiteStatusButton: View {
         .onHover(perform: onHover)
         .accessibilityLabel("NotchHub Lite")
         .accessibilityValue(needsAttention ? "Needs attention" : "Ready")
-        .help("NotchHub Lite — select for details")
+        .help("NotchHub Lite — click to pin the ribbon")
     }
 
     private var needsAttention: Bool {
-        model.workspace.dashboard.lastError != nil ||
-            model.workspace.clipboard.lastIssue != nil ||
-            model.workspace.focus.state == .completed
+        model.workspace.dashboard.lastError != nil
+            || model.workspace.clipboard.lastIssue != nil
+            || model.workspace.focus.state == .completed
     }
 }
 
@@ -73,9 +68,13 @@ final class LiteApplicationController: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem?
     private var panel: LiteNotchPanel?
-    private var dismissTask: Task<Void, Never>?
-    private var panelHovered = false
+    private var geometry: NotchOverlayGeometry?
+    private var expandTask: Task<Void, Never>?
+    private var collapseTask: Task<Void, Never>?
+    private var panelHoverGate = NotchHoverGate()
     private var statusHovered = false
+    private var isPinned = false
+    private var frameGeneration = 0
 
     private static let logger = Logger(subsystem: "com.notchhub.v1.lite", category: "Application")
 
@@ -85,29 +84,26 @@ final class LiteApplicationController: NSObject, NSApplicationDelegate {
         installMainMenu()
         installStatusItem()
         installPanel()
-        model.setLayoutChangeHandler { [weak self] in
-            self?.refreshPanelLayout()
-        }
+        model.setLayoutChangeHandler { [weak self] in self?.refreshPanelLayout() }
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(screenParametersChanged),
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+        panel?.orderFrontRegardless()
+        panel?.orderBack(nil)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        dismissTask?.cancel()
+        expandTask?.cancel()
+        collapseTask?.cancel()
         model.workspace.stop()
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        false
-    }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
-        true
-    }
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
     private func installMainMenu() {
         let mainMenu = NSMenu(title: "NotchHub Lite")
@@ -133,7 +129,7 @@ final class LiteApplicationController: NSObject, NSApplicationDelegate {
         let root = LiteStatusButton(
             model: model,
             onHover: { [weak self] hovering in self?.statusHoverChanged(hovering) },
-            onActivate: { [weak self] in self?.toggleDetail() }
+            onActivate: { [weak self] in self?.togglePinnedRibbon() }
         )
         let hostingView = NSHostingView(rootView: root)
         hostingView.translatesAutoresizingMaskIntoConstraints = false
@@ -149,109 +145,151 @@ final class LiteApplicationController: NSObject, NSApplicationDelegate {
 
     private func installPanel() {
         guard panel == nil, let screen = preferredScreen() else { return }
-        let panel = LiteNotchPanel(contentRect: panelFrame(on: screen))
-        panel.contentView = NSHostingView(
+        let geometry = NotchOverlayGeometry(screen: screen)
+        let panel = LiteNotchPanel(contentRect: panelFrame(on: screen, geometry: geometry))
+        panel.contentView = hostedContent(geometry: geometry)
+        self.geometry = geometry
+        self.panel = panel
+    }
+
+    private func hostedContent(geometry: NotchOverlayGeometry) -> NSHostingView<SafeNotchPanelView> {
+        NSHostingView(
             rootView: SafeNotchPanelView(
                 model: model,
+                geometry: geometry,
                 onHover: { [weak self] hovering in self?.panelHoverChanged(hovering) },
-                onDismiss: { [weak self] in self?.dismissPanel() }
+                onDismiss: { [weak self] in self?.collapseRibbon() }
             )
         )
-        self.panel = panel
     }
 
     private func statusHoverChanged(_ hovering: Bool) {
         statusHovered = hovering
         if hovering {
-            cancelDismiss()
-            if panel?.isVisible != true {
-                model.showCompact()
-                showPanel()
-            }
+            scheduleExpansion()
         } else {
-            scheduleDismissIfCompact()
+            scheduleCollapse()
         }
     }
 
     private func panelHoverChanged(_ hovering: Bool) {
-        panelHovered = hovering
+        guard let accepted = panelHoverGate.handleTransient(hovering) else { return }
+        applyPanelHover(accepted)
+    }
+
+    private func applyPanelHover(_ hovering: Bool) {
         if hovering {
-            cancelDismiss()
+            scheduleExpansion()
         } else {
-            scheduleDismissIfCompact()
+            scheduleCollapse()
         }
     }
 
-    private func toggleDetail() {
-        cancelDismiss()
-        if panel?.isVisible == true, model.tier == .detail {
-            dismissPanel()
+    private func togglePinnedRibbon() {
+        cancelTransitions()
+        if isPinned, model.tier == .detail {
+            collapseRibbon()
         } else {
+            isPinned = true
             model.showDetail()
-            showPanel()
+            panel?.orderFrontRegardless()
         }
     }
 
-    private func showPanel() {
-        if panel == nil {
-            installPanel()
-        }
-        guard let panel else { return }
-        refreshPanelLayout()
-        panel.orderFrontRegardless()
-        if model.tier == .detail {
-            panel.makeKey()
-        }
-    }
-
-    private func dismissPanel() {
-        cancelDismiss()
-        panel?.resignKey()
-        panel?.orderOut(nil)
-        model.showCompact()
-    }
-
-    private func scheduleDismissIfCompact() {
+    private func scheduleExpansion() {
+        collapseTask?.cancel()
         guard model.tier == .compact else { return }
-        cancelDismiss()
-        dismissTask = Task { @MainActor [weak self] in
+        expandTask?.cancel()
+        expandTask = Task { @MainActor [weak self] in
             do {
-                try await Task.sleep(for: .milliseconds(260))
-            } catch is CancellationError {
-                return
+                try await Task.sleep(for: .milliseconds(120))
             } catch {
-                Self.logger.error("Compact-panel dismissal wait failed")
                 return
             }
-            guard let self, !self.panelHovered, !self.statusHovered else { return }
-            panel?.orderOut(nil)
+            guard let self, panelHoverGate.isHovered || statusHovered else { return }
+            model.showDetail()
         }
     }
 
-    private func cancelDismiss() {
-        dismissTask?.cancel()
-        dismissTask = nil
+    private func scheduleCollapse() {
+        expandTask?.cancel()
+        guard !isPinned, model.tier == .detail else { return }
+        collapseTask?.cancel()
+        collapseTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(150))
+            } catch {
+                return
+            }
+            guard let self, !panelHoverGate.isHovered, !statusHovered, !pointerIsInsidePanel else {
+                return
+            }
+            collapseRibbon()
+        }
+    }
+
+    private var pointerIsInsidePanel: Bool {
+        panel?.frame.contains(NSEvent.mouseLocation) == true
+    }
+
+    private func collapseRibbon() {
+        isPinned = false
+        cancelTransitions()
+        model.showCompact()
+        if model.tier == .compact {
+            panel?.orderBack(nil)
+        }
+    }
+
+    private func cancelTransitions() {
+        expandTask?.cancel()
+        collapseTask?.cancel()
+        expandTask = nil
+        collapseTask = nil
     }
 
     private func refreshPanelLayout() {
         guard let panel, let screen = preferredScreen() else { return }
-        let target = panelFrame(on: screen)
-        let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.22
+        let newGeometry = NotchOverlayGeometry(screen: screen)
+        if geometry != newGeometry {
+            geometry = newGeometry
+            panel.contentView = hostedContent(geometry: newGeometry)
+        }
+        let target = panelFrame(on: screen, geometry: newGeometry)
+        let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.01 : 0.18
+        frameGeneration += 1
+        let generation = frameGeneration
+        panelHoverGate.beginFrameAnimation()
+        if model.tier == .detail {
+            panel.orderFrontRegardless()
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.allowsImplicitAnimation = true
             panel.animator().setFrame(target, display: true)
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, frameGeneration == generation else { return }
+                let reconciled = panelHoverGate.finishFrameAnimation(
+                    pointerIsInside: pointerIsInsidePanel
+                )
+                if let reconciled {
+                    applyPanelHover(reconciled)
+                }
+                if model.tier == .compact {
+                    panel.orderBack(nil)
+                }
+            }
         }
     }
 
-    private func panelFrame(on screen: NSScreen) -> NSRect {
-        let requested = model.panelMetrics
-        let width = min(requested.width, max(320, screen.frame.width - 32))
-        let height = min(requested.height, max(160, screen.frame.height - 64))
-        return NSRect(
-            x: screen.frame.midX - width / 2,
-            y: screen.frame.maxY - height,
-            width: width,
-            height: height
+    private func panelFrame(on screen: NSScreen, geometry: NotchOverlayGeometry) -> NSRect {
+        NotchOverlayFramePolicy.frame(
+            in: screen.frame,
+            geometry: geometry,
+            isExpanded: model.tier == .detail,
+            showsWings: model.workspace.focus.state != .idle
         )
     }
 
@@ -260,18 +298,11 @@ final class LiteApplicationController: NSObject, NSApplicationDelegate {
     }
 
     private static func hasPhysicalNotch(_ screen: NSScreen) -> Bool {
-        let leftWidth = screen.auxiliaryTopLeftArea?.width ?? 0
-        let rightWidth = screen.auxiliaryTopRightArea?.width ?? 0
-        return screen.safeAreaInsets.top > 0 &&
-            leftWidth > 0 &&
-            rightWidth > 0 &&
-            leftWidth + rightWidth < screen.frame.width
+        NotchOverlayGeometry(screen: screen).hasPhysicalNotch
     }
 
     @objc private func screenParametersChanged() {
-        if panel == nil {
-            installPanel()
-        }
+        if panel == nil { installPanel() }
         refreshPanelLayout()
     }
 }

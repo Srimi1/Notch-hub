@@ -23,13 +23,13 @@ struct SafeNotchPresentationModelTests {
     @Test("Panel metrics track compact and detail tiers")
     func panelMetricsTrackTier() {
         let model = SafeNotchPresentationModel()
-        #expect(model.panelMetrics == .init(width: 440, height: 176))
+        #expect(model.panelMetrics == .init(width: 190, height: 32))
 
         model.showDetail()
-        #expect(model.panelMetrics == .init(width: 680, height: 520))
+        #expect(model.panelMetrics == .init(width: 860, height: 136))
 
         model.showCompact()
-        #expect(model.panelMetrics == .init(width: 440, height: 176))
+        #expect(model.panelMetrics == .init(width: 190, height: 32))
     }
 
     @Test("The Lite feature surface is closed and sandbox-safe")

@@ -48,6 +48,15 @@ dependency_audit() {
     show-dependencies --format json >/dev/null
 }
 
+release_tooling() {
+  [[ -x "$ROOT/scripts/build-dmg.sh" ]] || {
+    echo "V1 DMG builder is missing or not executable" >&2
+    return 1
+  }
+  bash -n "$ROOT/scripts/build-app.sh" "$ROOT/scripts/build-dmg.sh" "$ROOT/scripts/check.sh" || return 1
+  "$ROOT/scripts/build-dmg.sh" --help >/dev/null
+}
+
 verify_bundles() {
   local found=0
   local found_direct=0
@@ -174,6 +183,7 @@ verify_bridge_keychain_entitlements() {
   local bundle="$1"
   local helper="$bundle/Contents/Helpers/NotchHubHookBridge"
   local entitlement_dir app_entitlements helper_entitlements app_group helper_group
+  local app_team helper_team app_identifier helper_identifier expected_app_identifier
   entitlement_dir="$(mktemp -d /tmp/notchhub-entitlements.XXXXXX)"
   app_entitlements="$entitlement_dir/app.plist"
   helper_entitlements="$entitlement_dir/helper.plist"
@@ -184,9 +194,18 @@ verify_bridge_keychain_entitlements() {
   fi
   app_group="$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' "$app_entitlements" 2>/dev/null || true)"
   helper_group="$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' "$helper_entitlements" 2>/dev/null || true)"
+  app_team="$(codesign -dvvv "$bundle" 2>&1 | awk -F= '/^TeamIdentifier=/ { print $2 }')"
+  helper_team="$(codesign -dvvv "$helper" 2>&1 | awk -F= '/^TeamIdentifier=/ { print $2 }')"
+  app_identifier="$(codesign -dvvv "$bundle" 2>&1 | awk -F= '/^Identifier=/ { print $2 }')"
+  helper_identifier="$(codesign -dvvv "$helper" 2>&1 | awk -F= '/^Identifier=/ { print $2 }')"
+  expected_app_identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+    "$bundle/Contents/Info.plist")"
   rm -rf -- "$entitlement_dir"
-  [[ -n "$app_group" && "$app_group" == "$helper_group" &&
-    "$app_group" == *.com.notchhub.v1.bridge ]]
+  [[ -n "$app_team" && "$app_team" == "$helper_team" &&
+    "$app_identifier" == "$expected_app_identifier" &&
+    "$helper_identifier" == "com.notchhub.v1.bridge.helper" &&
+    "$app_group" == "$app_team.com.notchhub.v1.bridge" &&
+    "$helper_group" == "$app_group" ]]
 }
 
 run_gate "Debug build" swift build
@@ -198,6 +217,7 @@ run_gate "SwiftLint" swift_lint
 run_gate "Strict concurrency" strict_concurrency
 run_gate "Credential scan" secret_scan
 run_gate "Dependency resolution" dependency_audit
+run_gate "Release tooling" release_tooling
 run_gate "Fresh app packaging" fresh_bundle_packaging
 run_gate "Available bundle signatures" verify_bundles
 

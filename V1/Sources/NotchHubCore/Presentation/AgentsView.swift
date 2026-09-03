@@ -5,15 +5,18 @@ public struct NotchPanelView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let model: AppPresentationModel
+    private let geometry: NotchOverlayGeometry
     private let onHover: @MainActor (Bool) -> Void
     private let onDismiss: @MainActor () -> Void
 
     public init(
         model: AppPresentationModel,
+        geometry: NotchOverlayGeometry,
         onHover: @escaping @MainActor (Bool) -> Void,
         onDismiss: @escaping @MainActor () -> Void
     ) {
         self.model = model
+        self.geometry = geometry
         self.onHover = onHover
         self.onDismiss = onDismiss
     }
@@ -21,266 +24,362 @@ public struct NotchPanelView: View {
     public var body: some View {
         Group {
             if model.tier == .compact {
-                CompactAgentsSummary(model: model)
+                CompactAgentWings(model: model, cameraWidth: geometry.cameraWidth)
             } else {
-                NotchDetailView(model: model, onDismiss: onDismiss)
+                DirectNotchRibbon(
+                    model: model,
+                    cameraGapWidth: geometry.navigationGapWidth,
+                    onDismiss: onDismiss
+                )
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 38)
-        .padding(.bottom, 18)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(NotchBackground())
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            CompactNotchBackground(
+                hasPhysicalNotch: geometry.hasPhysicalNotch,
+                isExpanded: model.tier == .detail
+            )
+        )
         .foregroundStyle(.white)
         .onHover(perform: onHover)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: model.tier)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: model.pendingApproval)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: model.tier)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: model.pendingApproval)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("NotchHub")
     }
 }
 
-private struct NotchBackground: View {
+private struct CompactAgentWings: View {
+    let model: AppPresentationModel
+    let cameraWidth: CGFloat
+
     var body: some View {
-        UnevenRoundedRectangle(
-            topLeadingRadius: 0,
-            bottomLeadingRadius: 24,
-            bottomTrailingRadius: 24,
-            topTrailingRadius: 0
-        )
-        .fill(.black.opacity(0.96))
-        .overlay(alignment: .bottom) {
-            UnevenRoundedRectangle(
-                topLeadingRadius: 0,
-                bottomLeadingRadius: 24,
-                bottomTrailingRadius: 24,
-                topTrailingRadius: 0
+        HStack(spacing: 0) {
+            leftWing
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Color.clear.frame(width: cameraWidth)
+            rightWing
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(.horizontal, CompactNotchTheme.wingOuterPadding)
+    }
+
+    @ViewBuilder private var leftWing: some View {
+        if let approval = model.pendingApproval {
+            CompactStatusWing(
+                symbol: "hand.raised.fill",
+                value: approval.providerName,
+                tint: .orange,
+                alignment: .leading
             )
-            .stroke(.white.opacity(0.12), lineWidth: 1)
+        } else if model.safeFeatures.focus.state != .idle {
+            CompactStatusWing(symbol: "timer", value: "Focus", alignment: .leading)
+        } else if let session = activeSession {
+            CompactStatusWing(symbol: "bolt.fill", value: session.providerName, alignment: .leading)
+        } else {
+            CompactProviderWing(provider: provider(.codex), alignment: .leading)
         }
-        .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
+    }
+
+    @ViewBuilder private var rightWing: some View {
+        if model.pendingApproval != nil {
+            CompactStatusWing(
+                symbol: "exclamationmark.circle.fill",
+                value: "Approval",
+                tint: .orange,
+                alignment: .trailing
+            )
+        } else if model.safeFeatures.focus.state != .idle {
+            CompactFocusWing(model: model.safeFeatures.focus)
+        } else if model.activeSessionCount > 0 {
+            CompactStatusWing(
+                symbol: "terminal",
+                value: "\(model.activeSessionCount) active",
+                alignment: .trailing
+            )
+        } else {
+            CompactProviderWing(provider: provider(.claude), alignment: .trailing)
+        }
+    }
+
+    private var activeSession: AgentSessionPresentation? {
+        model.sessions.first { $0.status == .running || $0.status == .waitingForApproval }
+    }
+
+    private func provider(_ identifier: ProviderID) -> ProviderCardPresentation? {
+        model.providers.first { $0.id == identifier.rawValue }
     }
 }
 
-private struct CompactAgentsSummary: View {
-    let model: AppPresentationModel
+private struct CompactStatusWing: View {
+    let symbol: String
+    let value: String
+    var tint: Color = .white
+    let alignment: HorizontalAlignment
 
     var body: some View {
-        VStack(spacing: 12) {
-            CompactHeader(model: model)
-            if model.edition == .direct {
-                compactProviders
-                sessionSummary
-            } else {
-                liteSummary
-            }
+        HStack(spacing: 4) {
+            if alignment == .leading { Image(systemName: symbol) }
+            Text(value)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            if alignment == .trailing { Image(systemName: symbol) }
         }
-    }
-
-    private var compactProviders: some View {
-        HStack(spacing: 12) {
-            ForEach(model.providers) { provider in
-                CompactProviderView(provider: provider)
-            }
-        }
-    }
-
-    private var sessionSummary: some View {
-        HStack {
-            Label("\(model.activeSessionCount) active", systemImage: "bolt.fill")
-            Spacer()
-            Text(model.hasAttention ? "Needs attention" : "Select for details")
-                .foregroundStyle(model.hasAttention ? .orange : .secondary)
-        }
-        .font(.caption)
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(tint)
         .accessibilityElement(children: .combine)
     }
-
-    private var liteSummary: some View {
-        HStack {
-            Label("Dashboard, Clipboard & Focus", systemImage: "checkmark.shield")
-            Spacer()
-            Text("Store edition").foregroundStyle(.secondary)
-        }
-        .font(.caption)
-    }
 }
 
-private struct CompactHeader: View {
-    let model: AppPresentationModel
+private struct CompactFocusWing: View {
+    let model: FocusTimerModel
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: model.edition == .direct ? "sparkles" : "shield.lefthalf.filled")
-                .foregroundStyle(.cyan)
-            Text(model.edition == .direct ? "AI Command Center" : "NotchHub Lite")
-                .font(.headline)
-            Spacer()
-            StatusAttentionPill(model: model)
+        HStack(spacing: 4) {
+            Text(model.clockLabel)
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .contentTransition(.numericText())
+            Image(systemName: "timer")
+                .font(.system(size: 11, weight: .semibold))
         }
-    }
-}
-
-private struct StatusAttentionPill: View {
-    let model: AppPresentationModel
-
-    var body: some View {
-        if model.hasAttention {
-            Label("Attention", systemImage: "exclamationmark.circle.fill")
-                .foregroundStyle(.orange)
-                .font(.caption.weight(.semibold))
-        } else if let utilization = model.highestUtilization {
-            Text("\(Int(utilization.rounded()))% peak")
-                .foregroundStyle(.secondary)
-                .font(.caption.monospacedDigit())
-        } else {
-            Text("Checking providers")
-                .foregroundStyle(.secondary)
-                .font(.caption)
-        }
-    }
-}
-
-private struct CompactProviderView: View {
-    let provider: ProviderCardPresentation
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: provider.symbol).frame(width: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(provider.name).font(.subheadline.weight(.semibold))
-                compactState
-            }
-            Spacer(minLength: 4)
-            UsageRing(value: provider.highestUtilization, diameter: 30)
-        }
-        .padding(9)
-        .frame(maxWidth: .infinity)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+        .foregroundStyle(model.state == .completed ? .green : .white)
         .accessibilityElement(children: .combine)
-    }
-
-    @ViewBuilder private var compactState: some View {
-        if let utilization = provider.highestUtilization {
-            Text("\(Int(utilization.rounded()))% used")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-        } else {
-            Text(provider.connection.label)
-                .font(.caption)
-                .foregroundStyle(provider.connection.requiresAttention ? .orange : .secondary)
-        }
+        .accessibilityLabel("Focus timer \(model.clockLabel), \(model.state.title)")
     }
 }
 
-private struct NotchDetailView: View {
+private struct CompactProviderWing: View {
+    let provider: ProviderCardPresentation?
+    let alignment: HorizontalAlignment
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if alignment == .leading { providerIcon }
+            Text(status)
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            if alignment == .trailing { providerIcon }
+        }
+        .foregroundStyle(tint)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var providerIcon: some View {
+        Image(systemName: provider?.symbol ?? "ellipsis")
+            .font(.system(size: 11, weight: .semibold))
+    }
+
+    private var status: String {
+        if let value = provider?.highestUtilization {
+            return "\(Int(value.rounded()))%"
+        }
+        return provider?.connection.label ?? "Checking"
+    }
+
+    private var tint: Color {
+        provider?.connection.requiresAttention == true ? .orange : .white
+    }
+
+    private var accessibilityLabel: String {
+        "\(provider?.name ?? "Provider") \(status)"
+    }
+}
+
+private struct DirectNotchRibbon: View {
     let model: AppPresentationModel
+    let cameraGapWidth: CGFloat
     let onDismiss: @MainActor () -> Void
 
-    var body: some View {
-        VStack(spacing: 14) {
-            DetailHeader(model: model, onDismiss: onDismiss)
-            CapabilityBar(model: model)
-            Divider().overlay(.white.opacity(0.12))
-            selectedContent
-        }
-    }
-
-    @ViewBuilder private var selectedContent: some View {
-        switch model.selectedCapability {
-        case .agents: AgentsDetail(model: model)
-        case .dashboard: safeFeature(.dashboard)
-        case .media: CapabilityFoundationView(capability: .media, edition: model.edition)
-        case .clipboard: safeFeature(.clipboard)
-        case .focus: safeFeature(.focus)
-        }
-    }
-
-    private func safeFeature(_ feature: SafeFeature) -> some View {
-        SafeFeatureDetailView(feature: feature, workspace: model.safeFeatures)
-    }
-}
-
-private struct DetailHeader: View {
-    let model: AppPresentationModel
-    let onDismiss: @MainActor () -> Void
+    @Namespace private var selection
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: model.selectedCapability.systemImage)
-                .font(.title3)
-                .foregroundStyle(.cyan)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(detailTitle).font(.headline)
-                Text(model.edition.displayName).font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            navigationBand
+            HStack(alignment: .top, spacing: 12) {
+                RibbonModuleHeader(
+                    title: model.selectedCapability.title,
+                    summary: model.selectedCapability.ribbonSummary,
+                    symbol: model.selectedCapability.systemImage
+                )
+                .frame(
+                    width: CompactNotchTheme.moduleHeaderWidth,
+                    height: CompactNotchTheme.contentHeight
+                )
+                Divider().overlay(CompactNotchTheme.divider)
+                selectedContent
+                    .frame(maxWidth: .infinity, minHeight: CompactNotchTheme.contentHeight)
+                    .clipped()
+                    .id(model.selectedCapability)
+                    .transition(.opacity)
             }
-            Spacer()
-            Button(action: onDismiss) {
-                Image(systemName: "xmark").frame(width: 24, height: 24)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close NotchHub")
-            .keyboardShortcut(.cancelAction)
+            .frame(height: CompactNotchTheme.contentHeight)
         }
+        .padding(.horizontal, CompactNotchTheme.horizontalPadding)
+        .padding(.vertical, CompactNotchTheme.verticalPadding)
     }
 
-    private var detailTitle: String {
-        model.selectedCapability == .agents ? "AI Command Center" : model.selectedCapability.title
+    private var navigationBand: some View {
+        let capabilities = model.edition.capabilities
+        let midpoint = (capabilities.count + 1) / 2
+        return HStack(spacing: 0) {
+            capabilityGroup(Array(capabilities.prefix(midpoint)))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Color.clear.frame(width: cameraGapWidth)
+            HStack(spacing: CompactNotchTheme.chipSpacing) {
+                capabilityGroup(Array(capabilities.suffix(from: midpoint)))
+                closeButton
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .frame(height: CompactNotchTheme.navigationHeight)
     }
-}
 
-private struct CapabilityBar: View {
-    let model: AppPresentationModel
-
-    var body: some View {
-        HStack(spacing: 6) {
-            ForEach(model.edition.capabilities) { capability in
-                CapabilityButton(
+    private func capabilityGroup(_ capabilities: [AppCapability]) -> some View {
+        HStack(spacing: CompactNotchTheme.chipSpacing) {
+            ForEach(capabilities) { capability in
+                DirectRibbonChip(
                     capability: capability,
-                    selected: model.selectedCapability == capability,
+                    isSelected: model.selectedCapability == capability,
+                    selection: selection,
+                    shortcut: shortcut(for: capability),
                     action: { model.select(capability) }
                 )
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("NotchHub modules")
+    }
+
+    private func shortcut(for capability: AppCapability) -> KeyEquivalent? {
+        guard let index = model.edition.capabilities.firstIndex(of: capability) else { return nil }
+        return KeyEquivalent(Character(String(index + 1)))
+    }
+
+    private var closeButton: some View {
+        Button(action: onDismiss) {
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: CompactNotchTheme.chipSize, height: CompactNotchTheme.chipSize)
+                .background(CompactNotchTheme.subtleSurface, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.cancelAction)
+        .help("Collapse NotchHub")
+        .accessibilityLabel("Collapse NotchHub")
+    }
+
+    @ViewBuilder private var selectedContent: some View {
+        switch model.selectedCapability {
+        case .agents:
+            CompactAgentsRow(model: model)
+        case .dashboard:
+            safeFeature(.dashboard)
+        case .clipboard:
+            safeFeature(.clipboard)
+        case .focus:
+            safeFeature(.focus)
+        case .media:
+            CompactUnavailableCapability()
+        }
+    }
+
+    private func safeFeature(_ feature: SafeFeature) -> some View {
+        CompactSafeFeatureView(feature: feature, workspace: model.safeFeatures)
     }
 }
 
-private struct CapabilityButton: View {
+private struct DirectRibbonChip: View {
     let capability: AppCapability
-    let selected: Bool
+    let isSelected: Bool
+    let selection: Namespace.ID
+    let shortcut: KeyEquivalent?
     let action: @MainActor () -> Void
+
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            Label(capability.title, systemImage: capability.systemImage)
-                .font(.caption.weight(.medium))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(selected ? .cyan.opacity(0.2) : .white.opacity(0.06))
-                .clipShape(Capsule())
+            HStack(spacing: 6) {
+                Image(systemName: capability.systemImage)
+                    .font(.system(size: 11, weight: .semibold))
+                if isSelected {
+                    Text(capability.title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, isSelected ? 10 : 0)
+            .frame(minWidth: CompactNotchTheme.chipSize, minHeight: CompactNotchTheme.chipSize)
+            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .buttonStyle(
+            DirectRibbonChipStyle(
+                isSelected: isSelected,
+                isHovered: isHovered,
+                selection: selection
+            )
+        )
+        .help(capability.title)
+        .accessibilityLabel(capability.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .onHover { isHovered = $0 }
+        .directRibbonKeyboardShortcut(shortcut)
     }
 }
 
-private struct AgentsDetail: View {
-    let model: AppPresentationModel
+private struct DirectRibbonChipStyle: ButtonStyle {
+    let isSelected: Bool
+    let isHovered: Bool
+    let selection: Namespace.ID
 
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                ProviderGrid(providers: model.providers)
-                SessionBridgeCard(model: model)
-                if let approval = model.pendingApproval {
-                    ApprovalCard(model: model, approval: approval)
-                }
-                SessionList(sessions: model.sessions)
-            }
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background { background(isPressed: configuration.isPressed) }
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+
+    @ViewBuilder private func background(isPressed: Bool) -> some View {
+        if isPressed {
+            Capsule().fill(CompactNotchTheme.pressedSurface)
+        } else if isSelected {
+            Capsule()
+                .fill(CompactNotchTheme.selectedSurface)
+                .matchedGeometryEffect(id: "direct-ribbon-selection", in: selection)
+        } else {
+            Capsule().fill(isHovered ? CompactNotchTheme.hoverSurface : CompactNotchTheme.subtleSurface)
         }
-        .scrollIndicators(.hidden)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func directRibbonKeyboardShortcut(_ shortcut: KeyEquivalent?) -> some View {
+        if let shortcut {
+            keyboardShortcut(shortcut, modifiers: .command)
+        } else {
+            self
+        }
+    }
+}
+
+private struct CompactUnavailableCapability: View {
+    var body: some View {
+        Label("This module is not part of the compact preview.", systemImage: "eye.slash")
+            .font(.system(size: 11))
+            .foregroundStyle(CompactNotchTheme.secondaryText)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+}
+
+private extension AppCapability {
+    var ribbonSummary: String {
+        switch self {
+        case .agents: "Codex and Claude usage"
+        case .dashboard: "System status at a glance"
+        case .media: "Playback controls"
+        case .clipboard: "Private, opt-in text history"
+        case .focus: "A local focus timer"
+        }
     }
 }

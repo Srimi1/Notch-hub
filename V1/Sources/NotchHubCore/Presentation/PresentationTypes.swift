@@ -48,7 +48,7 @@ public enum ApplicationEdition: String, Sendable {
 
     public var capabilities: [AppCapability] {
         switch self {
-        case .direct: AppCapability.allCases
+        case .direct: [.agents, .dashboard, .clipboard, .focus]
         case .lite: [.dashboard, .clipboard, .focus]
         }
     }
@@ -300,37 +300,6 @@ public enum ApprovalSubmissionState: Sendable, Equatable {
     case idle
     case submitting
     case failed(String)
-}
-
-public enum SessionBridgeAction: Sendable, Equatable {
-    case connect
-    case disconnect
-}
-
-public enum SessionBridgeConnectionPresentation: Sendable, Equatable {
-    case checking
-    case disconnected
-    case connected
-    case connectedWithCustomClaudeStatusLine
-    case failed(String)
-
-    public var label: String {
-        switch self {
-        case .checking: "Checking session hooks"
-        case .disconnected: "Terminal sessions are not connected"
-        case .connected: "Codex and Claude sessions are connected"
-        case .connectedWithCustomClaudeStatusLine: "Sessions connected; your Claude status line was preserved"
-        case let .failed(message): message
-        }
-    }
-
-    public var action: SessionBridgeAction? {
-        switch self {
-        case .checking: nil
-        case .disconnected, .failed: .connect
-        case .connected, .connectedWithCustomClaudeStatusLine: .disconnect
-        }
-    }
 }
 
 public struct NotchPanelMetrics: Sendable, Equatable {

@@ -4,15 +4,18 @@ public struct SafeNotchPanelView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let model: SafeNotchPresentationModel
+    private let geometry: NotchOverlayGeometry
     private let onHover: @MainActor (Bool) -> Void
     private let onDismiss: @MainActor () -> Void
 
     public init(
         model: SafeNotchPresentationModel,
+        geometry: NotchOverlayGeometry,
         onHover: @escaping @MainActor (Bool) -> Void,
         onDismiss: @escaping @MainActor () -> Void
     ) {
         self.model = model
+        self.geometry = geometry
         self.onHover = onHover
         self.onDismiss = onDismiss
     }
@@ -20,173 +23,275 @@ public struct SafeNotchPanelView: View {
     public var body: some View {
         Group {
             if model.tier == .compact {
-                SafeCompactSummary(model: model)
+                SafeCompactWings(model: model, cameraWidth: geometry.cameraWidth)
             } else {
-                SafeNotchDetail(model: model, onDismiss: onDismiss)
+                SafeNotchRibbon(
+                    model: model,
+                    cameraGapWidth: geometry.navigationGapWidth,
+                    onDismiss: onDismiss
+                )
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 38)
-        .padding(.bottom, 18)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(SafeNotchBackground())
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            CompactNotchBackground(
+                hasPhysicalNotch: geometry.hasPhysicalNotch,
+                isExpanded: model.tier == .detail
+            )
+        )
         .foregroundStyle(.white)
         .onHover(perform: onHover)
         .onAppear { model.workspace.start() }
-        .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: model.tier)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: model.tier)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("NotchHub Lite")
     }
 }
 
-private struct SafeCompactSummary: View {
+private struct SafeCompactWings: View {
     let model: SafeNotchPresentationModel
+    let cameraWidth: CGFloat
 
     var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "shield.lefthalf.filled").foregroundStyle(.cyan)
-                Text("NotchHub Lite").font(.headline)
-                Spacer()
-                Text(model.workspace.dashboard.snapshot.sampledAt, style: .time)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            HStack(spacing: 8) {
-                CompactValue(
-                    symbol: "cpu",
-                    value: model.workspace.dashboard.snapshot.activeProcessorCount.formatted(),
-                    label: "cores"
-                )
-                CompactValue(
-                    symbol: "clipboard",
-                    value: clipboardValue,
-                    label: model.workspace.clipboard.isEnabled ? "clips" : "history"
-                )
-                CompactValue(
-                    symbol: "timer",
-                    value: model.workspace.focus.clockLabel,
-                    label: model.workspace.focus.state.title.lowercased()
-                )
-            }
+        HStack(spacing: 0) {
+            CompactWingValue(
+                symbol: "cpu",
+                value: model.workspace.dashboard.snapshot.activeProcessorCount.formatted(),
+                alignment: .leading
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Color.clear.frame(width: cameraWidth)
+            CompactWingValue(
+                symbol: "timer",
+                value: model.workspace.focus.clockLabel,
+                alignment: .trailing
+            )
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-    }
-
-    private var clipboardValue: String {
-        model.workspace.clipboard.isEnabled
-            ? model.workspace.clipboard.entries.count.formatted()
-            : "Off"
+        .padding(.horizontal, CompactNotchTheme.wingOuterPadding)
     }
 }
 
-private struct CompactValue: View {
+private struct CompactWingValue: View {
     let symbol: String
     let value: String
-    let label: String
+    let alignment: HorizontalAlignment
 
     var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: symbol).foregroundStyle(.cyan)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(value).font(.caption.weight(.semibold).monospacedDigit())
-                Text(label).font(.caption2).foregroundStyle(.secondary)
+        HStack(spacing: 4) {
+            if alignment == .leading {
+                Image(systemName: symbol)
             }
-            Spacer(minLength: 0)
+            Text(value)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            if alignment == .trailing {
+                Image(systemName: symbol)
+            }
         }
-        .padding(8)
-        .frame(maxWidth: .infinity)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.white)
         .accessibilityElement(children: .combine)
     }
 }
 
-private struct SafeNotchDetail: View {
+private struct SafeNotchRibbon: View {
     let model: SafeNotchPresentationModel
+    let cameraGapWidth: CGFloat
     let onDismiss: @MainActor () -> Void
 
+    @Namespace private var selection
+
     var body: some View {
-        VStack(spacing: 13) {
-            detailHeader
-            featureBar
-            Divider().overlay(.white.opacity(0.12))
-            SafeFeatureDetailView(feature: model.selectedFeature, workspace: model.workspace)
+        VStack(alignment: .leading, spacing: 8) {
+            navigationBand
+            HStack(alignment: .top, spacing: 12) {
+                moduleHeader
+                    .frame(
+                        width: CompactNotchTheme.moduleHeaderWidth,
+                        height: CompactNotchTheme.contentHeight
+                    )
+                Divider().overlay(CompactNotchTheme.divider)
+                CompactSafeFeatureView(feature: model.selectedFeature, workspace: model.workspace)
+                    .frame(maxWidth: .infinity, minHeight: CompactNotchTheme.contentHeight)
+                    .clipped()
+                    .id(model.selectedFeature)
+                    .transition(.opacity)
+            }
+            .frame(height: CompactNotchTheme.contentHeight)
         }
+        .padding(.horizontal, CompactNotchTheme.horizontalPadding)
+        .padding(.vertical, CompactNotchTheme.verticalPadding)
     }
 
-    private var detailHeader: some View {
-        HStack(spacing: 10) {
-            Image(systemName: model.selectedFeature.systemImage)
-                .font(.title3)
-                .foregroundStyle(.cyan)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(model.selectedFeature.title).font(.headline)
-                Text("NotchHub Lite").font(.caption).foregroundStyle(.secondary)
+    private var navigationBand: some View {
+        let midpoint = (SafeFeature.allCases.count + 1) / 2
+        return HStack(spacing: 0) {
+            featureGroup(Array(SafeFeature.allCases.prefix(midpoint)))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Color.clear.frame(width: cameraGapWidth)
+            HStack(spacing: CompactNotchTheme.chipSpacing) {
+                featureGroup(Array(SafeFeature.allCases.suffix(from: midpoint)))
+                closeButton
             }
-            Spacer()
-            Button(action: onDismiss) {
-                Image(systemName: "xmark").frame(width: 24, height: 24)
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.cancelAction)
-            .accessibilityLabel("Close NotchHub")
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
+        .frame(height: CompactNotchTheme.navigationHeight)
     }
 
-    private var featureBar: some View {
-        HStack(spacing: 6) {
-            ForEach(SafeFeature.allCases) { feature in
-                SafeFeatureButton(
-                    feature: feature,
+    private func featureGroup(_ features: [SafeFeature]) -> some View {
+        HStack(spacing: CompactNotchTheme.chipSpacing) {
+            ForEach(features) { feature in
+                RibbonChip(
+                    title: feature.title,
+                    symbol: feature.systemImage,
                     isSelected: model.selectedFeature == feature,
+                    selection: selection,
+                    shortcut: shortcut(for: feature),
                     action: { model.select(feature) }
                 )
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("NotchHub modules")
+    }
+
+    private func shortcut(for feature: SafeFeature) -> KeyEquivalent? {
+        guard let index = SafeFeature.allCases.firstIndex(of: feature) else { return nil }
+        return KeyEquivalent(Character(String(index + 1)))
+    }
+
+    private var closeButton: some View {
+        Button(action: onDismiss) {
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: CompactNotchTheme.chipSize, height: CompactNotchTheme.chipSize)
+                .background(CompactNotchTheme.subtleSurface, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.cancelAction)
+        .help("Collapse NotchHub")
+        .accessibilityLabel("Collapse NotchHub")
+    }
+
+    private var moduleHeader: some View {
+        RibbonModuleHeader(
+            title: model.selectedFeature.title,
+            summary: model.selectedFeature.ribbonSummary,
+            symbol: model.selectedFeature.systemImage
+        )
     }
 }
 
-private struct SafeFeatureButton: View {
-    let feature: SafeFeature
+public struct RibbonModuleHeader: View {
+    private let title: String
+    private let summary: String
+    private let symbol: String
+
+    public init(title: String, summary: String, symbol: String) {
+        self.title = title
+        self.summary = summary
+        self.symbol = symbol
+    }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .frame(width: 32, height: 32)
+                .background(CompactNotchTheme.hoverSurface, in: RoundedRectangle(cornerRadius: 9))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                Text(summary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(CompactNotchTheme.secondaryText)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct RibbonChip: View {
+    let title: String
+    let symbol: String
     let isSelected: Bool
+    let selection: Namespace.ID
+    let shortcut: KeyEquivalent?
     let action: @MainActor () -> Void
+
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            Label(feature.title, systemImage: feature.systemImage)
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 8)
-                .frame(height: 30)
-                .background(
-                    isSelected ? Color.cyan.opacity(0.22) : Color.white.opacity(0.06),
-                    in: Capsule()
-                )
+            HStack(spacing: 6) {
+                Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+                if isSelected {
+                    Text(title).font(.system(size: 11, weight: .semibold)).lineLimit(1)
+                }
+            }
+            .padding(.horizontal, isSelected ? 10 : 0)
+            .frame(minWidth: CompactNotchTheme.chipSize, minHeight: CompactNotchTheme.chipSize)
+            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(
+            RibbonChipStyle(
+                isSelected: isSelected,
+                isHovered: isHovered,
+                selection: selection
+            )
+        )
+        .help(title)
+        .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .onHover { isHovered = $0 }
+        .ribbonKeyboardShortcut(shortcut)
     }
 }
 
-private struct SafeNotchBackground: View {
-    var body: some View {
-        UnevenRoundedRectangle(
-            topLeadingRadius: 0,
-            bottomLeadingRadius: 24,
-            bottomTrailingRadius: 24,
-            topTrailingRadius: 0
-        )
-        .fill(.black.opacity(0.96))
-        .overlay(alignment: .bottom) {
-            UnevenRoundedRectangle(
-                topLeadingRadius: 0,
-                bottomLeadingRadius: 24,
-                bottomTrailingRadius: 24,
-                topTrailingRadius: 0
-            )
-            .stroke(.white.opacity(0.12), lineWidth: 1)
+private struct RibbonChipStyle: ButtonStyle {
+    let isSelected: Bool
+    let isHovered: Bool
+    let selection: Namespace.ID
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background { background(isPressed: configuration.isPressed) }
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+
+    @ViewBuilder private func background(isPressed: Bool) -> some View {
+        if isPressed {
+            Capsule().fill(CompactNotchTheme.pressedSurface)
+        } else if isSelected {
+            Capsule()
+                .fill(CompactNotchTheme.selectedSurface)
+                .matchedGeometryEffect(id: "safe-ribbon-selection", in: selection)
+        } else {
+            Capsule().fill(isHovered ? CompactNotchTheme.hoverSurface : CompactNotchTheme.subtleSurface)
         }
-        .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func ribbonKeyboardShortcut(_ shortcut: KeyEquivalent?) -> some View {
+        if let shortcut {
+            keyboardShortcut(shortcut, modifiers: .command)
+        } else {
+            self
+        }
+    }
+}
+
+private extension SafeFeature {
+    var ribbonSummary: String {
+        switch self {
+        case .dashboard: "System status at a glance"
+        case .clipboard: "Private, opt-in text history"
+        case .focus: "A local focus timer"
+        }
     }
 }

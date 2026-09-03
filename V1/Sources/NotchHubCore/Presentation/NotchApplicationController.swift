@@ -1,4 +1,5 @@
 import AppKit
+import NotchHubSafeFeatures
 import SwiftUI
 
 public struct StatusMeterButton: View {
@@ -35,13 +36,11 @@ public struct StatusMeterButton: View {
         .onHover(perform: onHover)
         .accessibilityLabel("NotchHub")
         .accessibilityValue(accessibilityValue)
-        .help("NotchHub — select for details")
+        .help("NotchHub — click to pin the ribbon")
     }
 
     private var accessibilityValue: String {
-        if model.hasAttention {
-            return "Needs attention"
-        }
+        if model.hasAttention { return "Needs attention" }
         guard let value = model.highestUtilization else { return "Checking providers" }
         return "Highest provider usage \(Int(value.rounded())) percent"
     }
@@ -65,25 +64,25 @@ private final class AdaptiveNotchPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
     }
 
-    override var canBecomeKey: Bool {
-        true
-    }
-
-    override var canBecomeMain: Bool {
-        false
-    }
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }
 
-/// AppKit lifecycle and overlay ownership shared by both editions.
+/// Owns the top-edge ribbon. The physical notch is the primary hover target;
+/// the menu-bar meter is retained as a secondary pin/unpin command.
 @MainActor
 public final class NotchHubApplicationController: NSObject, NSApplicationDelegate {
     public let model: AppPresentationModel
 
     private var statusItem: NSStatusItem?
     private var panel: AdaptiveNotchPanel?
-    private var dismissTask: Task<Void, Never>?
-    private var panelHovered = false
+    private var geometry: NotchOverlayGeometry?
+    private var expandTask: Task<Void, Never>?
+    private var collapseTask: Task<Void, Never>?
+    private var panelHoverGate = NotchHoverGate()
     private var statusHovered = false
+    private var isPinned = false
+    private var frameGeneration = 0
 
     public init(edition: ApplicationEdition) {
         self.model = AppPresentationModel(edition: edition)
@@ -99,29 +98,26 @@ public final class NotchHubApplicationController: NSObject, NSApplicationDelegat
         model.safeFeatures.start()
         installStatusItem()
         installPanel()
-        model.setLayoutChangeHandler { [weak self] in
-            self?.refreshPanelLayout()
-        }
+        model.setLayoutChangeHandler { [weak self] in self?.refreshPanelLayout() }
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(screenParametersChanged),
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+        panel?.orderFrontRegardless()
+        panel?.orderBack(nil)
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
-        dismissTask?.cancel()
+        expandTask?.cancel()
+        collapseTask?.cancel()
         model.safeFeatures.stop()
     }
 
-    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        false
-    }
+    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    public func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
-        true
-    }
+    public func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: 28)
@@ -129,7 +125,7 @@ public final class NotchHubApplicationController: NSObject, NSApplicationDelegat
         let root = StatusMeterButton(
             model: model,
             onHover: { [weak self] hovering in self?.statusHoverChanged(hovering) },
-            onActivate: { [weak self] in self?.toggleDetail() }
+            onActivate: { [weak self] in self?.togglePinnedRibbon() }
         )
         let hosting = NSHostingView(rootView: root)
         hosting.translatesAutoresizingMaskIntoConstraints = false
@@ -144,113 +140,160 @@ public final class NotchHubApplicationController: NSObject, NSApplicationDelegat
     }
 
     private func installPanel() {
-        guard panel == nil else { return }
-        guard let screen = preferredScreen() else { return }
-        let frame = panelFrame(on: screen)
-        let panel = AdaptiveNotchPanel(contentRect: frame)
-        let root = NotchPanelView(
-            model: model,
-            onHover: { [weak self] hovering in self?.panelHoverChanged(hovering) },
-            onDismiss: { [weak self] in self?.dismissPanel() }
-        )
-        panel.contentView = NSHostingView(rootView: root)
+        guard panel == nil, let screen = preferredScreen() else { return }
+        let geometry = NotchOverlayGeometry(screen: screen)
+        let panel = AdaptiveNotchPanel(contentRect: panelFrame(on: screen, geometry: geometry))
+        panel.contentView = hostedContent(geometry: geometry)
+        self.geometry = geometry
         self.panel = panel
+    }
+
+    private func hostedContent(geometry: NotchOverlayGeometry) -> NSHostingView<NotchPanelView> {
+        NSHostingView(
+            rootView: NotchPanelView(
+                model: model,
+                geometry: geometry,
+                onHover: { [weak self] hovering in self?.panelHoverChanged(hovering) },
+                onDismiss: { [weak self] in self?.collapseRibbon() }
+            )
+        )
     }
 
     private func statusHoverChanged(_ hovering: Bool) {
         statusHovered = hovering
         if hovering {
-            cancelDismiss()
-            if panel?.isVisible != true {
-                model.showCompact()
-                showPanel()
-            }
+            scheduleExpansion()
         } else {
-            scheduleDismissIfUnpinned()
+            scheduleCollapse()
         }
     }
 
     private func panelHoverChanged(_ hovering: Bool) {
-        panelHovered = hovering
+        guard let accepted = panelHoverGate.handleTransient(hovering) else { return }
+        applyPanelHover(accepted)
+    }
+
+    private func applyPanelHover(_ hovering: Bool) {
         if hovering {
-            cancelDismiss()
+            scheduleExpansion()
         } else {
-            scheduleDismissIfUnpinned()
+            scheduleCollapse()
         }
     }
 
-    private func toggleDetail() {
-        cancelDismiss()
-        if panel?.isVisible == true, model.tier == .detail {
-            dismissPanel()
+    private func togglePinnedRibbon() {
+        cancelTransitions()
+        if isPinned, model.tier == .detail {
+            collapseRibbon()
         } else {
+            isPinned = true
             model.showDetail()
-            showPanel()
+            panel?.orderFrontRegardless()
         }
     }
 
-    private func showPanel() {
-        if panel == nil {
-            installPanel()
-        }
-        guard let panel else { return }
-        refreshPanelLayout()
-        panel.orderFrontRegardless()
-        if model.tier == .detail {
-            panel.makeKey()
-        }
-    }
-
-    private func dismissPanel() {
-        cancelDismiss()
-        panel?.resignKey()
-        panel?.orderOut(nil)
-        model.showCompact()
-    }
-
-    private func scheduleDismissIfUnpinned() {
+    private func scheduleExpansion() {
+        collapseTask?.cancel()
         guard model.tier == .compact else { return }
-        cancelDismiss()
-        dismissTask = Task { @MainActor [weak self] in
+        expandTask?.cancel()
+        expandTask = Task { @MainActor [weak self] in
             do {
-                try await Task.sleep(for: .milliseconds(260))
+                try await Task.sleep(for: .milliseconds(120))
             } catch {
                 return
             }
-            guard let self, !self.panelHovered, !self.statusHovered else { return }
-            panel?.orderOut(nil)
+            guard let self, panelHoverGate.isHovered || statusHovered else { return }
+            model.showDetail()
         }
     }
 
-    private func cancelDismiss() {
-        dismissTask?.cancel()
-        dismissTask = nil
+    private func scheduleCollapse() {
+        expandTask?.cancel()
+        guard !isPinned, model.tier == .detail else { return }
+        collapseTask?.cancel()
+        collapseTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(150))
+            } catch {
+                return
+            }
+            guard let self, !panelHoverGate.isHovered, !statusHovered, !pointerIsInsidePanel else {
+                return
+            }
+            collapseRibbon()
+        }
+    }
+
+    private var pointerIsInsidePanel: Bool {
+        panel?.frame.contains(NSEvent.mouseLocation) == true
+    }
+
+    private func collapseRibbon() {
+        isPinned = false
+        cancelTransitions()
+        model.showCompact()
+        if model.tier == .compact {
+            panel?.orderBack(nil)
+        }
+    }
+
+    private func cancelTransitions() {
+        expandTask?.cancel()
+        collapseTask?.cancel()
+        expandTask = nil
+        collapseTask = nil
     }
 
     private func refreshPanelLayout() {
         guard let panel, let screen = preferredScreen() else { return }
-        let target = panelFrame(on: screen)
-        let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.22
+        let newGeometry = NotchOverlayGeometry(screen: screen)
+        if geometry != newGeometry {
+            geometry = newGeometry
+            panel.contentView = hostedContent(geometry: newGeometry)
+        }
+        let target = panelFrame(on: screen, geometry: newGeometry)
+        let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.01 : 0.18
+        frameGeneration += 1
+        let generation = frameGeneration
+        panelHoverGate.beginFrameAnimation()
+        if model.tier == .detail {
+            panel.orderFrontRegardless()
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.allowsImplicitAnimation = true
             panel.animator().setFrame(target, display: true)
-        }
-        if model.pendingApproval != nil, !panel.isVisible {
-            panel.orderFrontRegardless()
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, frameGeneration == generation else { return }
+                let reconciled = panelHoverGate.finishFrameAnimation(
+                    pointerIsInside: pointerIsInsidePanel
+                )
+                if let reconciled {
+                    applyPanelHover(reconciled)
+                }
+                if model.tier == .compact {
+                    panel.orderBack(nil)
+                }
+            }
         }
     }
 
-    private func panelFrame(on screen: NSScreen) -> NSRect {
-        let requested = model.panelMetrics
-        let width = min(requested.width, max(320, screen.frame.width - 32))
-        let height = min(requested.height, max(160, screen.frame.height - 64))
-        return NSRect(
-            x: screen.frame.midX - width / 2,
-            y: screen.frame.maxY - height,
-            width: width,
-            height: height
+    private func panelFrame(on screen: NSScreen, geometry: NotchOverlayGeometry) -> NSRect {
+        NotchOverlayFramePolicy.frame(
+            in: screen.frame,
+            geometry: geometry,
+            isExpanded: model.tier == .detail,
+            showsWings: showsActivityWings
         )
+    }
+
+    private var showsActivityWings: Bool {
+        model.hasAttention
+            || model.highestUtilization != nil
+            || model.activeSessionCount > 0
+            || model.safeFeatures.focus.state != .idle
     }
 
     private func preferredScreen() -> NSScreen? {
@@ -258,15 +301,11 @@ public final class NotchHubApplicationController: NSObject, NSApplicationDelegat
     }
 
     private static func hasPhysicalNotch(_ screen: NSScreen) -> Bool {
-        let left = screen.auxiliaryTopLeftArea?.width ?? 0
-        let right = screen.auxiliaryTopRightArea?.width ?? 0
-        return screen.safeAreaInsets.top > 0 && left > 0 && right > 0 && left + right < screen.frame.width
+        NotchOverlayGeometry(screen: screen).hasPhysicalNotch
     }
 
     @objc private func screenParametersChanged() {
-        if panel == nil {
-            installPanel()
-        }
+        if panel == nil { installPanel() }
         refreshPanelLayout()
     }
 }

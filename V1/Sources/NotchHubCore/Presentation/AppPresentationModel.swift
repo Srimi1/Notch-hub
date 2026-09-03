@@ -61,11 +61,18 @@ public final class AppPresentationModel {
     }
 
     public var panelMetrics: NotchPanelMetrics {
-        guard tier == .detail else { return .init(width: 440, height: 176) }
-        if pendingApproval != nil {
-            return .init(width: 680, height: 620)
+        switch tier {
+        case .compact:
+            .init(
+                width: CompactNotchTheme.compactWidth,
+                height: CompactNotchTheme.compactHeight
+            )
+        case .detail:
+            .init(
+                width: CompactNotchTheme.expandedWidth,
+                height: CompactNotchTheme.expandedHeight
+            )
         }
-        return .init(width: 680, height: 520)
     }
 
     public func setLayoutChangeHandler(_ handler: (@MainActor () -> Void)?) {
@@ -105,7 +112,10 @@ public final class AppPresentationModel {
 
     public func replaceProviders(_ values: [ProviderCardPresentation]) {
         guard edition == .direct else { return }
-        providers = values
+        providers = values.sorted(by: Self.providerSort)
+        if tier == .compact {
+            layoutChangeHandler?()
+        }
     }
 
     public func apply(
@@ -121,12 +131,18 @@ public final class AppPresentationModel {
         )
         providers.removeAll { $0.id == provider.rawValue }
         providers.append(value)
-        providers.sort { $0.id < $1.id }
+        providers.sort(by: Self.providerSort)
+        if tier == .compact {
+            layoutChangeHandler?()
+        }
     }
 
     public func replaceSessions(_ values: [AgentSessionPresentation]) {
         guard edition == .direct else { return }
         sessions = values.sorted { $0.updatedAt > $1.updatedAt }
+        if tier == .compact {
+            layoutChangeHandler?()
+        }
     }
 
     public func replaceSessions(_ values: [AgentSession]) {
@@ -188,6 +204,17 @@ public final class AppPresentationModel {
 
     private static let disconnectedProviders = ProviderID.allCases.map {
         ProviderCardPresentation(provider: $0, snapshot: nil, connection: .notDetected)
+    }
+
+    private static func providerSort(
+        _ left: ProviderCardPresentation,
+        _ right: ProviderCardPresentation
+    ) -> Bool {
+        providerRank(left.id) < providerRank(right.id)
+    }
+
+    private static func providerRank(_ identifier: String) -> Int {
+        ProviderID.allCases.firstIndex { $0.rawValue == identifier } ?? ProviderID.allCases.count
     }
 }
 

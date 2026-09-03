@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
 EDITION="${1:-direct}"
 CONFIGURATION="${2:-release}"
 SIGNING_IDENTITY="${NOTCHHUB_SIGNING_IDENTITY:-}"
@@ -47,12 +48,28 @@ TEMP_APP="$TEMP_DIR/$APP_NAME.app"
 trap 'rm -rf -- "$TEMP_DIR"' EXIT
 
 resolve_team_identifier() {
-  if [[ -n "$TEAM_IDENTIFIER" ]]; then
-    return
+  local certificate_pem certificate_subject certificate_team_identifier
+  if ! certificate_pem="$(security find-certificate -c "$SIGNING_IDENTITY" -p 2>/dev/null)" ||
+    [[ -z "$certificate_pem" ]]; then
+    echo "could not resolve the signing certificate for: $SIGNING_IDENTITY" >&2
+    exit 1
   fi
-  if [[ "$SIGNING_IDENTITY" =~ \(([A-Z0-9]{10})\)$ ]]; then
-    TEAM_IDENTIFIER="${BASH_REMATCH[1]}"
+  if ! certificate_subject="$(printf '%s\n' "$certificate_pem" |
+    openssl x509 -noout -subject -nameopt RFC2253 2>/dev/null)"; then
+    echo "could not inspect the signing certificate team identifier" >&2
+    exit 1
   fi
+  if [[ "$certificate_subject" =~ (^|,)OU=([A-Z0-9]{10})(,|$) ]]; then
+    certificate_team_identifier="${BASH_REMATCH[2]}"
+  else
+    echo "signing certificate is missing a 10-character Apple Team ID" >&2
+    exit 1
+  fi
+  if [[ -n "$TEAM_IDENTIFIER" && "$TEAM_IDENTIFIER" != "$certificate_team_identifier" ]]; then
+    echo "NOTCHHUB_TEAM_ID does not match the signing certificate Team ID" >&2
+    exit 1
+  fi
+  TEAM_IDENTIFIER="$certificate_team_identifier"
 }
 
 prepare_entitlements() {

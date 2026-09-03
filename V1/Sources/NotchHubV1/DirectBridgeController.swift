@@ -55,7 +55,8 @@ final class DirectBridgeController {
             } catch let error as BridgeTransportError where error == .cancelled {
                 return
             } catch {
-                await self?.recordServerFailure()
+                let presentation = SessionBridgeConnectionPresentation.startupFailure(for: error)
+                await self?.recordServerFailure(presentation)
             }
         }
     }
@@ -148,15 +149,26 @@ final class DirectBridgeController {
         }
     }
 
-    private func recordServerFailure() async {
+    private func recordServerFailure(_ presentation: SessionBridgeConnectionPresentation) async {
+        serverTask = nil
+        model.setSessionBridgeConnection(presentation)
+        let diagnostic = switch presentation {
+        case .unavailable:
+            (
+                code: "server-unavailable",
+                summary: "The local authenticated bridge is unavailable in this build."
+            )
+        default:
+            (
+                code: "server-start-failed",
+                summary: "The local authenticated bridge failed to start and can be retried."
+            )
+        }
         await telemetry.record(
             severity: .error,
             category: "bridge",
-            code: "server-unavailable",
-            summary: "The local authenticated bridge could not start."
-        )
-        model.setSessionBridgeConnection(
-            .failed("Secure session bridge unavailable; provider prompts remain active.")
+            code: diagnostic.code,
+            summary: diagnostic.summary
         )
     }
 }
@@ -168,7 +180,21 @@ private extension DirectBridgeController {
             return try await connectSessions()
         case .disconnect:
             return try await disconnectSessions()
+        case .retryStartup:
+            return await retryStartup()
         }
+    }
+
+    func retryStartup() async -> SessionBridgeConnectionPresentation {
+        let previousTask = serverTask
+        previousTask?.cancel()
+        serverTask = nil
+        if let previousTask {
+            await previousTask.value
+        }
+        await server.stop()
+        start()
+        return .checking
     }
 
     func connectSessions() async throws -> SessionBridgeConnectionPresentation {

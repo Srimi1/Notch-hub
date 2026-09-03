@@ -17,8 +17,10 @@ public final class SafeNotchPresentationModel {
 
     public var panelMetrics: SafeNotchPanelMetrics {
         switch tier {
-        case .compact: .init(width: 440, height: 176)
-        case .detail: .init(width: 680, height: 520)
+        case .compact:
+            .init(width: CompactNotchTheme.compactWidth, height: CompactNotchTheme.compactHeight)
+        case .detail:
+            .init(width: CompactNotchTheme.expandedWidth, height: CompactNotchTheme.expandedHeight)
         }
     }
 
