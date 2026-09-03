@@ -81,6 +81,16 @@ final class NotchViewModel: ObservableObject {
     // NotchViewModel+HUD.swift and `private` is file-scoped in Swift.
     var pendingHudDismiss: DispatchWorkItem?
     var hudDismissCountdown = HUDDismissCountdown()
+    /// Absolute ceiling on how long the copy popup can stay while the pointer
+    /// pauses its ordinary countdown. The popup is a wide box welded to the top
+    /// of the screen, right where the cursor rests near the notch, so a resting
+    /// pointer used to pause the dismiss with no timeout and hold it open. This
+    /// timer is armed when the popup appears and is never cancelled by hover —
+    /// only when the popup content is cleared or replaced — so it always clears.
+    /// It sits above the longest configurable dwell so it never cuts a
+    /// non-hovered popup short.
+    static let hudHoverCeiling: TimeInterval = 6.0
+    var pendingHudHardDismiss: DispatchWorkItem?
     /// Sustained hover on the peek promotes it to the full dashboard.
     let peekPromotionDelay: TimeInterval = 0.6
     var pendingPeekPromotion: DispatchWorkItem?
@@ -100,11 +110,9 @@ final class NotchViewModel: ObservableObject {
     /// The menu-bar "Toggle Notch" action is intentional, not hover-driven. Keep
     /// that expanded state pinned until the user toggles it again.
     var isManuallyPinned = false
-    var transitionAnimation: Animation {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            ? .linear(duration: 0.01)
-            : .spring(response: 0.35, dampingFraction: 0.82)
-    }
+    /// One shared timeline for the content and the window frame — see
+    /// `NotchMotion`, which both this and `NotchWindowController` read from.
+    var transitionAnimation: Animation { NotchMotion.swiftUI }
 
     var cancellables = Set<AnyCancellable>()
 

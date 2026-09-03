@@ -28,6 +28,15 @@ struct HudTests {
         #expect(!NotchViewModel.shouldShowCopyHUD(popupEnabled: false, isExpanded: true, hudContent: nil))
     }
 
+    /// The hover-proof ceiling must sit at or above the longest dwell the user
+    /// can pick, or it would cut a non-hovered popup short; and it stays bounded
+    /// so a hovered popup can never hang.
+    @Test
+    func theHoverCeilingCoversTheLongestDwellAndStaysBounded() {
+        #expect(NotchViewModel.hudHoverCeiling >= CopyPopupDurationPreset.long.duration)
+        #expect(NotchViewModel.hudHoverCeiling <= 8)
+    }
+
     @Test
     func preferencesDefaultOnAndRoundTrip() {
         let suite = "HudTests.\(UUID().uuidString)"

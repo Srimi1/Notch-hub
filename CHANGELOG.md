@@ -4,7 +4,7 @@ Notable user-facing changes are recorded here. NotchHub follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while the public API
 and interface continue to mature before 1.0.
 
-## [0.8.0] - 2026-09-03
+## [0.8.0] - 2026-09-04
 
 ### Added
 
@@ -23,10 +23,6 @@ and interface continue to mature before 1.0.
   [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md). Nothing here needs an administrator
   password — unlike the RAM cleaner removed in 0.2, this feature runs entirely as
   you, with no helper and no `sudo`.
-- The copy popup now stays for as long as you want it. **Settings ▸ Popups**
-  offers Brief, Standard, or Long — 1.5, 2.5, or 4 seconds — and hovering it
-  pauses the countdown without restarting it. Brief is the new default, so a
-  copy confirmation gets out of the way sooner than it used to.
 - Every release image now carries a `Licenses` folder holding the text of each
   third-party license NotchHub redistributes, including the two MIT libraries
   Lottie compiles into itself and the license covering the astronaut animation.
@@ -40,10 +36,36 @@ and interface continue to mature before 1.0.
   view with a button leading to the dashboard — while the Media module was
   already showing that same track. Playback stays in the collapsed pill and the
   panel opens where you left it.
-- The clipboard popup keeps up with fast copying, and the notch no longer
-  stutters on first open or hitches every couple of seconds while the dashboard
-  is up. First-open work and the disk reading behind the dashboard both moved
-  off the main thread.
+
+## [0.7.0] - 2026-09-01
+
+### Fixed
+
+- The notch is more reliable to open. Hovering it sometimes did nothing: while
+  the panel was mid-animation all hover was ignored, and recovery hung on a
+  single animation callback that a display sleeping or disconnecting could drop,
+  leaving hover dead until the next open. A fallback now settles the frame even
+  if that callback never arrives, and a cursor already resting over the notch at
+  launch, wake, or a Space switch is registered instead of ignored until it
+  moves.
+- Opening the notch no longer stutters. The black window frame and the interface
+  inside it animated on two different systems — a 0.28s ease-out against a 0.35s
+  spring — so they settled on different timelines. Both now share one crisp
+  ease-out. The first open also no longer waits on a calendar read run on the
+  main thread, and the activity list no longer rebuilds on every clipboard or
+  system-stat change, with the remaining rebuilds coalesced onto a single pass.
+- The copy popup clears faster and is now yours to tune. Its default dwell
+  dropped from four seconds to about one and a half, with Brief, Standard, and
+  Long options in Settings, and it counts down on a monotonic clock so a change
+  to the system time can no longer stretch it. Hovering the popup still pauses
+  the countdown so a clip can be read or dragged from, but a hover-proof ceiling
+  now clears it even if the pointer keeps resting over it, so it can never hang
+  open.
+
+### Changed
+
+- Releases are now cut by a GitHub Actions workflow that builds the DMG on macOS
+  and publishes it when a version tag is pushed.
 
 ## [0.6.0] - 2026-08-26
 
