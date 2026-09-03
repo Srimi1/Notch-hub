@@ -27,6 +27,10 @@ readonly APP_PATH="$ROOT/$APP_NAME"
 readonly BUILD_SCRIPT="$SCRIPT_DIR/build-app.sh"
 readonly ICON_PATH="$ROOT/Resources/AppIcon.icns"
 readonly PLIST_BUDDY="/usr/libexec/PlistBuddy"
+readonly LICENSES_DIR_NAME="Licenses"
+# Lottie is a SwiftPM dependency, so its licence text lives in the checkout
+# that `swift build` creates rather than under Vendor/.
+readonly LOTTIE_LICENSE_PATH="$ROOT/.build/checkouts/lottie-ios/LICENSE"
 
 readonly SIGNING_IDENTITY="${NOTCHHUB_SIGNING_IDENTITY:-}"
 readonly NOTARY_PROFILE="${NOTCHHUB_NOTARY_PROFILE:-}"
@@ -52,6 +56,7 @@ usage() {
     "Build NotchHub.app and create a compressed DMG containing:" \
     "  • NotchHub.app" \
     "  • A shortcut to /Applications" \
+    "  • A Licenses folder with every third-party licence the app redistributes" \
     "" \
     "Options:" \
     "  --output PATH  Destination DMG (default: dist/NotchHub-<version>-<arch>.dmg)." \
@@ -256,6 +261,86 @@ apply_volume_icon() {
   "$SET_FILE_PATH" -a C "$mount_point"
 }
 
+# Every licence the image redistributes, beside the app where a person can read
+# it. BSD-3-Clause, Apache-2.0, MIT and the LottieFiles licence all condition
+# redistribution on their notice travelling with the binary, and
+# ACKNOWLEDGMENTS.md says the texts ship with the material they cover — which
+# was only true of the git tree until this existed.
+#
+# The list is transitive on purpose. Linking Lottie statically also links the
+# libraries it vendors inside its own sources, and upstream Lottie's LICENSE is
+# the bare Apache text that does not mention them, so a first pass covering only
+# the direct dependencies still under-credited two MIT libraries. See
+# Vendor/lottie-embedded/README.md.
+stage_licenses() {
+  local -r staging_dir="$1"
+  local -r licenses_dir="$staging_dir/$LICENSES_DIR_NAME"
+
+  [[ -f "$LOTTIE_LICENSE_PATH" ]] || \
+    fail "Lottie licence not found at $LOTTIE_LICENSE_PATH; run swift build first so the checkout exists."
+
+  mkdir -p "$licenses_dir"
+  cp "$ROOT/LICENSE" "$licenses_dir/NotchHub-LICENSE.txt"
+  cp "$ROOT/ACKNOWLEDGMENTS.md" "$licenses_dir/ACKNOWLEDGMENTS.md"
+  cp "$ROOT/Vendor/mediaremote-adapter/LICENSE" "$licenses_dir/mediaremote-adapter-LICENSE.txt"
+  cp "$LOTTIE_LICENSE_PATH" "$licenses_dir/Lottie-LICENSE.txt"
+  cp "$ROOT/Vendor/purge-app/LICENSE" "$licenses_dir/Purge-LICENSE.txt"
+  # Vendored inside Lottie's own sources, so a static link ships them too.
+  cp "$ROOT/Vendor/lottie-embedded/ZIPFoundation-LICENSE.txt" "$licenses_dir/ZIPFoundation-LICENSE.txt"
+  cp "$ROOT/Vendor/lottie-embedded/LRUCache-LICENSE.txt" "$licenses_dir/LRUCache-LICENSE.txt"
+  # The astronaut animation: its licence conditions distribution on these terms
+  # accompanying the file.
+  cp "$ROOT/Vendor/lottiefiles-astronaut/LICENSE.md" "$licenses_dir/Astronaut-Animation-LICENSE.md"
+  # The SwiftPM checkout is read-only and cp keeps the mode; xattr needs to
+  # write, and a read-only text file in the image helps nobody anyway.
+  chmod 755 "$licenses_dir"
+  chmod 644 "$licenses_dir"/*
+  xattr -cr "$licenses_dir"
+  rewrite_license_links "$licenses_dir"
+}
+
+# The two Markdown files were written for the repository, where they sit at the
+# root and point into Vendor/. In the image they are siblings in one flat
+# folder, so every one of those relative links dangles — and `../../` climbs out
+# of the mounted volume entirely. Repoint them at the names they actually have
+# here. Web links are left alone; they work from anywhere.
+rewrite_license_links() {
+  local -r licenses_dir="$1"
+
+  /usr/bin/sed -i '' \
+    -e 's|(Vendor/mediaremote-adapter/LICENSE)|(mediaremote-adapter-LICENSE.txt)|g' \
+    -e 's|(Vendor/purge-app/LICENSE)|(Purge-LICENSE.txt)|g' \
+    -e 's|(Vendor/lottiefiles-astronaut/LICENSE.md)|(Astronaut-Animation-LICENSE.md)|g' \
+    -e 's|(Vendor/lottie-embedded/README.md)|(ZIPFoundation-LICENSE.txt)|g' \
+    -e 's|(Vendor/mediaremote-adapter/README.md)|(https://github.com/ungive/mediaremote-adapter)|g' \
+    -e 's|(Vendor/purge-app/README.md)|(https://github.com/jithin-sabu/purge-app)|g' \
+    -e 's|(Resources/Animations/astronaut-and-music.json)|(../NotchHub.app/Contents/Resources/Animations/astronaut-and-music.json)|g' \
+    -e 's|(scripts/generate-cache-catalog.py)|(https://github.com/Srimi1/Notch-hub/blob/main/scripts/generate-cache-catalog.py)|g' \
+    "$licenses_dir/ACKNOWLEDGMENTS.md"
+
+  /usr/bin/sed -i '' \
+    -e 's|(../../ACKNOWLEDGMENTS.md)|(ACKNOWLEDGMENTS.md)|g' \
+    "$licenses_dir/Astronaut-Animation-LICENSE.md"
+
+  # Nothing may still point into the repository layout.
+  if grep -qE '\]\((Vendor/|Resources/|scripts/|\.\./\.\.)' "$licenses_dir"/*.md; then
+    fail "A staged licence file still carries a repository-relative link."
+  fi
+}
+
+# The files stage_licenses must have produced, checked again on the mounted
+# image so a future edit to one cannot silently drop the other.
+readonly -a EXPECTED_LICENSE_FILES=(
+  "NotchHub-LICENSE.txt"
+  "ACKNOWLEDGMENTS.md"
+  "mediaremote-adapter-LICENSE.txt"
+  "Lottie-LICENSE.txt"
+  "ZIPFoundation-LICENSE.txt"
+  "LRUCache-LICENSE.txt"
+  "Astronaut-Animation-LICENSE.md"
+  "Purge-LICENSE.txt"
+)
+
 create_compressed_image() {
   local -r staging_dir="$1"
   local -r volume_name="$2"
@@ -308,6 +393,11 @@ verify_mounted_image() {
   [[ -L "$MOUNT_POINT/Applications" ]] || fail "DMG does not contain the Applications shortcut."
   [[ "$(readlink "$MOUNT_POINT/Applications")" == "/Applications" ]] || \
     fail "Applications shortcut has an unexpected target."
+  local license_file
+  for license_file in "${EXPECTED_LICENSE_FILES[@]}"; do
+    [[ -s "$MOUNT_POINT/$LICENSES_DIR_NAME/$license_file" ]] || \
+      fail "DMG is missing $LICENSES_DIR_NAME/$license_file."
+  done
   codesign --verify --deep --strict "$MOUNT_POINT/$APP_NAME"
   if [[ "$HAS_CUSTOM_VOLUME_ICON" == "true" ]]; then
     volume_attributes="$("$GET_FILE_INFO_PATH" -a "$MOUNT_POINT")"
@@ -426,6 +516,8 @@ main() {
   xattr -cr "$staging_dir/$APP_NAME"
   codesign --verify --deep --strict "$staging_dir/$APP_NAME"
   ln -s /Applications "$staging_dir/Applications"
+  log_info "Staging the licence texts…"
+  stage_licenses "$staging_dir"
   prepare_volume_icon "$staging_dir"
 
   log_info "Creating compressed disk image…"

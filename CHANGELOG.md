@@ -4,7 +4,7 @@ Notable user-facing changes are recorded here. NotchHub follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while the public API
 and interface continue to mature before 1.0.
 
-## [Unreleased]
+## [0.8.0] - 2026-09-03
 
 ### Added
 
@@ -23,6 +23,27 @@ and interface continue to mature before 1.0.
   [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md). Nothing here needs an administrator
   password — unlike the RAM cleaner removed in 0.2, this feature runs entirely as
   you, with no helper and no `sudo`.
+- The copy popup now stays for as long as you want it. **Settings ▸ Popups**
+  offers Brief, Standard, or Long — 1.5, 2.5, or 4 seconds — and hovering it
+  pauses the countdown without restarting it. Brief is the new default, so a
+  copy confirmation gets out of the way sooner than it used to.
+- Every release image now carries a `Licenses` folder holding the text of each
+  third-party license NotchHub redistributes, including the two MIT libraries
+  Lottie compiles into itself and the license covering the astronaut animation.
+  The README publishes the image's SHA-256, which is the only way to check a
+  download that macOS will not verify for you.
+
+### Fixed
+
+- Music no longer opens the notch on the wrong panel. A playing track counted as
+  an interruption, so expanding the notch during playback showed a track detail
+  view with a button leading to the dashboard — while the Media module was
+  already showing that same track. Playback stays in the collapsed pill and the
+  panel opens where you left it.
+- The clipboard popup keeps up with fast copying, and the notch no longer
+  stutters on first open or hitches every couple of seconds while the dashboard
+  is up. First-open work and the disk reading behind the dashboard both moved
+  off the main thread.
 
 ## [0.6.0] - 2026-08-26
 

@@ -100,15 +100,20 @@ final class CacheCleanupService: ObservableObject {
         state = .scanning(bytesSoFar: 0)
         let io = io
         let now = now
+        // Built here, on the main actor, rather than inside the detached task.
+        // Nested in there it captured the task closure's own `weak self`
+        // binding — a var, read from concurrent code — which is an error in the
+        // Swift 6 language mode. Its own capture list keeps the reference weak.
+        let absorb: @Sendable (Int64) -> Void = { [weak self] bytes in
+            Task { @MainActor in self?.absorbProgress(bytes, generation: generation) }
+        }
         work?.cancel()
         work = Task.detached(priority: .utility) { [weak self] in
             let outcome = CacheCleanupEngine.scan(
                 plan,
                 io: io,
                 isCancelled: { Task.isCancelled },
-                progress: { bytes in
-                    Task { @MainActor [weak self] in self?.absorbProgress(bytes, generation: generation) }
-                },
+                progress: absorb,
                 now: now()
             )
             await MainActor.run { [weak self] in

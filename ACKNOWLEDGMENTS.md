@@ -1,7 +1,9 @@
 # Acknowledgments
 
 NotchHub bundles third-party code and artwork. Their licenses are reproduced
-with the material they cover.
+with the material they cover, and every release image carries the same texts —
+together with this file and NotchHub's own license — in a `Licenses` folder
+beside the app, so they travel with the binary as those licenses require.
 
 ## mediaremote-adapter
 
@@ -45,14 +47,31 @@ what was taken and how to refresh it.
 
 NotchHub's only runtime dependency, and the reference player for the Bodymovin
 JSON format. It is linked statically by SwiftPM, so no framework is embedded in
-the app bundle. It is used for one thing: playing the animation below exactly as
-its designer authored it, rather than approximating it in SwiftUI.
+the app bundle.
+
+Lottie compiles as a single unit and vendors three libraries inside its own
+sources, so linking it links these too. Their notices ship with every release
+image and are kept in [`Vendor/lottie-embedded`](Vendor/lottie-embedded/README.md),
+because upstream Lottie's own license text does not mention them:
+
+| Library | Version | License |
+| --- | --- | --- |
+| [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | 0.9.20 | MIT — Thomas Zoechling and the ZIP Foundation project authors |
+| [LRUCache](https://github.com/nicklockwood/LRUCache) | 1.0.4 | MIT — Nick Lockwood |
+| [EpoxyCore](https://github.com/airbnb/epoxy-ios) | 0.11.0 | Apache-2.0 — Airbnb, Inc., the same license and licensor as Lottie itself |
+
+Lottie is used for one thing: playing the animation below exactly as its
+designer authored it, rather than approximating it in SwiftUI.
 
 ## "Astronaut and music"
 
 - Source: <https://lottiefiles.com/free-animation/astronaut-and-music-LCnjoHn7f0>
 - Author: Artemiy (<https://lottiefiles.com/artemiy>)
-- Obtained from LottieFiles under its free-animation license
+- License: Lottie Simple License (FL 9.13.21) — [`Vendor/lottiefiles-astronaut/LICENSE.md`](Vendor/lottiefiles-astronaut/LICENSE.md)
+
+That license conditions redistribution on its own terms accompanying the file,
+so the text ships in the release image beside the animation. It makes
+attribution optional; the credit above is given anyway.
 
 The astronaut in the Media panel. The animation is vendored verbatim at
 [`Resources/Animations/astronaut-and-music.json`](Resources/Animations/astronaut-and-music.json)

@@ -64,7 +64,7 @@ NotchHub has three presentation layers. Each one is sized for a different kind o
 | Layer | Purpose | How it appears | How it closes |
 | --- | --- | --- | --- |
 | **Collapsed** | A minimal notch with optional live activity wings | Always present on the chosen display; wings appear for ranked, non-ambient activity | Returns to the bare notch when no actionable activity remains |
-| **Transient HUD** | Copy feedback, power connection, or a clipboard preview | Triggered by the related local event; copy HUD lasts 4 seconds, power HUD lasts 2.5 seconds | Times out, closes when the pointer leaves, or promotes into the dashboard when selected |
+| **Transient HUD** | Copy feedback, power connection, or a clipboard preview | Triggered by the related local event; the copy HUD lasts as long as **Settings ▸ Popups ▸ Copy popup duration** says — Brief 1.5s by default, Standard 2.5s, Long 4s — and the power HUD lasts 2.5 seconds | Times out, closes when the pointer leaves, or promotes into the dashboard when selected |
 | **Expanded dashboard** | Full access to all visible modules | Hover over the notch, sustain a clipboard preview, or choose **Toggle Notch** from the menu bar | Move the pointer away, press <kbd>Esc</kbd> from an activity detail, or use **Toggle Notch** again |
 
 The expanded dashboard is 860 points wide when space permits and automatically shrinks to fit the display. Reduced Motion is respected: major transitions simplify, and the clipboard preview tier is skipped so the dashboard opens directly.
@@ -198,9 +198,21 @@ xcode-select --install
 
 ## Install
 
-The current release is **[0.6.0](https://github.com/Srimi1/Notch-hub/releases/latest)** — `NotchHub-0.6.0-universal.dmg`, a universal build that runs on both Apple Silicon and Intel.
+The current release is **[0.8.0](https://github.com/Srimi1/Notch-hub/releases/latest)** — `NotchHub-0.8.0-universal.dmg`, a universal build that runs on both Apple Silicon and Intel. Beside the app, the image carries a `Licenses` folder with every third-party license NotchHub redistributes.
 
-That download is signed with an Apple Development certificate under the hardened runtime, but it is **not notarized**, so Gatekeeper refuses it on a Mac that did not build it. Approve it once under **System Settings ▸ Privacy & Security ▸ Open Anyway**, or — the route this project recommends — build from source, which takes about a minute and gives you full provenance:
+SHA-256 of that file:
+
+```
+3d70bc89e1c2fd7f851fcd36f9d1cc108f8c39856e66f06c286f9a38cc548132  NotchHub-0.8.0-universal.dmg
+```
+
+Check it before you open anything. The image itself carries no signature, so this line is the only way to know the download is the one this repository built:
+
+```bash
+shasum -a 256 -c <<< "3d70bc89e1c2fd7f851fcd36f9d1cc108f8c39856e66f06c286f9a38cc548132  NotchHub-0.8.0-universal.dmg"
+```
+
+The app inside is signed with an Apple Development certificate under the hardened runtime, but it is **not notarized**, so Gatekeeper refuses it on a Mac that did not build it. Approve it once under **System Settings ▸ Privacy & Security ▸ Open Anyway**, or — the route this project recommends — build from source, which takes about a minute and gives you full provenance:
 
 ```bash
 git clone https://github.com/Srimi1/Notch-hub.git
