@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import NotchHubBridge
 @testable import NotchHubCore
 
 @Suite("Bridge agent event coordinator")
@@ -9,10 +10,12 @@ struct BridgeAgentEventCoordinatorTests {
     func sessionLifecycle() async throws {
         let recorder = BridgeStateRecorder()
         let statusRecorder = BridgeStatusRecorder()
+        let sleepGate = BridgeSleepGate()
         let coordinator = makeCoordinator(
             recorder: recorder,
             statusRecorder: statusRecorder,
-            terminalRetention: .milliseconds(20)
+            terminalRetention: .milliseconds(20),
+            sleep: { duration in try await sleepGate.sleep(duration) }
         )
         let startedAt = Date()
 
@@ -30,8 +33,9 @@ struct BridgeAgentEventCoordinatorTests {
         snapshot = await coordinator.snapshot()
         #expect(snapshot.sessions.first?.status == .finished)
 
-        try await Task.sleep(for: .milliseconds(40))
-        #expect(await coordinator.snapshot().sessions.isEmpty)
+        try await waitUntil { await sleepGate.hasWaiter }
+        await sleepGate.resume()
+        try await waitUntil { await coordinator.snapshot().sessions.isEmpty }
     }
 
     @Test("Approval is one-time and unknown actions receive critical review")
@@ -139,11 +143,13 @@ struct BridgeAgentEventCoordinatorTests {
     private func makeCoordinator(
         recorder: BridgeStateRecorder,
         statusRecorder: BridgeStatusRecorder,
-        terminalRetention: Duration = .seconds(5)
+        terminalRetention: Duration = .seconds(5),
+        sleep: @escaping BridgeAgentEventCoordinator.Sleeper = { try await Task.sleep(for: $0) }
     ) -> BridgeAgentEventCoordinator {
         let diagnosticRecorder = BridgeDiagnosticRecorder()
         return BridgeAgentEventCoordinator(
             terminalRetention: terminalRetention,
+            sleep: sleep,
             stateHandler: { snapshot in recorder.snapshots.append(snapshot) },
             claudeStatusHandler: { event in await statusRecorder.record(event) },
             diagnosticHandler: { error in await diagnosticRecorder.record(error) }
@@ -227,5 +233,24 @@ private actor BridgeDiagnosticRecorder {
 
     func record(_ error: ProviderError) {
         errors.append(error)
+    }
+}
+
+private actor BridgeSleepGate {
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    var hasWaiter: Bool {
+        waiter != nil
+    }
+
+    func sleep(_: Duration) async throws {
+        await withCheckedContinuation { continuation in
+            waiter = continuation
+        }
+    }
+
+    func resume() {
+        waiter?.resume()
+        waiter = nil
     }
 }

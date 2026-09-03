@@ -1,3 +1,4 @@
+import NotchHubSafeFeatures
 import SwiftUI
 
 public struct NotchPanelView: View {
@@ -188,8 +189,15 @@ private struct NotchDetailView: View {
     @ViewBuilder private var selectedContent: some View {
         switch model.selectedCapability {
         case .agents: AgentsDetail(model: model)
-        case let capability: CapabilityFoundationView(capability: capability, edition: model.edition)
+        case .dashboard: safeFeature(.dashboard)
+        case .media: CapabilityFoundationView(capability: .media, edition: model.edition)
+        case .clipboard: safeFeature(.clipboard)
+        case .focus: safeFeature(.focus)
         }
+    }
+
+    private func safeFeature(_ feature: SafeFeature) -> some View {
+        SafeFeatureDetailView(feature: feature, workspace: model.safeFeatures)
     }
 }
 

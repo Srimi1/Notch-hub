@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import NotchHubBridge
 @testable import NotchHubCore
 
 @Suite("Bridge hook fail-open behavior")

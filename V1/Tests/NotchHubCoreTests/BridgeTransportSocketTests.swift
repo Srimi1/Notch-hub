@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import NotchHubBridge
 @testable import NotchHubCore
 
 @Suite("Unix socket bridge transport")
@@ -100,16 +101,7 @@ struct BridgeTransportSocketTests {
                 await handler.waitForCount(index + 1)
             }
 
-            let excessClient = BridgeUnixSocketClient(socketPath: fixture.socketPath, secretProvider: provider)
-            await #expect(throws: (any Error).self) {
-                try await excessClient.send(fixture.approvalRequest(), timeoutMilliseconds: 1_000)
-            }
-            let failures = await server.recentConnectionFailures()
-            #expect(
-                failures.contains(
-                    .connectionLimitExceeded(limit: BridgeTransportConstants.maximumConcurrentConnections)
-                )
-            )
+            await expectExcessConnectionRejected(server: server, fixture: fixture, provider: provider)
 
             await handler.resolveAll(.deny)
             for client in clients {
@@ -209,6 +201,23 @@ struct BridgeTransportSocketTests {
         }
         #expect(FileManager.default.fileExists(atPath: fixture.socketPath))
         fixture.cleanup()
+    }
+
+    private func expectExcessConnectionRejected(
+        server: BridgeUnixSocketServer,
+        fixture: SocketFixture,
+        provider: InMemoryBridgeSecretProvider
+    ) async {
+        let client = BridgeUnixSocketClient(socketPath: fixture.socketPath, secretProvider: provider)
+        await #expect(throws: (any Error).self) {
+            try await client.send(fixture.approvalRequest(), timeoutMilliseconds: 1_000)
+        }
+        let failures = await server.recentConnectionFailures()
+        #expect(
+            failures.contains(
+                .connectionLimitExceeded(limit: BridgeTransportConstants.maximumConcurrentConnections)
+            )
+        )
     }
 }
 

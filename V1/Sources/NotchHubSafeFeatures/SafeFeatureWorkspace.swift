@@ -17,4 +17,15 @@ public final class SafeFeatureWorkspace {
         self.clipboard = clipboard ?? ClipboardHistoryModel()
         self.focus = focus ?? FocusTimerModel()
     }
+
+    public func start() {
+        dashboard.start()
+        clipboard.start()
+    }
+
+    public func stop() {
+        dashboard.stop()
+        clipboard.stop()
+        focus.stopScheduling()
+    }
 }

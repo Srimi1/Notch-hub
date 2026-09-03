@@ -2,16 +2,50 @@ import Foundation
 import Testing
 @testable import NotchHubCore
 
+private let codexMultiBucketResponse = Data(
+    #"""
+    {
+      "id": 2,
+      "result": {
+        "rateLimits": {
+          "limitId": "codex",
+          "primary": {"usedPercent": 12, "windowDurationMins": 300, "resetsAt": 1800000000},
+          "secondary": null,
+          "credits": {"hasCredits": true, "unlimited": false, "balance": "9.5"},
+          "planType": "pro"
+        },
+        "rateLimitsByLimitId": {
+          "codex": {
+            "limitId": "codex",
+            "primary": {"usedPercent": 12, "windowDurationMins": 300, "resetsAt": 1800000000},
+            "secondary": {"usedPercent": 41, "windowDurationMins": 10080, "resetsAt": 1800100000},
+            "credits": {"hasCredits": true, "unlimited": false, "balance": "9.5"},
+            "planType": "pro"
+          },
+          "spark": {
+            "limitId": "spark",
+            "limitName": "Spark",
+            "primary": {"usedPercent": 3, "windowDurationMins": 60, "resetsAt": 1800000100},
+            "secondary": null,
+            "credits": null,
+            "planType": "pro"
+          }
+        }
+      }
+    }
+    """#.utf8
+)
+
 @Suite("Official provider adapter payloads")
 struct IntegrationAdapterTests {
     @Test("Codex multi-bucket response becomes provider-neutral windows")
     func codexRateLimits() throws {
-        let response = Data(
-            #"{"id":2,"result":{"rateLimits":{"limitId":"codex","primary":{"usedPercent":12,"windowDurationMins":300,"resetsAt":1800000000},"secondary":null,"credits":{"hasCredits":true,"unlimited":false,"balance":"9.5"},"planType":"pro"},"rateLimitsByLimitId":{"codex":{"limitId":"codex","primary":{"usedPercent":12,"windowDurationMins":300,"resetsAt":1800000000},"secondary":{"usedPercent":41,"windowDurationMins":10080,"resetsAt":1800100000},"credits":{"hasCredits":true,"unlimited":false,"balance":"9.5"},"planType":"pro"},"spark":{"limitId":"spark","limitName":"Spark","primary":{"usedPercent":3,"windowDurationMins":60,"resetsAt":1800000100},"secondary":null,"credits":null,"planType":"pro"}}}}"#.utf8
-        )
         let capturedAt = Date(timeIntervalSince1970: 1_799_999_000)
 
-        let snapshot = try CodexRateLimitDecoder.snapshot(from: response, capturedAt: capturedAt)
+        let snapshot = try CodexRateLimitDecoder.snapshot(
+            from: codexMultiBucketResponse,
+            capturedAt: capturedAt
+        )
 
         #expect(snapshot.provider == .codex)
         #expect(snapshot.windows.count == 3)
@@ -40,7 +74,16 @@ struct IntegrationAdapterTests {
     func claudeRateLimits() async throws {
         let adapter = ClaudeStatusLineUsageAdapter()
         let payload = Data(
-            #"{"session_id":"ignored","transcript_path":"ignored","rate_limits":{"five_hour":{"used_percentage":22.5,"resets_at":1800000000},"seven_day":{"used_percentage":67,"resets_at":1800100000}}}"#.utf8
+            #"""
+            {
+              "session_id": "ignored",
+              "transcript_path": "ignored",
+              "rate_limits": {
+                "five_hour": {"used_percentage": 22.5, "resets_at": 1800000000},
+                "seven_day": {"used_percentage": 67, "resets_at": 1800100000}
+              }
+            }
+            """#.utf8
         )
         let capturedAt = Date(timeIntervalSince1970: 1_799_999_000)
 

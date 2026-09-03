@@ -1,4 +1,5 @@
 import Foundation
+import NotchHubBridge
 
 public extension DirectAgentRuntime {
     /// Applies already-sanitized Claude status-line quota data delivered by the

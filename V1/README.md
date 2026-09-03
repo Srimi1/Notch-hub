@@ -14,7 +14,8 @@ swift test
 ```
 
 The direct app is `NotchHubV1`, the sandbox-compatible edition is
-`NotchHubLite`, and `NotchHubHookBridge` is the bounded command-hook relay.
+`NotchHubLite`, `NotchHubBridge` is the UI-free bridge protocol library, and
+`NotchHubHookBridge` is the bounded command-hook relay.
 
 Build runnable app bundles with:
 

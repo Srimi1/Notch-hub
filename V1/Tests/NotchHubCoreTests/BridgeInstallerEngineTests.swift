@@ -157,27 +157,7 @@ struct BridgeInstallerEngineTests {
             try Data("helper".utf8).write(to: source)
             try FileManager.default.createDirectory(at: host, withIntermediateDirectories: false)
             let hostPath = host.path
-            let hostIdentity = BridgeHelperCodeIdentity(
-                teamIdentifier: "TEAM",
-                signingIdentifier: "com.notchhub.preview",
-                designatedRequirement: "host requirement",
-                cdHash: Data(repeating: 1, count: 20)
-            )
-            let helperIdentity = BridgeHelperCodeIdentity(
-                teamIdentifier: "TEAM",
-                signingIdentifier: "com.notchhub.v1.bridge.helper",
-                designatedRequirement: "helper requirement",
-                cdHash: Data(repeating: 2, count: 20)
-            )
-            let releaseEngine = BridgeHelperInstallerEngine(
-                signatureValidator: BridgeInstallerSignatureFixture { url in
-                    url.path == hostPath ? hostIdentity : helperIdentity
-                },
-                signaturePolicy: .release(
-                    expectedHostIdentifier: "com.notchhub.preview",
-                    expectedHelperIdentifier: "com.notchhub.v1.bridge.helper"
-                )
-            )
+            let releaseEngine = releasePolicyInstaller(hostPath: hostPath)
 
             _ = try await releaseEngine.install(
                 sourceURL: source,
@@ -185,15 +165,7 @@ struct BridgeInstallerEngineTests {
                 destinationURL: destination
             )
 
-            let incompleteEngine = BridgeHelperInstallerEngine(
-                signatureValidator: BridgeInstallerSignatureFixture { _ in
-                    BridgeHelperCodeIdentity(teamIdentifier: nil)
-                },
-                signaturePolicy: .release(
-                    expectedHostIdentifier: "com.notchhub.preview",
-                    expectedHelperIdentifier: "com.notchhub.v1.bridge.helper"
-                )
-            )
+            let incompleteEngine = adHocInstaller(policy: releaseSignaturePolicy)
             await #expect(throws: BridgeHelperInstallerError.releaseIdentityIncomplete) {
                 try await incompleteEngine.install(
                     sourceURL: source,
@@ -202,12 +174,7 @@ struct BridgeInstallerEngineTests {
                 )
             }
 
-            let developmentEngine = BridgeHelperInstallerEngine(
-                signatureValidator: BridgeInstallerSignatureFixture { _ in
-                    BridgeHelperCodeIdentity(teamIdentifier: nil)
-                },
-                signaturePolicy: .development
-            )
+            let developmentEngine = adHocInstaller(policy: .development)
             _ = try await developmentEngine.install(
                 sourceURL: source,
                 hostBundleURL: host,
@@ -259,6 +226,41 @@ private enum BridgeInstallerTestError: Error {
     case permissions
 }
 
+private let releaseSignaturePolicy = BridgeHelperSignaturePolicy.release(
+    expectedHostIdentifier: "com.notchhub.preview",
+    expectedHelperIdentifier: "com.notchhub.v1.bridge.helper"
+)
+
+private func releasePolicyInstaller(hostPath: String) -> BridgeHelperInstallerEngine {
+    let hostIdentity = BridgeHelperCodeIdentity(
+        teamIdentifier: "TEAM",
+        signingIdentifier: "com.notchhub.preview",
+        designatedRequirement: "host requirement",
+        cdHash: Data(repeating: 1, count: 20)
+    )
+    let helperIdentity = BridgeHelperCodeIdentity(
+        teamIdentifier: "TEAM",
+        signingIdentifier: "com.notchhub.v1.bridge.helper",
+        designatedRequirement: "helper requirement",
+        cdHash: Data(repeating: 2, count: 20)
+    )
+    return BridgeHelperInstallerEngine(
+        signatureValidator: BridgeInstallerSignatureFixture { url in
+            url.path == hostPath ? hostIdentity : helperIdentity
+        },
+        signaturePolicy: releaseSignaturePolicy
+    )
+}
+
+private func adHocInstaller(policy: BridgeHelperSignaturePolicy) -> BridgeHelperInstallerEngine {
+    BridgeHelperInstallerEngine(
+        signatureValidator: BridgeInstallerSignatureFixture { _ in
+            BridgeHelperCodeIdentity(teamIdentifier: nil)
+        },
+        signaturePolicy: policy
+    )
+}
+
 private func bridgePermissions(of url: URL) throws -> Int {
     let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
     let number = try #require(attributes[.posixPermissions] as? NSNumber)
@@ -268,9 +270,8 @@ private func bridgePermissions(of url: URL) throws -> Int {
 private func withBridgeInstallerTemporaryDirectory<T: Sendable>(
     _ operation: (URL) async throws -> T
 ) async throws -> T {
-    let temporaryPath = FileManager.default.temporaryDirectory.path
-    let canonicalTemporaryPath = temporaryPath.hasPrefix("/var/") ? "/private\(temporaryPath)" : temporaryPath
-    let directory = URL(fileURLWithPath: canonicalTemporaryPath, isDirectory: true)
+    let directory = FileManager.default.homeDirectoryForCurrentUser
+        .resolvingSymlinksInPath()
         .appendingPathComponent("NotchHubBridgeInstallerTests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
     do {

@@ -7,6 +7,11 @@ public struct HookConfigurationPlanner: Sendable {
     static let codexEvents = ["SessionStart", "PermissionRequest", "Stop", "SessionEnd"]
     static let claudeEvents = ["SessionStart", "PermissionRequest", "Stop", "SessionEnd"]
 
+    private struct MutationResult {
+        let ownedEntryIDs: [String]
+        let compatibility: HookConfigurationCompatibility
+    }
+
     public init() {}
 
     public func planConnection(
@@ -18,21 +23,11 @@ public struct HookConfigurationPlanner: Sendable {
         try validateBridgePath(bridgeExecutablePath)
         var root = try parseRoot(input: input)
 
-        let addedIDs: [String]
-        let compatibility: HookConfigurationCompatibility
-        switch provider {
-        case .codex:
-            addedIDs = try installCodexEntries(root: &root, bridgePath: bridgeExecutablePath)
-            compatibility = .fullyConfigured
-        case .claude:
-            var claudeAddedIDs = try installClaudeEntries(root: &root, bridgePath: bridgeExecutablePath)
-            let statusLine = try installClaudeStatusLine(root: &root, bridgePath: bridgeExecutablePath)
-            if let addedID = statusLine.ownedEntryID {
-                claudeAddedIDs.append(addedID)
-            }
-            addedIDs = claudeAddedIDs.sorted()
-            compatibility = statusLine.compatibility
-        }
+        let mutation = try connectionMutation(
+            provider: provider,
+            root: &root,
+            bridgePath: bridgeExecutablePath
+        )
 
         let proposedData = try serialized(root)
         let existingCanonicalData = try canonicalExistingData(input: input)
@@ -50,10 +45,10 @@ public struct HookConfigurationPlanner: Sendable {
             operation: .connect,
             destinationPath: destinationPath,
             change: change,
-            addedOwnedEntryIDs: addedIDs,
+            addedOwnedEntryIDs: mutation.ownedEntryIDs,
             removedOwnedEntryIDs: [],
             preservesUnrelatedSettings: true,
-            compatibility: compatibility
+            compatibility: mutation.compatibility
         )
         return HookConfigurationPlan(
             diff: diff,
@@ -71,27 +66,13 @@ public struct HookConfigurationPlanner: Sendable {
         }
 
         var root = try parseRoot(input: input)
-        let removedIDs: [String]
-        let compatibility: HookConfigurationCompatibility
-        switch provider {
-        case .codex:
-            removedIDs = try removeCodexEntries(root: &root)
-            compatibility = .fullyConfigured
-        case .claude:
-            var claudeRemovedIDs = try removeClaudeEntries(root: &root)
-            let statusLine = try removeClaudeStatusLine(root: &root)
-            if let removedID = statusLine.ownedEntryID {
-                claudeRemovedIDs.append(removedID)
-            }
-            removedIDs = claudeRemovedIDs.sorted()
-            compatibility = statusLine.compatibility
-        }
+        let mutation = try disconnectionMutation(provider: provider, root: &root)
 
-        guard !removedIDs.isEmpty else {
+        guard !mutation.ownedEntryIDs.isEmpty else {
             return unchangedRemoval(
                 provider: provider,
                 destinationPath: destinationPath,
-                compatibility: compatibility
+                compatibility: mutation.compatibility
             )
         }
 
@@ -102,14 +83,51 @@ public struct HookConfigurationPlanner: Sendable {
             destinationPath: destinationPath,
             change: .removeOwnedEntries,
             addedOwnedEntryIDs: [],
-            removedOwnedEntryIDs: removedIDs.sorted(),
+            removedOwnedEntryIDs: mutation.ownedEntryIDs.sorted(),
             preservesUnrelatedSettings: true,
-            compatibility: compatibility
+            compatibility: mutation.compatibility
         )
         return HookConfigurationPlan(
             diff: diff,
             atomicWrite: atomicWrite(destinationPath: destinationPath, data: proposedData)
         )
+    }
+
+    private func connectionMutation(
+        provider: HookConfigurationProvider,
+        root: inout [String: Any],
+        bridgePath: String
+    ) throws -> MutationResult {
+        switch provider {
+        case .codex:
+            let identifiers = try installCodexEntries(root: &root, bridgePath: bridgePath)
+            return MutationResult(ownedEntryIDs: identifiers, compatibility: .fullyConfigured)
+        case .claude:
+            var identifiers = try installClaudeEntries(root: &root, bridgePath: bridgePath)
+            let statusLine = try installClaudeStatusLine(root: &root, bridgePath: bridgePath)
+            if let identifier = statusLine.ownedEntryID {
+                identifiers.append(identifier)
+            }
+            return MutationResult(ownedEntryIDs: identifiers.sorted(), compatibility: statusLine.compatibility)
+        }
+    }
+
+    private func disconnectionMutation(
+        provider: HookConfigurationProvider,
+        root: inout [String: Any]
+    ) throws -> MutationResult {
+        switch provider {
+        case .codex:
+            let identifiers = try removeCodexEntries(root: &root)
+            return MutationResult(ownedEntryIDs: identifiers, compatibility: .fullyConfigured)
+        case .claude:
+            var identifiers = try removeClaudeEntries(root: &root)
+            let statusLine = try removeClaudeStatusLine(root: &root)
+            if let identifier = statusLine.ownedEntryID {
+                identifiers.append(identifier)
+            }
+            return MutationResult(ownedEntryIDs: identifiers.sorted(), compatibility: statusLine.compatibility)
+        }
     }
 
     private func validatedDestination(

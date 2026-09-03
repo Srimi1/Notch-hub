@@ -1,15 +1,5 @@
-import CryptoKit
 import Foundation
-
-public struct BridgeAgentStateSnapshot: Sendable, Equatable {
-    public let sessions: [AgentSession]
-    public let pendingApproval: ApprovalRequest?
-
-    public init(sessions: [AgentSession], pendingApproval: ApprovalRequest?) {
-        self.sessions = sessions
-        self.pendingApproval = pendingApproval
-    }
-}
+import NotchHubBridge
 
 /// Converts authenticated bridge messages into short-lived application state.
 /// Session and approval metadata never leaves memory and terminal sessions are
@@ -111,7 +101,9 @@ public actor BridgeAgentEventCoordinator {
     public func snapshot() -> BridgeAgentStateSnapshot {
         makeSnapshot()
     }
+}
 
+private extension BridgeAgentEventCoordinator {
     private func apply(_ event: BridgeSessionEvent) async throws {
         let id = scopedIdentifier(provider: event.provider, value: event.sessionID)
         guard shouldApply(event, sessionID: id) else { return }
@@ -165,9 +157,9 @@ public actor BridgeAgentEventCoordinator {
         await publishState()
 
         let retention = terminalRetention
-        terminalRemovalTasks[id] = Task { [weak self] in
+        terminalRemovalTasks[id] = Task { [weak self, sleep] in
             do {
-                try await Task.sleep(for: retention)
+                try await sleep(retention)
             } catch {
                 return
             }
@@ -209,35 +201,18 @@ public actor BridgeAgentEventCoordinator {
         guard expiresAt > receivedAt else {
             return .abstain(.timedOut)
         }
-        let request: ApprovalRequest
-        do {
-            request = try makeApproval(bridgeRequest, receivedAt: receivedAt, expiresAt: expiresAt)
-        } catch {
-            await diagnosticHandler(ProviderError.wrapping(error, provider: bridgeRequest.provider))
-            return .abstain(.invalidInput)
-        }
-
-        do {
-            try markSessionWaiting(for: request)
-        } catch {
-            await diagnosticHandler(ProviderError.wrapping(error, provider: bridgeRequest.provider))
+        guard let request = await preparedApproval(
+            bridgeRequest,
+            receivedAt: receivedAt,
+            expiresAt: expiresAt
+        ) else {
             return .abstain(.invalidInput)
         }
 
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 let approvalID = request.id
-                let timeoutTask = Task { [weak self, sleep] in
-                    guard let self else { return }
-                    let currentDate = await self.currentDate()
-                    let interval = max(expiresAt.timeIntervalSince(currentDate), 0)
-                    do {
-                        try await sleep(.seconds(interval))
-                    } catch {
-                        return
-                    }
-                    await self.expireApproval(id: approvalID)
-                }
+                let timeoutTask = approvalTimeoutTask(id: approvalID, expiresAt: expiresAt)
                 pendingApproval = PendingApproval(
                     request: request,
                     continuation: continuation,
@@ -251,6 +226,35 @@ public actor BridgeAgentEventCoordinator {
             Task { [weak self] in
                 await self?.cancelApproval(id: request.id)
             }
+        }
+    }
+
+    private func approvalTimeoutTask(id: String, expiresAt: Date) -> Task<Void, Never> {
+        Task { [weak self, sleep] in
+            guard let self else { return }
+            let currentDate = await currentDate()
+            let interval = max(expiresAt.timeIntervalSince(currentDate), 0)
+            do {
+                try await sleep(.seconds(interval))
+            } catch {
+                return
+            }
+            await expireApproval(id: id)
+        }
+    }
+
+    private func preparedApproval(
+        _ bridgeRequest: BridgeApprovalRequest,
+        receivedAt: Date,
+        expiresAt: Date
+    ) async -> ApprovalRequest? {
+        do {
+            let request = try makeApproval(bridgeRequest, receivedAt: receivedAt, expiresAt: expiresAt)
+            try markSessionWaiting(for: request)
+            return request
+        } catch {
+            await diagnosticHandler(ProviderError.wrapping(error, provider: bridgeRequest.provider))
+            return nil
         }
     }
 
@@ -333,12 +337,12 @@ public actor BridgeAgentEventCoordinator {
 
     private func prepareTracking(for sessionID: String, provider: ProviderID) throws {
         guard sessionEventDates[sessionID] == nil else { return }
-        if sessionEventDates.count >= Self.maximumTrackedSessions,
-           let removableIndex = sessionEventOrder.firstIndex(where: { sessions[$0] == nil })
-        {
-            let removedID = sessionEventOrder.remove(at: removableIndex)
-            sessionEventDates[removedID] = nil
-            terminalSessionIDs.remove(removedID)
+        if sessionEventDates.count >= Self.maximumTrackedSessions {
+            if let removableIndex = sessionEventOrder.firstIndex(where: { sessions[$0] == nil }) {
+                let removedID = sessionEventOrder.remove(at: removableIndex)
+                sessionEventDates[removedID] = nil
+                terminalSessionIDs.remove(removedID)
+            }
         }
         guard sessionEventDates.count < Self.maximumTrackedSessions else {
             throw ProviderError.invalidPayload(provider: provider, field: "active session limit")
@@ -380,32 +384,6 @@ public actor BridgeAgentEventCoordinator {
         } catch {
             sessions[request.sessionID] = nil
             await diagnosticHandler(ProviderError.wrapping(error, provider: request.provider))
-        }
-    }
-
-    private func scopedIdentifier(provider: ProviderID, value: String) -> String {
-        var scopedData = Data(provider.rawValue.utf8)
-        scopedData.append(0)
-        scopedData.append(Data(value.utf8))
-        let digest = SHA256.hash(data: scopedData).map { String(format: "%02x", $0) }.joined()
-        return "\(provider.rawValue):\(digest)"
-    }
-
-    private func actionCategory(_ category: BridgeActionCategory) -> ApprovalActionCategory {
-        switch category {
-        case .fileRead, .fileWrite: .fileChange
-        case .processExecution: .command
-        case .networkAccess: .network
-        case .versionControl, .systemChange: .tool
-        case .unknown: .unknown
-        }
-    }
-
-    private func approvalRisk(_ risk: BridgeRiskLevel) -> ApprovalRisk {
-        switch risk {
-        case .low: .low
-        case .elevated: .moderate
-        case .high: .high
         }
     }
 }

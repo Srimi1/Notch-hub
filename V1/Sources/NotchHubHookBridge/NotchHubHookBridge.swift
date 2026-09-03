@@ -1,16 +1,11 @@
 import Darwin
 import Foundation
-import NotchHubCore
+import NotchHubBridge
 
 @main
 enum NotchHubHookBridge {
     static func main() async {
-        let invocation: BridgeHookInvocation
-        do {
-            invocation = try BridgeHookInvocation.parse(arguments: Array(CommandLine.arguments.dropFirst()))
-        } catch {
-            return
-        }
+        guard let invocation = parseInvocation() else { return }
 
         let input: Data
         do {
@@ -51,6 +46,14 @@ enum NotchHubHookBridge {
                 write(fallbackOutput)
             }
             return
+        }
+    }
+
+    private static func parseInvocation() -> BridgeHookInvocation? {
+        do {
+            return try BridgeHookInvocation.parse(arguments: Array(CommandLine.arguments.dropFirst()))
+        } catch {
+            return nil
         }
     }
 

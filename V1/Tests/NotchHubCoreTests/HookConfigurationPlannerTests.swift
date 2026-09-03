@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import NotchHubBridge
 @testable import NotchHubCore
 
 @Suite("Hook configuration planner")
@@ -245,15 +246,25 @@ struct HookConfigurationPlannerTests {
             try planner.planDisconnection(provider: .codex, input: conflictedInput)
         }
     }
+}
 
+private extension HookConfigurationPlannerTests {
     private func rootObject(_ data: Data) throws -> [String: Any] {
         try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
     private func codexInstallationPlan() throws -> HookConfigurationPlan {
         let original = Data(
-            #"{"theme":"dark","hooks":{"SessionStart":[{"matcher":"custom","hooks":[{"type":"command","command":"/usr/bin/true","timeout":5}]}]}}"#
-                .utf8
+            #"""
+            {
+              "theme": "dark",
+              "hooks": {
+                "SessionStart": [
+                  {"matcher": "custom", "hooks": [{"type": "command", "command": "/usr/bin/true", "timeout": 5}]}
+                ]
+              }
+            }
+            """#.utf8
         )
         let input = HookConfigurationInput(
             homeDirectoryPath: home,

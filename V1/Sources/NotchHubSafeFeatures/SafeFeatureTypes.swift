@@ -7,7 +7,9 @@ public enum SafeFeature: String, CaseIterable, Identifiable, Sendable {
     case clipboard
     case focus
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 
     public var title: String {
         switch self {

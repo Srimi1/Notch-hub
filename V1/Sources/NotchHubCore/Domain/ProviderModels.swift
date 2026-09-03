@@ -1,25 +1,5 @@
 import Foundation
 
-public enum ProviderID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
-    case codex
-    case claude
-
-    public var displayName: String {
-        switch self {
-        case .codex: "Codex"
-        case .claude: "Claude"
-        }
-    }
-
-    public var id: String {
-        rawValue
-    }
-
-    public var executableName: String {
-        rawValue
-    }
-}
-
 public struct QuotaWindow: Codable, Hashable, Identifiable, Sendable {
     public let id: String
     public let label: String
@@ -42,10 +22,10 @@ public struct QuotaWindow: Codable, Hashable, Identifiable, Sendable {
         }
         self.usedPercent = usedPercent
 
-        if let windowDurationMinutes,
-           !(1 ... 5_256_000).contains(windowDurationMinutes)
-        {
-            throw ProviderError.invalidPayload(provider: nil, field: "quota window duration")
+        if let windowDurationMinutes {
+            guard (1 ... 5_256_000).contains(windowDurationMinutes) else {
+                throw ProviderError.invalidPayload(provider: nil, field: "quota window duration")
+            }
         }
         self.windowDurationMinutes = windowDurationMinutes
         self.resetsAt = resetsAt

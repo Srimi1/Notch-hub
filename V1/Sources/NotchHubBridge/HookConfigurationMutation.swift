@@ -6,6 +6,12 @@ extension HookConfigurationPlanner {
         let compatibility: HookConfigurationCompatibility
     }
 
+    private struct OwnedCommandLocation {
+        let groupIndex: Int
+        let commandCount: Int
+        let command: [String: Any]
+    }
+
     func installCodexEntries(root: inout [String: Any], bridgePath: String) throws -> [String] {
         try installGroupedEntries(
             root: &root,
@@ -102,12 +108,15 @@ extension HookConfigurationPlanner {
             if matches.isEmpty {
                 groups.append(commandGroup(handler: expectedHandler))
                 addedIDs.append(id)
-            } else if matches.count != 1
-                || !isGeneratedGroup(groups[matches[0].groupIndex])
-                || matches[0].commandCount != 1
-                || !dictionariesEqual(matches[0].command, expectedHandler)
-            {
-                throw HookConfigurationError.conflictingOwnedEntry(id)
+            } else {
+                let match = matches[0]
+                guard matches.count == 1,
+                      isGeneratedGroup(groups[match.groupIndex]),
+                      match.commandCount == 1,
+                      dictionariesEqual(match.command, expectedHandler)
+                else {
+                    throw HookConfigurationError.conflictingOwnedEntry(id)
+                }
             }
             hooks[event] = groups
         }
@@ -258,12 +267,18 @@ extension HookConfigurationPlanner {
         in groups: [[String: Any]],
         id: String,
         provider: HookConfigurationProvider
-    ) throws -> [(groupIndex: Int, commandCount: Int, command: [String: Any])] {
-        var results: [(groupIndex: Int, commandCount: Int, command: [String: Any])] = []
+    ) throws -> [OwnedCommandLocation] {
+        var results: [OwnedCommandLocation] = []
         for (groupIndex, group) in groups.enumerated() {
             let commands = try objectArray(group["hooks"], field: "\(provider.rawValue).hooks[].hooks")
             for command in commands where commandContainsOwnedID(command, id: id) {
-                results.append((groupIndex, commands.count, command))
+                results.append(
+                    OwnedCommandLocation(
+                        groupIndex: groupIndex,
+                        commandCount: commands.count,
+                        command: command
+                    )
+                )
             }
         }
         return results

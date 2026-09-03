@@ -1,54 +1,10 @@
 import AppKit
+import NotchHubSafeFeatures
+import OSLog
 import SwiftUI
 
-public struct StatusMeterButton: View {
-    private let model: AppPresentationModel
-    private let onHover: @MainActor (Bool) -> Void
-    private let onActivate: @MainActor () -> Void
-
-    public init(
-        model: AppPresentationModel,
-        onHover: @escaping @MainActor (Bool) -> Void,
-        onActivate: @escaping @MainActor () -> Void
-    ) {
-        self.model = model
-        self.onHover = onHover
-        self.onActivate = onActivate
-    }
-
-    public var body: some View {
-        Button(action: onActivate) {
-            ZStack(alignment: .topTrailing) {
-                UsageRing(value: model.highestUtilization, diameter: 18)
-                if model.hasAttention {
-                    Circle()
-                        .fill(.orange)
-                        .frame(width: 6, height: 6)
-                        .overlay(Circle().stroke(.black, lineWidth: 1))
-                        .offset(x: 2, y: -2)
-                }
-            }
-            .frame(width: 24, height: 22)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover(perform: onHover)
-        .accessibilityLabel("NotchHub")
-        .accessibilityValue(accessibilityValue)
-        .help("NotchHub — select for details")
-    }
-
-    private var accessibilityValue: String {
-        if model.hasAttention {
-            return "Needs attention"
-        }
-        guard let value = model.highestUtilization else { return "Checking providers" }
-        return "Highest provider usage \(Int(value.rounded())) percent"
-    }
-}
-
 @MainActor
-private final class AdaptiveNotchPanel: NSPanel {
+private final class LiteNotchPanel: NSPanel {
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
@@ -74,29 +30,59 @@ private final class AdaptiveNotchPanel: NSPanel {
     }
 }
 
-/// AppKit lifecycle and overlay ownership shared by both editions.
 @MainActor
-public final class NotchHubApplicationController: NSObject, NSApplicationDelegate {
-    public let model: AppPresentationModel
+private struct LiteStatusButton: View {
+    let model: SafeNotchPresentationModel
+    let onHover: @MainActor (Bool) -> Void
+    let onActivate: @MainActor () -> Void
+
+    var body: some View {
+        Button(action: onActivate) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+                if needsAttention {
+                    Circle()
+                        .fill(.orange)
+                        .frame(width: 6, height: 6)
+                        .overlay(Circle().stroke(.black, lineWidth: 1))
+                        .offset(x: 3, y: -2)
+                }
+            }
+            .frame(width: 24, height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover(perform: onHover)
+        .accessibilityLabel("NotchHub Lite")
+        .accessibilityValue(needsAttention ? "Needs attention" : "Ready")
+        .help("NotchHub Lite — select for details")
+    }
+
+    private var needsAttention: Bool {
+        model.workspace.dashboard.lastError != nil ||
+            model.workspace.clipboard.lastIssue != nil ||
+            model.workspace.focus.state == .completed
+    }
+}
+
+@MainActor
+final class LiteApplicationController: NSObject, NSApplicationDelegate {
+    let model = SafeNotchPresentationModel()
 
     private var statusItem: NSStatusItem?
-    private var panel: AdaptiveNotchPanel?
+    private var panel: LiteNotchPanel?
     private var dismissTask: Task<Void, Never>?
     private var panelHovered = false
     private var statusHovered = false
 
-    public init(edition: ApplicationEdition) {
-        self.model = AppPresentationModel(edition: edition)
-        super.init()
-    }
+    private static let logger = Logger(subsystem: "com.notchhub.v1.lite", category: "Application")
 
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-    }
-
-    public func applicationDidFinishLaunching(_ notification: Notification) {
+    func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        model.safeFeatures.start()
+        model.workspace.start()
+        installMainMenu()
         installStatusItem()
         installPanel()
         model.setLayoutChangeHandler { [weak self] in
@@ -110,50 +96,67 @@ public final class NotchHubApplicationController: NSObject, NSApplicationDelegat
         )
     }
 
-    public func applicationWillTerminate(_ notification: Notification) {
+    func applicationWillTerminate(_ notification: Notification) {
         dismissTask?.cancel()
-        model.safeFeatures.stop()
+        model.workspace.stop()
     }
 
-    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
 
-    public func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         true
+    }
+
+    private func installMainMenu() {
+        let mainMenu = NSMenu(title: "NotchHub Lite")
+        let appItem = NSMenuItem(title: "NotchHub Lite", action: nil, keyEquivalent: "")
+        let appMenu = NSMenu(title: "NotchHub Lite")
+        let quitItem = NSMenuItem(
+            title: "Quit NotchHub Lite",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        )
+        appMenu.addItem(quitItem)
+        appItem.submenu = appMenu
+        mainMenu.addItem(appItem)
+        NSApp.mainMenu = mainMenu
     }
 
     private func installStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: 28)
-        guard let button = item.button else { return }
-        let root = StatusMeterButton(
+        guard let button = item.button else {
+            Self.logger.error("The system did not provide a status-item button")
+            return
+        }
+        let root = LiteStatusButton(
             model: model,
             onHover: { [weak self] hovering in self?.statusHoverChanged(hovering) },
             onActivate: { [weak self] in self?.toggleDetail() }
         )
-        let hosting = NSHostingView(rootView: root)
-        hosting.translatesAutoresizingMaskIntoConstraints = false
-        button.addSubview(hosting)
+        let hostingView = NSHostingView(rootView: root)
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        button.addSubview(hostingView)
         NSLayoutConstraint.activate([
-            hosting.leadingAnchor.constraint(equalTo: button.leadingAnchor),
-            hosting.trailingAnchor.constraint(equalTo: button.trailingAnchor),
-            hosting.topAnchor.constraint(equalTo: button.topAnchor),
-            hosting.bottomAnchor.constraint(equalTo: button.bottomAnchor),
+            hostingView.leadingAnchor.constraint(equalTo: button.leadingAnchor),
+            hostingView.trailingAnchor.constraint(equalTo: button.trailingAnchor),
+            hostingView.topAnchor.constraint(equalTo: button.topAnchor),
+            hostingView.bottomAnchor.constraint(equalTo: button.bottomAnchor),
         ])
         statusItem = item
     }
 
     private func installPanel() {
-        guard panel == nil else { return }
-        guard let screen = preferredScreen() else { return }
-        let frame = panelFrame(on: screen)
-        let panel = AdaptiveNotchPanel(contentRect: frame)
-        let root = NotchPanelView(
-            model: model,
-            onHover: { [weak self] hovering in self?.panelHoverChanged(hovering) },
-            onDismiss: { [weak self] in self?.dismissPanel() }
+        guard panel == nil, let screen = preferredScreen() else { return }
+        let panel = LiteNotchPanel(contentRect: panelFrame(on: screen))
+        panel.contentView = NSHostingView(
+            rootView: SafeNotchPanelView(
+                model: model,
+                onHover: { [weak self] hovering in self?.panelHoverChanged(hovering) },
+                onDismiss: { [weak self] in self?.dismissPanel() }
+            )
         )
-        panel.contentView = NSHostingView(rootView: root)
         self.panel = panel
     }
 
@@ -166,7 +169,7 @@ public final class NotchHubApplicationController: NSObject, NSApplicationDelegat
                 showPanel()
             }
         } else {
-            scheduleDismissIfUnpinned()
+            scheduleDismissIfCompact()
         }
     }
 
@@ -175,7 +178,7 @@ public final class NotchHubApplicationController: NSObject, NSApplicationDelegat
         if hovering {
             cancelDismiss()
         } else {
-            scheduleDismissIfUnpinned()
+            scheduleDismissIfCompact()
         }
     }
 
@@ -208,13 +211,16 @@ public final class NotchHubApplicationController: NSObject, NSApplicationDelegat
         model.showCompact()
     }
 
-    private func scheduleDismissIfUnpinned() {
+    private func scheduleDismissIfCompact() {
         guard model.tier == .compact else { return }
         cancelDismiss()
         dismissTask = Task { @MainActor [weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(260))
+            } catch is CancellationError {
+                return
             } catch {
+                Self.logger.error("Compact-panel dismissal wait failed")
                 return
             }
             guard let self, !self.panelHovered, !self.statusHovered else { return }
@@ -233,11 +239,7 @@ public final class NotchHubApplicationController: NSObject, NSApplicationDelegat
         let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.22
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().setFrame(target, display: true)
-        }
-        if model.pendingApproval != nil, !panel.isVisible {
-            panel.orderFrontRegardless()
         }
     }
 
@@ -258,9 +260,12 @@ public final class NotchHubApplicationController: NSObject, NSApplicationDelegat
     }
 
     private static func hasPhysicalNotch(_ screen: NSScreen) -> Bool {
-        let left = screen.auxiliaryTopLeftArea?.width ?? 0
-        let right = screen.auxiliaryTopRightArea?.width ?? 0
-        return screen.safeAreaInsets.top > 0 && left > 0 && right > 0 && left + right < screen.frame.width
+        let leftWidth = screen.auxiliaryTopLeftArea?.width ?? 0
+        let rightWidth = screen.auxiliaryTopRightArea?.width ?? 0
+        return screen.safeAreaInsets.top > 0 &&
+            leftWidth > 0 &&
+            rightWidth > 0 &&
+            leftWidth + rightWidth < screen.frame.width
     }
 
     @objc private func screenParametersChanged() {

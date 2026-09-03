@@ -13,13 +13,13 @@ final class BridgeHelperInstaller {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) {
         #if DEBUG
-        let signaturePolicy = BridgeHelperSignaturePolicy.development
+            let signaturePolicy = BridgeHelperSignaturePolicy.development
         #else
-        let hostIdentifier = bundle.bundleIdentifier ?? "com.notchhub.app"
-        let signaturePolicy = BridgeHelperSignaturePolicy.release(
-            expectedHostIdentifier: hostIdentifier,
-            expectedHelperIdentifier: "com.notchhub.v1.bridge.helper"
-        )
+            let hostIdentifier = bundle.bundleIdentifier ?? "com.notchhub.app"
+            let signaturePolicy = BridgeHelperSignaturePolicy.release(
+                expectedHostIdentifier: hostIdentifier,
+                expectedHelperIdentifier: "com.notchhub.v1.bridge.helper"
+            )
         #endif
         self.engine = engine ?? BridgeHelperInstallerEngine(
             signaturePolicy: signaturePolicy

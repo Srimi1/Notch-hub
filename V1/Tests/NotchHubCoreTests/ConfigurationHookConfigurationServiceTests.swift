@@ -1,10 +1,11 @@
 import Darwin
 import Foundation
 import Testing
+@testable import NotchHubBridge
 @testable import NotchHubCore
 
 @Suite("Consent-safe hook configuration application")
-struct ConfigurationHookConfigurationServiceTests {
+struct HookConfigurationServiceTests {
     private let bridgePath = "/fixture/NotchHubHookBridge"
 
     @Test("Connect and disconnect preserve unrelated user configuration")
@@ -225,9 +226,8 @@ private enum ConfigurationTestError: Error {
 private func withConfigurationTemporaryDirectory<T: Sendable>(
     _ operation: (URL) async throws -> T
 ) async throws -> T {
-    let temporaryPath = FileManager.default.temporaryDirectory.path
-    let canonicalTemporaryPath = temporaryPath.hasPrefix("/var/") ? "/private\(temporaryPath)" : temporaryPath
-    let directory = URL(fileURLWithPath: canonicalTemporaryPath, isDirectory: true)
+    let directory = FileManager.default.homeDirectoryForCurrentUser
+        .resolvingSymlinksInPath()
         .appendingPathComponent("NotchHubConfigurationTests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
     do {

@@ -16,6 +16,16 @@ struct PresentationModelTests {
         #expect(!model.hasAttention)
     }
 
+    @Test("Direct edition retains the injected sandbox-safe workspace")
+    func directEditionUsesSafeWorkspace() {
+        let workspace = AppPresentationModel(edition: .lite).safeFeatures
+        let model = AppPresentationModel(edition: .direct, safeFeatures: workspace)
+
+        #expect(model.safeFeatures === workspace)
+        #expect(model.safeFeatures.focus.setDuration(minutes: 42))
+        #expect(workspace.focus.selectedMinutes == 42)
+    }
+
     @Test("Lite exposes only sandbox-safe capabilities")
     func liteCapabilitiesAreRestricted() {
         let model = AppPresentationModel(edition: .lite)

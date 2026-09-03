@@ -1,6 +1,7 @@
 import CryptoKit
 import Darwin
 import Foundation
+import NotchHubBridge
 
 public struct LocalHookConfigurationFileSystem: HookConfigurationFileSystem {
     public init() {}
@@ -44,82 +45,18 @@ public struct LocalHookConfigurationFileSystem: HookConfigurationFileSystem {
             throw HookConfigurationApplicationError.invalidAtomicWrite
         }
         let location = try ConfigurationLocation(provider: provider, homeDirectory: homeDirectory)
+        let request = ReplacementRequest(
+            data: data,
+            location: location,
+            expected: expected,
+            fileMode: fileMode
+        )
         try withHomeDirectory(location) { homeDescriptor, homeIdentity in
-            let existingDirectory = try statusAt(
-                directoryDescriptor: homeDescriptor,
-                name: location.configurationDirectoryName
+            try replaceInHomeDirectory(
+                request,
+                homeDescriptor: homeDescriptor,
+                homeIdentity: homeIdentity
             )
-            if let existingDirectory {
-                try validateOwnedDirectory(existingDirectory)
-                try withChildDirectory(
-                    parentDescriptor: homeDescriptor,
-                    name: location.configurationDirectoryName
-                ) { configurationDescriptor in
-                    let identityParts = homeIdentity + [directoryIdentity(existingDirectory)]
-                    let current = try inspectFile(
-                        location: location,
-                        directoryDescriptor: configurationDescriptor,
-                        identityParts: identityParts,
-                        maximumBytes: HookConfigurationPlanner.maximumConfigurationBytes
-                    )
-                    guard current == expected else {
-                        throw HookConfigurationApplicationError.concurrentModification
-                    }
-                    try writeAtomically(
-                        data,
-                        location: location,
-                        directoryDescriptor: configurationDescriptor,
-                        identityParts: identityParts,
-                        expected: current,
-                        fileMode: fileMode
-                    )
-                }
-                return
-            }
-
-            let missing = missingSnapshot(
-                location: location,
-                identityParts: homeIdentity + ["parent-missing"]
-            )
-            guard missing == expected else {
-                throw HookConfigurationApplicationError.concurrentModification
-            }
-            guard mkdirat(homeDescriptor, location.configurationDirectoryName, mode_t(0o700)) == 0 else {
-                if errno == EEXIST {
-                    throw HookConfigurationApplicationError.concurrentModification
-                }
-                throw mappedErrno(operation: "mkdir")
-            }
-            guard let createdStatus = try statusAt(
-                directoryDescriptor: homeDescriptor,
-                name: location.configurationDirectoryName
-            ) else {
-                throw HookConfigurationApplicationError.fileSystemFailure(operation: "mkdir-verify", code: ENOENT)
-            }
-            try validateOwnedDirectory(createdStatus)
-            try withChildDirectory(
-                parentDescriptor: homeDescriptor,
-                name: location.configurationDirectoryName
-            ) { configurationDescriptor in
-                let identityParts = homeIdentity + [directoryIdentity(createdStatus)]
-                let expectedInCreatedDirectory = try inspectFile(
-                    location: location,
-                    directoryDescriptor: configurationDescriptor,
-                    identityParts: identityParts,
-                    maximumBytes: HookConfigurationPlanner.maximumConfigurationBytes
-                )
-                guard expectedInCreatedDirectory.input.fileKind == .missing else {
-                    throw HookConfigurationApplicationError.concurrentModification
-                }
-                try writeAtomically(
-                    data,
-                    location: location,
-                    directoryDescriptor: configurationDescriptor,
-                    identityParts: identityParts,
-                    expected: expectedInCreatedDirectory,
-                    fileMode: fileMode
-                )
-            }
         }
     }
 }
@@ -148,6 +85,21 @@ extension LocalHookConfigurationFileSystem {
         }
     }
 
+    struct ReplacementRequest {
+        let data: Data
+        let location: ConfigurationLocation
+        let expected: HookConfigurationFileSnapshot
+        let fileMode: UInt16
+    }
+
+    struct AtomicWriteTarget {
+        let location: ConfigurationLocation
+        let directoryDescriptor: Int32
+        let identityParts: [String]
+        let expected: HookConfigurationFileSnapshot
+        let fileMode: UInt16
+    }
+
     func withHomeDirectory<T>(
         _ location: ConfigurationLocation,
         operation: (Int32, [String]) throws -> T
@@ -165,88 +117,11 @@ extension LocalHookConfigurationFileSystem {
         }
         var identityParts: [String] = []
         for component in url.pathComponents.dropFirst() {
-            let status: stat
-            do {
-                guard let resolvedStatus = try statusAt(directoryDescriptor: descriptor, name: component) else {
-                    throw HookConfigurationApplicationError.invalidHomeDirectory
-                }
-                if resolvedStatus.st_mode & S_IFMT == S_IFLNK {
-                    throw HookConfigurationApplicationError.fileSystemFailure(
-                        operation: "debug-ancestor-\(component)",
-                        code: Int32(resolvedStatus.st_mode)
-                    )
-                }
-                try validateDirectory(resolvedStatus)
-                status = resolvedStatus
-            } catch {
-                let operationError = error
-                let closeResult = Darwin.close(descriptor)
-                let closeCode = errno
-                if closeResult != 0 {
-                    throw HookConfigurationApplicationError.fileSystemFailure(
-                        operation: "close-directory",
-                        code: closeCode
-                    )
-                }
-                throw operationError
-            }
-            let nextDescriptor = openat(
-                descriptor,
-                component,
-                O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
-            )
-            if nextDescriptor < 0 {
-                let operationError = mappedErrno(operation: "open-directory")
-                let closeResult = Darwin.close(descriptor)
-                let closeCode = errno
-                if closeResult != 0 {
-                    throw HookConfigurationApplicationError.fileSystemFailure(
-                        operation: "close-directory",
-                        code: closeCode
-                    )
-                }
-                throw operationError
-            }
-            let closeResult = Darwin.close(descriptor)
-            let closeCode = errno
-            if closeResult != 0 {
-                let nextCloseResult = Darwin.close(nextDescriptor)
-                let nextCloseCode = errno
-                if nextCloseResult != 0 {
-                    throw HookConfigurationApplicationError.fileSystemFailure(
-                        operation: "close-directory",
-                        code: nextCloseCode
-                    )
-                }
-                throw HookConfigurationApplicationError.fileSystemFailure(
-                    operation: "close-directory",
-                    code: closeCode
-                )
-            }
-            descriptor = nextDescriptor
+            let status = try validatedAncestorStatus(descriptor: descriptor, component: component)
+            descriptor = try descend(from: descriptor, into: component)
             identityParts.append(directoryIdentity(status))
         }
-        var homeStatus = stat()
-        guard fstat(descriptor, &homeStatus) == 0 else {
-            let statusCode = errno
-            let closeResult = Darwin.close(descriptor)
-            let closeCode = errno
-            if closeResult != 0 {
-                throw HookConfigurationApplicationError.fileSystemFailure(operation: "close-home", code: closeCode)
-            }
-            throw HookConfigurationApplicationError.fileSystemFailure(operation: "stat-home", code: statusCode)
-        }
-        do {
-            try validateOwnedDirectory(homeStatus)
-        } catch {
-            let operationError = error
-            let closeResult = Darwin.close(descriptor)
-            let closeCode = errno
-            if closeResult != 0 {
-                throw HookConfigurationApplicationError.fileSystemFailure(operation: "close-home", code: closeCode)
-            }
-            throw operationError
-        }
+        try validateHomeDescriptor(descriptor)
         return (descriptor, identityParts)
     }
 
@@ -288,26 +163,11 @@ extension LocalHookConfigurationFileSystem {
             throw mappedErrno(operation: "open-configuration")
         }
         let data = try withDescriptor(descriptor, operation: "close-configuration") { fileDescriptor in
-            var initialStatus = stat()
-            guard fstat(fileDescriptor, &initialStatus) == 0 else {
-                throw mappedErrno(operation: "stat-configuration")
-            }
-            try validateRegularFile(initialStatus)
-            guard fileIdentity(initialStatus) == fileIdentity(listedStatus) else {
-                throw HookConfigurationApplicationError.concurrentModification
-            }
-            guard initialStatus.st_size <= Int64(maximumBytes) else {
-                throw HookConfigurationApplicationError.configurationTooLarge(limit: maximumBytes)
-            }
-            let contents = try readAll(fileDescriptor, maximumBytes: maximumBytes)
-            var finalStatus = stat()
-            guard fstat(fileDescriptor, &finalStatus) == 0 else {
-                throw mappedErrno(operation: "stat-configuration")
-            }
-            guard fileIdentity(initialStatus) == fileIdentity(finalStatus) else {
-                throw HookConfigurationApplicationError.concurrentModification
-            }
-            return contents
+            try readVerifiedConfiguration(
+                fileDescriptor,
+                listedStatus: listedStatus,
+                maximumBytes: maximumBytes
+            )
         }
         let input = HookConfigurationInput(
             homeDirectoryPath: location.homeDirectory.path,
@@ -323,68 +183,33 @@ extension LocalHookConfigurationFileSystem {
 
     func writeAtomically(
         _ data: Data,
-        location: ConfigurationLocation,
-        directoryDescriptor: Int32,
-        identityParts: [String],
-        expected: HookConfigurationFileSnapshot,
-        fileMode: UInt16
+        target: AtomicWriteTarget
     ) throws {
         let temporaryName = ".notchhub-v1-\(UUID().uuidString).tmp"
         let temporaryDescriptor = openat(
-            directoryDescriptor,
+            target.directoryDescriptor,
             temporaryName,
             O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
-            mode_t(fileMode)
+            mode_t(target.fileMode)
         )
         guard temporaryDescriptor >= 0 else {
             throw mappedErrno(operation: "open-temporary")
         }
         var temporaryExists = true
         do {
-            try withDescriptor(temporaryDescriptor, operation: "close-temporary") { descriptor in
-                guard fchmod(descriptor, mode_t(fileMode)) == 0 else {
-                    throw mappedErrno(operation: "chmod-temporary")
-                }
-                try writeAll(data, descriptor: descriptor)
-                guard fsync(descriptor) == 0 else {
-                    throw mappedErrno(operation: "sync-temporary")
-                }
-            }
-            let immediatelyBeforeRename = try inspectFile(
-                location: location,
-                directoryDescriptor: directoryDescriptor,
-                identityParts: identityParts,
-                maximumBytes: HookConfigurationPlanner.maximumConfigurationBytes
-            )
-            guard immediatelyBeforeRename == expected else {
-                throw HookConfigurationApplicationError.concurrentModification
-            }
-            guard renameat(
-                directoryDescriptor,
+            try writeTemporaryContents(data, descriptor: temporaryDescriptor, fileMode: target.fileMode)
+            try commitTemporaryFile(
                 temporaryName,
-                directoryDescriptor,
-                location.fileName
-            ) == 0 else {
-                throw mappedErrno(operation: "rename")
-            }
-            temporaryExists = false
-            guard fsync(directoryDescriptor) == 0 else {
-                throw mappedErrno(operation: "sync-directory")
-            }
+                target: target,
+                temporaryExists: &temporaryExists
+            )
         } catch {
-            let operationError = error
-            if temporaryExists {
-                let unlinkResult = unlinkat(directoryDescriptor, temporaryName, 0)
-                let unlinkCode = errno
-                if unlinkResult != 0, unlinkCode != ENOENT {
-                    throw HookConfigurationApplicationError.fileSystemFailure(
-                        operation: "cleanup-temporary",
-                        code: unlinkCode
-                    )
-                }
-            }
-            throw operationError
+            try cleanupTemporaryFile(
+                temporaryName,
+                directoryDescriptor: target.directoryDescriptor,
+                temporaryExists: temporaryExists,
+                operationError: error
+            )
         }
     }
-
 }

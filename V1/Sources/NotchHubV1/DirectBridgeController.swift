@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import NotchHubBridge
 import NotchHubCore
 
 @MainActor
@@ -147,7 +148,21 @@ final class DirectBridgeController {
         }
     }
 
-    private func perform(_ action: SessionBridgeAction) async throws -> SessionBridgeConnectionPresentation {
+    private func recordServerFailure() async {
+        await telemetry.record(
+            severity: .error,
+            category: "bridge",
+            code: "server-unavailable",
+            summary: "The local authenticated bridge could not start."
+        )
+        model.setSessionBridgeConnection(
+            .failed("Secure session bridge unavailable; provider prompts remain active.")
+        )
+    }
+}
+
+private extension DirectBridgeController {
+    func perform(_ action: SessionBridgeAction) async throws -> SessionBridgeConnectionPresentation {
         switch action {
         case .connect:
             return try await connectSessions()
@@ -156,7 +171,7 @@ final class DirectBridgeController {
         }
     }
 
-    private func connectSessions() async throws -> SessionBridgeConnectionPresentation {
+    func connectSessions() async throws -> SessionBridgeConnectionPresentation {
         let previews = try await connectionPreviews()
         guard presentConsent(for: previews, action: .connect) else {
             await discard(previews)
@@ -174,7 +189,7 @@ final class DirectBridgeController {
         }
     }
 
-    private func disconnectSessions() async throws -> SessionBridgeConnectionPresentation {
+    func disconnectSessions() async throws -> SessionBridgeConnectionPresentation {
         let previews = try await disconnectionPreviews()
         guard presentConsent(for: previews, action: .disconnect) else {
             await discard(previews)
@@ -191,7 +206,7 @@ final class DirectBridgeController {
         }
     }
 
-    private func connectionPreviews() async throws -> [HookConfigurationConsentPreview] {
+    func connectionPreviews() async throws -> [HookConfigurationConsentPreview] {
         let bridgePath = helperInstaller.installedHelperURL.path
         let codex = try await configurationService.previewConnection(
             provider: .codex,
@@ -209,7 +224,7 @@ final class DirectBridgeController {
         }
     }
 
-    private func disconnectionPreviews() async throws -> [HookConfigurationConsentPreview] {
+    func disconnectionPreviews() async throws -> [HookConfigurationConsentPreview] {
         let codex = try await configurationService.previewDisconnection(provider: .codex)
         do {
             let claude = try await configurationService.previewDisconnection(provider: .claude)
@@ -220,7 +235,7 @@ final class DirectBridgeController {
         }
     }
 
-    private func applyWithRollback(
+    func applyWithRollback(
         _ previews: [HookConfigurationConsentPreview],
         operation: HookConfigurationOperation
     ) async throws -> [HookConfigurationApplicationResult] {
@@ -242,7 +257,7 @@ final class DirectBridgeController {
         }
     }
 
-    private func rollback(
+    func rollback(
         _ results: [HookConfigurationApplicationResult],
         operation: HookConfigurationOperation
     ) async throws {
@@ -261,13 +276,13 @@ final class DirectBridgeController {
         }
     }
 
-    private func discard(_ previews: [HookConfigurationConsentPreview]) async {
+    func discard(_ previews: [HookConfigurationConsentPreview]) async {
         for preview in previews {
             await configurationService.discard(preview)
         }
     }
 
-    private func presentConsent(
+    func presentConsent(
         for previews: [HookConfigurationConsentPreview],
         action: SessionBridgeAction
     ) -> Bool {
@@ -281,7 +296,7 @@ final class DirectBridgeController {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    private func consentSummary(
+    func consentSummary(
         _ previews: [HookConfigurationConsentPreview],
         action: SessionBridgeAction
     ) -> String {
@@ -299,7 +314,7 @@ final class DirectBridgeController {
             + compatibility
     }
 
-    private func connectedState(
+    func connectedState(
         fromDiffs diffs: [HookConfigurationDiff]
     ) -> SessionBridgeConnectionPresentation {
         diffs.contains { $0.compatibility == .customClaudeStatusLinePreserved }
@@ -307,19 +322,7 @@ final class DirectBridgeController {
             : .connected
     }
 
-    private func recordServerFailure() async {
-        await telemetry.record(
-            severity: .error,
-            category: "bridge",
-            code: "server-unavailable",
-            summary: "The local authenticated bridge could not start."
-        )
-        model.setSessionBridgeConnection(
-            .failed("Secure session bridge unavailable; provider prompts remain active.")
-        )
-    }
-
-    private func recordConfigurationFailure(code: String) async {
+    func recordConfigurationFailure(code: String) async {
         await telemetry.record(
             severity: .error,
             category: "hooks",

@@ -8,6 +8,7 @@ let package = Package(
         .macOS(.v14),
     ],
     products: [
+        .library(name: "NotchHubBridge", targets: ["NotchHubBridge"]),
         .library(name: "NotchHubSafeFeatures", targets: ["NotchHubSafeFeatures"]),
         .library(name: "NotchHubCore", targets: ["NotchHubCore"]),
         .executable(name: "NotchHubV1", targets: ["NotchHubV1"]),
@@ -30,17 +31,22 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "NotchHubBridge",
+            path: "Sources/NotchHubBridge"
+        ),
+        .target(
             name: "NotchHubSafeFeatures",
             path: "Sources/NotchHubSafeFeatures"
         ),
         .target(
             name: "NotchHubCore",
-            dependencies: ["NotchHubSafeFeatures"],
+            dependencies: ["NotchHubBridge", "NotchHubSafeFeatures"],
             path: "Sources/NotchHubCore"
         ),
         .executableTarget(
             name: "NotchHubV1",
             dependencies: [
+                "NotchHubBridge",
                 "NotchHubCore",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
@@ -53,12 +59,12 @@ let package = Package(
         ),
         .executableTarget(
             name: "NotchHubHookBridge",
-            dependencies: ["NotchHubCore"],
+            dependencies: ["NotchHubBridge"],
             path: "Sources/NotchHubHookBridge"
         ),
         .testTarget(
             name: "NotchHubCoreTests",
-            dependencies: ["NotchHubCore"],
+            dependencies: ["NotchHubBridge", "NotchHubCore"],
             path: "Tests/NotchHubCoreTests"
         ),
         .testTarget(

@@ -1,6 +1,7 @@
 import CryptoKit
 import Darwin
 import Foundation
+import NotchHubBridge
 
 extension LocalHookConfigurationFileSystem {
     func readAll(_ descriptor: Int32, maximumBytes: Int) throws -> Data {
@@ -66,10 +67,7 @@ extension LocalHookConfigurationFileSystem {
     func validateDirectory(_ status: stat) throws {
         let kind = status.st_mode & S_IFMT
         guard kind != S_IFLNK else {
-            throw HookConfigurationApplicationError.fileSystemFailure(
-                operation: "debug-directory-symlink",
-                code: Int32(status.st_mode)
-            )
+            throw HookConfigurationApplicationError.symbolicLinkRejected
         }
         guard kind == S_IFDIR else { throw HookConfigurationApplicationError.unsupportedFileType }
     }
@@ -84,10 +82,7 @@ extension LocalHookConfigurationFileSystem {
     func validateRegularFile(_ status: stat) throws {
         let kind = status.st_mode & S_IFMT
         guard kind != S_IFLNK else {
-            throw HookConfigurationApplicationError.fileSystemFailure(
-                operation: "debug-file-symlink",
-                code: Int32(status.st_mode)
-            )
+            throw HookConfigurationApplicationError.symbolicLinkRejected
         }
         guard kind == S_IFREG else { throw HookConfigurationApplicationError.unsupportedFileType }
         guard status.st_uid == geteuid() else { throw HookConfigurationApplicationError.permissionDenied }
@@ -131,7 +126,7 @@ extension LocalHookConfigurationFileSystem {
 
     func mappedErrno(operation: String) -> HookConfigurationApplicationError {
         let code = errno
-        if code == ELOOP { return .fileSystemFailure(operation: operation, code: code) }
+        if code == ELOOP { return .symbolicLinkRejected }
         if code == EACCES || code == EPERM { return .permissionDenied }
         return .fileSystemFailure(operation: operation, code: code)
     }

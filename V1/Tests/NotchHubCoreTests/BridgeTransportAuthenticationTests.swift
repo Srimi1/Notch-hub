@@ -1,7 +1,24 @@
 import Foundation
 import Security
 import Testing
+@testable import NotchHubBridge
 @testable import NotchHubCore
+
+private let claudeStatusLinePayload = Data(
+    #"""
+    {
+      "session_id": "session-1",
+      "cwd": "/private/project",
+      "transcript_path": "/private/transcript.jsonl",
+      "prompt": "private prompt",
+      "rate_limits": {
+        "five_hour": {"used_percentage": 23.5, "resets_at": 1738425600},
+        "seven_day": {"used_percentage": 41.2, "resets_at": 1738857600}
+      },
+      "context_window": {"total_input_tokens": 999}
+    }
+    """#.utf8
+)
 
 @Suite("Authenticated bridge transport")
 struct BridgeTransportAuthenticationTests {
@@ -51,7 +68,12 @@ struct BridgeTransportAuthenticationTests {
             secret: secret
         )
         try BridgeTransportAuthenticator.verifyResponseFrame(responseFrame, secret: secret)
-        #expect(!BridgeTransportAuthenticator.constantTimeEqual(responseFrame.authenticationTag, Data(repeating: 0, count: 32)))
+        #expect(
+            !BridgeTransportAuthenticator.constantTimeEqual(
+                responseFrame.authenticationTag,
+                Data(repeating: 0, count: 32)
+            )
+        )
     }
 
     @Test("Replay guard enforces nonce freshness and a 120 second deadline")
@@ -150,7 +172,9 @@ struct BridgeTransportAuthenticationTests {
             try BridgeTransportFraming.decodedRequestBody(tainted)
         }
     }
+}
 
+extension BridgeTransportAuthenticationTests {
     @Test("Provider input is reduced to safe metadata and output is official decision JSON")
     func providerTranslation() throws {
         let invocation = try BridgeHookInvocation(
@@ -159,7 +183,16 @@ struct BridgeTransportAuthenticationTests {
             hookID: "com.notchhub.v1.codex.permissionrequest"
         )
         let raw = Data(
-            #"{"session_id":"session-1","hook_event_name":"PermissionRequest","cwd":"/private/NotchHub","tool_name":"Bash","tool_input":{"command":"echo top-secret"},"transcript_path":"/private/transcript.jsonl"}"#.utf8
+            #"""
+            {
+              "session_id": "session-1",
+              "hook_event_name": "PermissionRequest",
+              "cwd": "/private/NotchHub",
+              "tool_name": "Bash",
+              "tool_input": {"command": "echo top-secret"},
+              "transcript_path": "/private/transcript.jsonl"
+            }
+            """#.utf8
         )
         let request = try BridgeProviderHookCodec.request(
             from: raw,
@@ -226,11 +259,8 @@ struct BridgeTransportAuthenticationTests {
             event: .statusLine,
             hookID: "com.notchhub.v1.claude.statusline"
         )
-        let raw = Data(
-            #"{"session_id":"session-1","cwd":"/private/project","transcript_path":"/private/transcript.jsonl","prompt":"private prompt","rate_limits":{"five_hour":{"used_percentage":23.5,"resets_at":1738425600},"seven_day":{"used_percentage":41.2,"resets_at":1738857600}},"context_window":{"total_input_tokens":999}}"#.utf8
-        )
         let request = try BridgeProviderHookCodec.request(
-            from: raw,
+            from: claudeStatusLinePayload,
             invocation: invocation,
             now: Date(timeIntervalSince1970: 1_000),
             requestNonce: nonce
@@ -262,7 +292,14 @@ struct BridgeTransportAuthenticationTests {
             hookID: "com.notchhub.v1.claude.statusline"
         )
         let raw = Data(
-            #"{"session_id":"session-1","rate_limits":{"five_hour":{"used_percentage":101,"resets_at":1738425600}}}"#.utf8
+            #"""
+            {
+              "session_id": "session-1",
+              "rate_limits": {
+                "five_hour": {"used_percentage": 101, "resets_at": 1738425600}
+              }
+            }
+            """#.utf8
         )
         #expect(throws: BridgeProviderHookError.malformedInput) {
             try BridgeProviderHookCodec.request(

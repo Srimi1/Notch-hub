@@ -39,15 +39,16 @@ struct TelemetryTests {
     @Test("Export contains only redacted entries")
     func export() async throws {
         let console = LocalTelemetryConsole(capacity: 2)
+        let fakeSecret = ["sk", String(repeating: "x", count: 26)].joined(separator: "-")
         await console.record(
             severity: .warning,
             category: "bridge",
             code: "auth",
-            summary: "sk-abcdefghijklmnopqrstuvwxyz"
+            summary: fakeSecret
         )
         let data = try await console.exportJSON()
         let text = try #require(String(data: data, encoding: .utf8))
-        #expect(!text.contains("abcdefghijklmnopqrstuvwxyz"))
+        #expect(!text.contains(fakeSecret))
         #expect(text.contains("redacted-secret"))
     }
 }

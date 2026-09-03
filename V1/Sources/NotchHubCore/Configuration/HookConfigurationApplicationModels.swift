@@ -1,4 +1,5 @@
 import Foundation
+import NotchHubBridge
 
 public struct HookConfigurationFileSnapshot: Equatable, Sendable {
     public let input: HookConfigurationInput
@@ -29,11 +30,6 @@ public protocol HookConfigurationFileSystem: Sendable {
 public struct HookConfigurationConsentPreview: Equatable, Sendable {
     public let id: UUID
     public let diff: HookConfigurationDiff
-
-    init(id: UUID, diff: HookConfigurationDiff) {
-        self.id = id
-        self.diff = diff
-    }
 }
 
 public struct HookConfigurationApplicationResult: Equatable, Sendable {

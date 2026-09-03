@@ -35,7 +35,13 @@ case "$EDITION" in
     ;;
 esac
 
-OUTPUT="$ROOT/$APP_NAME.app"
+OUTPUT_DIR="${NOTCHHUB_OUTPUT_DIR:-$ROOT}"
+if [[ -z "$OUTPUT_DIR" || "$OUTPUT_DIR" != /* || "$OUTPUT_DIR" == "/" || -L "$OUTPUT_DIR" ]]; then
+  echo "NOTCHHUB_OUTPUT_DIR must be an absolute, non-symlinked directory" >&2
+  exit 1
+fi
+mkdir -p "$OUTPUT_DIR"
+OUTPUT="$OUTPUT_DIR/$APP_NAME.app"
 TEMP_DIR="$(mktemp -d /tmp/notchhub-v1-build.XXXXXX)"
 TEMP_APP="$TEMP_DIR/$APP_NAME.app"
 trap 'rm -rf -- "$TEMP_DIR"' EXIT
@@ -89,6 +95,15 @@ make_binary() {
   fi
 }
 
+ensure_framework_runtime_path() {
+  local binary="$1"
+  local framework_path='@executable_path/../Frameworks'
+  if otool -l "$binary" | grep -F "$framework_path" >/dev/null; then
+    return
+  fi
+  install_name_tool -add_rpath "$framework_path" "$binary"
+}
+
 if [[ -L "$OUTPUT" || -L "$OUTPUT/Contents" ]]; then
   echo "refusing to replace symlinked output: $OUTPUT" >&2
   exit 1
@@ -140,6 +155,7 @@ if [[ "$EDITION" == "direct" ]]; then
   fi
   mkdir -p "$TEMP_APP/Contents/Frameworks"
   ditto "$SPARKLE_FRAMEWORK" "$TEMP_APP/Contents/Frameworks/Sparkle.framework"
+  ensure_framework_runtime_path "$TEMP_APP/Contents/MacOS/$PRODUCT"
 fi
 
 xattr -cr "$TEMP_APP"
@@ -159,7 +175,13 @@ if [[ -n "$SIGNING_IDENTITY" ]]; then
   sign_args=(--force --options runtime --timestamp --sign "$SIGNING_IDENTITY" --entitlements "$APP_ENTITLEMENTS")
   codesign "${sign_args[@]}" "$TEMP_APP"
 else
-  codesign --force --deep --sign - "$TEMP_APP"
+  if [[ "$EDITION" == "lite" ]]; then
+    APP_ENTITLEMENTS="$TEMP_DIR/app.entitlements"
+    prepare_entitlements "$ENTITLEMENTS_TEMPLATE" "$APP_ENTITLEMENTS"
+    codesign --force --deep --sign - --entitlements "$APP_ENTITLEMENTS" "$TEMP_APP"
+  else
+    codesign --force --deep --sign - "$TEMP_APP"
+  fi
 fi
 codesign --verify --deep --strict --verbose=2 "$TEMP_APP"
 

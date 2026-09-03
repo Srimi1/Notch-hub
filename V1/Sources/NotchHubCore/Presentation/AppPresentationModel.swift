@@ -1,4 +1,5 @@
 import Foundation
+import NotchHubSafeFeatures
 import Observation
 
 /// Main-actor UI state. Provider actors publish sanitized presentation values
@@ -15,6 +16,7 @@ public final class AppPresentationModel {
     ) async throws -> SessionBridgeConnectionPresentation
 
     public let edition: ApplicationEdition
+    public let safeFeatures: SafeFeatureWorkspace
     public private(set) var tier: NotchPresentationTier
     public private(set) var selectedCapability: AppCapability
     public private(set) var providers: [ProviderCardPresentation]
@@ -30,9 +32,11 @@ public final class AppPresentationModel {
 
     public init(
         edition: ApplicationEdition,
-        approvalHandler: ApprovalHandler? = nil
+        approvalHandler: ApprovalHandler? = nil,
+        safeFeatures: SafeFeatureWorkspace? = nil
     ) {
         self.edition = edition
+        self.safeFeatures = safeFeatures ?? SafeFeatureWorkspace()
         self.tier = .compact
         self.selectedCapability = edition.defaultCapability
         self.providers = edition == .direct ? Self.disconnectedProviders : []

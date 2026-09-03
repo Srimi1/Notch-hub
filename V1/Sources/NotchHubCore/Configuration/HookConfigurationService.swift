@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import NotchHubBridge
 
 public actor HookConfigurationService {
     private struct PendingPreview: Sendable {

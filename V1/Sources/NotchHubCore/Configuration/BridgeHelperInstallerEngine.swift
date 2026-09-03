@@ -109,10 +109,10 @@ public actor BridgeHelperInstallerEngine {
                 throw BridgeHelperInstallerError.signingIdentifierMismatch
             }
         case .development:
-            if let hostTeam = host.teamIdentifier,
-               source.teamIdentifier != hostTeam
-            {
-                throw BridgeHelperInstallerError.teamIdentifierMismatch
+            if let hostTeam = host.teamIdentifier {
+                guard source.teamIdentifier == hostTeam else {
+                    throw BridgeHelperInstallerError.teamIdentifierMismatch
+                }
             }
         }
     }

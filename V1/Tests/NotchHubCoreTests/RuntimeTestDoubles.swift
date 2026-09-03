@@ -161,10 +161,67 @@ actor RuntimeTrackedUsageAdapter: UsageProviderAdapter {
     }
 }
 
+actor RuntimeFetchBarrier {
+    private var enteredProviders: Set<ProviderID> = []
+    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
+    private var isReleased = false
+
+    func enter(_ provider: ProviderID) async {
+        enteredProviders.insert(provider)
+        guard !isReleased else { return }
+        await withCheckedContinuation { continuation in
+            releaseContinuations.append(continuation)
+        }
+    }
+
+    func providers() -> Set<ProviderID> {
+        enteredProviders
+    }
+
+    func releaseAll() {
+        isReleased = true
+        let continuations = releaseContinuations
+        releaseContinuations.removeAll(keepingCapacity: false)
+        continuations.forEach { $0.resume() }
+    }
+}
+
+actor RuntimeBarrierUsageAdapter: UsageProviderAdapter {
+    nonisolated let provider: ProviderID
+
+    private let snapshot: UsageSnapshot
+    private let barrier: RuntimeFetchBarrier
+
+    init(snapshot: UsageSnapshot, barrier: RuntimeFetchBarrier) {
+        self.provider = snapshot.provider
+        self.snapshot = snapshot
+        self.barrier = barrier
+    }
+
+    func fetchUsage() async throws -> UsageSnapshot {
+        await barrier.enter(provider)
+        return snapshot
+    }
+}
+
 struct RuntimeAdapterMetrics: Sendable {
     let calls: Int
     let active: Int
     let maximumActive: Int
+}
+
+func waitForRuntimeFetches(
+    _ barrier: RuntimeFetchBarrier,
+    expectedCount: Int
+) async throws -> Set<ProviderID> {
+    for _ in 0 ..< 100 {
+        let providers = await barrier.providers()
+        if providers.count >= expectedCount {
+            return providers
+        }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    return await barrier.providers()
 }
 
 func runtimeExecutable(_ provider: ProviderID) -> DiscoveredExecutable {

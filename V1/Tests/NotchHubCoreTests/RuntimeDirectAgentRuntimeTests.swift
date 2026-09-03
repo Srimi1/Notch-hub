@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import NotchHubBridge
 @testable import NotchHubCore
 
 @Suite("Direct agent runtime")
@@ -121,23 +122,23 @@ struct RuntimeDirectAgentRuntimeTests {
     func parallelLaunchRefresh() async throws {
         let codex = try runtimeSnapshot(provider: .codex, usedPercent: 25, capturedAt: 2000)
         let claude = try runtimeSnapshot(provider: .claude, usedPercent: 35, capturedAt: 2000)
-        let delay = Duration.milliseconds(200)
+        let barrier = RuntimeFetchBarrier()
         let store = RuntimeSnapshotStoreFixture(loadOutcome: .snapshots([:]))
         let runtime = makeRuntime(
             store: store,
             adapters: [
-                .codex: RuntimeTrackedUsageAdapter(provider: .codex, result: .success(codex), delay: delay),
-                .claude: RuntimeTrackedUsageAdapter(provider: .claude, result: .success(claude), delay: delay),
+                .codex: RuntimeBarrierUsageAdapter(snapshot: codex, barrier: barrier),
+                .claude: RuntimeBarrierUsageAdapter(snapshot: claude, barrier: barrier),
             ],
             now: 2001
         )
-        let clock = ContinuousClock()
 
-        let startedAt = clock.now
-        let state = await runtime.start()
-        let elapsed = startedAt.duration(to: clock.now)
+        let startTask = Task { await runtime.start() }
+        let enteredProviders = try await waitForRuntimeFetches(barrier, expectedCount: 2)
+        #expect(enteredProviders == Set([.codex, .claude]))
+        await barrier.releaseAll()
+        let state = await startTask.value
 
-        #expect(elapsed < .milliseconds(350))
         #expect(state.state(for: .codex)?.usageSnapshot == codex)
         #expect(state.state(for: .claude)?.usageSnapshot == claude)
     }
@@ -208,7 +209,9 @@ struct RuntimeDirectAgentRuntimeTests {
         #expect(runtimeState.persistenceState == .failed)
         #expect(await telemetry.events().contains { $0.code == "cache-save-failed" })
     }
+}
 
+extension RuntimeDirectAgentRuntimeTests {
     @Test("Claude status-line ingestion refreshes through the same bounded runtime path")
     func claudeStatusLine() async throws {
         let live = try runtimeSnapshot(provider: .claude, usedPercent: 35, capturedAt: 2000)
