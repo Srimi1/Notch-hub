@@ -25,6 +25,11 @@ struct SettingsRootView: View {
                 preferences: services.screenshotPreferences,
                 screenshots: services.screenshots
             )
+            CleanupSection(
+                preferences: services.cleanupPreferences,
+                cleanup: services.cacheCleanup,
+                fullDiskAccessGranted: permissions.status(of: .fullDiskAccess).isGranted
+            )
             NextUpSettingsSections(
                 preferences: services.activityPreferences,
                 reminders: services.reminders,

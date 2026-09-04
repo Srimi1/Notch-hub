@@ -45,6 +45,8 @@ final class ServiceHub: ObservableObject {
     let hudPreferences = HudPreferences()
     let screenshotPreferences = ScreenshotPreferences()
     let screenshots: ScreenshotService
+    let cleanupPreferences = CleanupPreferences()
+    let cacheCleanup: CacheCleanupService
     let activityCoordinator: ActivityCoordinator
 
     private var started = false
@@ -65,6 +67,7 @@ final class ServiceHub: ObservableObject {
         self.modulePreferences = modulePreferences
         activityCoordinator = ActivityCoordinator(preferences: activityPreferences)
         screenshots = ScreenshotService(preferences: screenshotPreferences)
+        cacheCleanup = CacheCleanupService(preferences: cleanupPreferences)
 
         // Only services that can change an ActivitySnapshot rebuild the queue.
         // Clipboard and system-stat publications used to trigger the same work
@@ -92,6 +95,13 @@ final class ServiceHub: ObservableObject {
         activityPreferences.onChange = { [weak self] in
             self?.activityCoordinator.refreshForPreferences()
             self?.scheduleActivityRefresh()
+        }
+        // Hiding the cleanup segment has to stop a scan already walking the
+        // disk, not merely hide its result — the same rule the module
+        // switches follow for the pasteboard and Apple Events.
+        cleanupPreferences.onChange = { [weak self] in
+            guard let self, !self.cleanupPreferences.showInFocus else { return }
+            self.cacheCleanup.stop()
         }
 
         modulePreferences?.$visibleModules
@@ -205,6 +215,9 @@ final class ServiceHub: ObservableObject {
         battery.stop()
         system.stop()
         time.stop()
+        // Last, because it is the only one that can be mid-way through moving
+        // files: everything else is a timer or a watcher.
+        cacheCleanup.stop()
     }
 
     func startInteractive() {

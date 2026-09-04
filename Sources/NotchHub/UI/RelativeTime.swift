@@ -35,7 +35,13 @@ enum RelativeTime {
 
     /// "now", "2m ago", "3h ago" — compact elapsed time for past events.
     static func ago(_ date: Date) -> String {
-        let delta = -date.timeIntervalSinceNow
+        ago(date, now: .now)
+    }
+
+    /// The same, against an explicit clock, so copy built from it can be
+    /// tested without waiting.
+    static func ago(_ date: Date, now: Date) -> String {
+        let delta = now.timeIntervalSince(date)
         if delta < 60 { return "now" }
         let minutes = Int(delta / 60)
         if minutes < 60 { return "\(minutes)m ago" }

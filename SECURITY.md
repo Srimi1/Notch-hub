@@ -33,6 +33,7 @@ in-app HTTP client. Its runtime data comes from local macOS APIs and application
 | Clipboard | In-memory text, image, and file history | Pasteboard reads require no prompt; protected-file metadata and thumbnails are skipped when Full Disk Access is unavailable |
 | Screenshot folder | The newest screenshot, so its picture can be placed on the clipboard | Off by default; the folder prompt is raised only by the Settings switch, and only files macOS has tagged `kMDItemIsScreenCapture` are opened |
 | Battery and system counters | Battery, CPU, RAM, and disk sampling | No permission required |
+| Cache folders | Sizes rebuildable caches for the Focus panel: `~/Library/Caches`, `~/Library/Logs`, listed developer caches with the switch on | No prompt is raised; sandboxed app containers are entered only when Full Disk Access already exists, and Safari's cache is skipped without it |
 
 Hiding Clipboard, Calendar, Reminders, or Media stops the corresponding polling
 service. Calendar and Reminders never raise an access prompt from a background
@@ -44,6 +45,7 @@ refresh.
 | --- | --- |
 | `UserDefaults` | Module visibility, Next Up settings, popup settings, screenshot copying and its allowed folders, timer records, and one-time migration flags |
 | Screenshot folder | Nothing, unless **Move the file to the Trash after copying** is switched on — and then only `trashItem`, which is recoverable, and only after the picture has reached the pasteboard |
+| Cache folders | Nothing, unless you press **Clean** — and then only folders classified safe, only by `trashItem`, and only inside `~/Library/Caches`, `~/Library/Logs`, a listed developer cache, or an unprotected app container. The classification is checked a second time immediately before each move, and refusals are logged rather than dropped |
 | EventKit | Marks a reminder complete only after the user chooses that action |
 | `UNUserNotificationCenter` | Schedules a local notification for a timer the user started |
 | `SMAppService` | Registers or unregisters Launch at Login; registration is attempted once on first run and remains user-controlled afterward |
@@ -83,7 +85,10 @@ length-bounded location text.
 ## Elevated privilege removed
 
 The current app has no privileged code path and never asks for an administrator
-password.
+password. That includes the cache cleanup in the Focus panel, which is a
+different feature from the removed RAM cleaner despite the similar name: it runs
+entirely as the user, uses no helper, no `sudo`, and no subprocess, and reaches
+the disk only through `FileManager`.
 
 Versions up to 0.1 included a RAM cleaner that could install a sudoers rule at
 `/etc/sudoers.d/notchhub` for `/usr/sbin/purge`. The cleaner and installer are

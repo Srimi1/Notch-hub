@@ -4,6 +4,39 @@ Notable user-facing changes are recorded here. NotchHub follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) while the public API
 and interface continue to mature before 1.0.
 
+## [0.8.0] - 2026-09-04
+
+### Added
+
+- The Focus panel now tells you how much cache your Mac is carrying, and clears
+  the safe part of it in one click. Beside the Do Not Disturb control there is a
+  second line — "1.2 GB safe to clean" — and a button that moves those folders to
+  the Trash, so nothing is deleted outright and anything can be put back. It
+  looks in `~/Library/Caches` and `~/Library/Logs`; developer caches like Xcode's
+  derived data and the npm and Homebrew caches are included only if you switch
+  them on, and sandboxed app containers only if Full Disk Access has already been
+  granted, so the scan never raises a permission prompt of its own. A folder
+  NotchHub cannot identify is never offered, and caches behind sign-in, iCloud,
+  Spotlight, Mail, Photos, and sync apps are counted as "check first" and left
+  alone. The safety catalog and the never-touch rules come from
+  [Purge](https://github.com/jithin-sabu/purge-app) (MIT); see
+  [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md). Nothing here needs an administrator
+  password — unlike the RAM cleaner removed in 0.2, this feature runs entirely as
+  you, with no helper and no `sudo`.
+- Every release image now carries a `Licenses` folder holding the text of each
+  third-party license NotchHub redistributes, including the two MIT libraries
+  Lottie compiles into itself and the license covering the astronaut animation.
+  The README publishes the image's SHA-256, which is the only way to check a
+  download that macOS will not verify for you.
+
+### Fixed
+
+- Music no longer opens the notch on the wrong panel. A playing track counted as
+  an interruption, so expanding the notch during playback showed a track detail
+  view with a button leading to the dashboard — while the Media module was
+  already showing that same track. Playback stays in the collapsed pill and the
+  panel opens where you left it.
+
 ## [0.7.0] - 2026-09-01
 
 ### Fixed
