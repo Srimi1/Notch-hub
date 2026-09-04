@@ -48,7 +48,7 @@ public enum ApplicationEdition: String, Sendable {
 
     public var capabilities: [AppCapability] {
         switch self {
-        case .direct: [.agents, .dashboard, .clipboard, .focus]
+        case .direct: [.agents, .dashboard, .media, .clipboard, .focus]
         case .lite: [.dashboard, .clipboard, .focus]
         }
     }

@@ -1,0 +1,10 @@
+mediaremote-adapter
+
+Source: https://github.com/ungive/mediaremote-adapter (0.7.6)
+Copyright (c) 2025 Jonas van den Berg and contributors
+License: BSD 3-Clause
+
+The Direct edition invokes this separately loaded framework through
+/usr/bin/perl; the NotchHub executable does not link it. The complete BSD
+3-Clause license is bundled beside this notice as
+MediaRemoteAdapter-LICENSE.txt.

@@ -1,5 +1,6 @@
 import AppKit
 import NotchHubCore
+import NotchHubMedia
 import Observation
 import UniformTypeIdentifiers
 
@@ -10,12 +11,14 @@ final class NotchHubV1ApplicationDelegate: NSObject, NSApplicationDelegate, NSMe
     private let notificationObserver: PresentationNotificationObserver
     private let agentRuntime: DirectAgentRuntime
     private let bridgeController: DirectBridgeController
+    private let mediaRuntime: MediaRuntimeController
     private let telemetry: LocalTelemetryConsole
     private var agentRuntimeTask: Task<Void, Never>?
 
     override init() {
-        let shellController = NotchHubApplicationController(edition: .direct)
         let telemetry = LocalTelemetryConsole()
+        let mediaModel = MediaPresentationModel()
+        let shellController = NotchHubApplicationController(edition: .direct, media: mediaModel)
         let agentRuntime = DirectAgentRuntime(
             telemetry: LocalDirectAgentRuntimeTelemetry(console: telemetry)
         )
@@ -24,6 +27,21 @@ final class NotchHubV1ApplicationDelegate: NSObject, NSApplicationDelegate, NSMe
         self.notificationObserver = PresentationNotificationObserver(model: shellController.model)
         self.agentRuntime = agentRuntime
         self.telemetry = telemetry
+        self.mediaRuntime = MediaRuntimeController(model: mediaModel) { diagnostic in
+            let severity: TelemetrySeverity = switch diagnostic.severity {
+            case .info: .info
+            case .warning: .warning
+            case .error: .error
+            }
+            Task {
+                await telemetry.record(
+                    severity: severity,
+                    category: "media",
+                    code: diagnostic.code,
+                    summary: diagnostic.summary
+                )
+            }
+        }
         self.bridgeController = DirectBridgeController(
             model: shellController.model,
             agentRuntime: agentRuntime,
@@ -39,6 +57,7 @@ final class NotchHubV1ApplicationDelegate: NSObject, NSApplicationDelegate, NSMe
         notificationObserver.start()
         migrateLegacyPreferencesForOfficialBuild()
         bridgeController.start()
+        mediaRuntime.start()
         startAgentRuntime()
     }
 
@@ -47,6 +66,7 @@ final class NotchHubV1ApplicationDelegate: NSObject, NSApplicationDelegate, NSMe
         agentRuntimeTask?.cancel()
         agentRuntimeTask = nil
         bridgeController.stop()
+        mediaRuntime.stop()
         shellController.applicationWillTerminate(notification)
     }
 

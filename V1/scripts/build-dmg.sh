@@ -27,6 +27,18 @@ readonly APP_EXECUTABLE="NotchHubV1"
 readonly APP_IDENTIFIER="com.notchhub.v1.preview"
 readonly HELPER_EXECUTABLE="NotchHubHookBridge"
 readonly SPARKLE_BINARY_RELATIVE_PATH="Contents/Frameworks/Sparkle.framework/Sparkle"
+readonly MEDIA_REMOTE_FRAMEWORK_RELATIVE_PATH="Contents/Frameworks/MediaRemoteAdapter.framework"
+readonly MEDIA_REMOTE_BINARY_RELATIVE_PATH="$MEDIA_REMOTE_FRAMEWORK_RELATIVE_PATH/Versions/A/MediaRemoteAdapter"
+readonly MEDIA_ADAPTER_SCRIPT_RELATIVE_PATH="Contents/Resources/mediaremote-adapter.pl"
+readonly MEDIA_ANIMATION_RELATIVE_PATH="Contents/Resources/Animations/astronaut-and-music.json"
+readonly THIRD_PARTY_NOTICE_RELATIVE_PATH="Contents/Resources/THIRD_PARTY_NOTICES.md"
+readonly MEDIA_ADAPTER_SCRIPT_SOURCE="$REPOSITORY_ROOT/Vendor/mediaremote-adapter/bin/mediaremote-adapter.pl"
+readonly MEDIA_ADAPTER_LICENSE_SOURCE="$REPOSITORY_ROOT/Vendor/mediaremote-adapter/LICENSE"
+readonly MEDIA_ANIMATION_SOURCE="$REPOSITORY_ROOT/Resources/Animations/astronaut-and-music.json"
+readonly LOTTIE_LICENSE_SOURCE="$ROOT/Resources/ThirdParty/Lottie-LICENSE.txt"
+readonly LOTTIE_PRIVACY_MANIFEST_SOURCE="$ROOT/Resources/ThirdParty/Lottie-PrivacyInfo.xcprivacy"
+readonly LOTTIE_PRIVACY_MANIFEST_RELATIVE_PATH="Contents/Resources/PrivacyInfo.xcprivacy"
+readonly LOTTIE_PRIVACY_MANIFEST_SHA256="10da67f217824f019288ec328ababc290ab0399c52e9be77a24d494339137da2"
 
 readonly SIGNING_IDENTITY="${NOTCHHUB_SIGNING_IDENTITY:-}"
 readonly NOTARY_PROFILE="${NOTCHHUB_NOTARY_PROFILE:-}"
@@ -197,6 +209,49 @@ validate_license_source() {
     fail "Repository LICENSE is not Apache License 2.0."
 }
 
+validate_lottie_privacy_manifest() {
+  local -r manifest_path="$1"
+  local actual_hash tracking api_type api_reason
+
+  [[ -f "$manifest_path" && ! -L "$manifest_path" ]] || \
+    fail "Lottie privacy manifest is missing or symlinked: $manifest_path"
+  plutil -lint "$manifest_path" >/dev/null || \
+    fail "Lottie privacy manifest is not a valid property list: $manifest_path"
+  actual_hash="$(shasum -a 256 "$manifest_path" | awk '{print $1}')"
+  [[ "$actual_hash" == "$LOTTIE_PRIVACY_MANIFEST_SHA256" ]] || \
+    fail "Lottie privacy manifest does not match the pinned 4.6.1 manifest."
+  tracking="$(read_plist_value "$manifest_path" NSPrivacyTracking)"
+  api_type="$(read_plist_value "$manifest_path" \
+    'NSPrivacyAccessedAPITypes:0:NSPrivacyAccessedAPIType')"
+  api_reason="$(read_plist_value "$manifest_path" \
+    'NSPrivacyAccessedAPITypes:0:NSPrivacyAccessedAPITypeReasons:0')"
+  [[ "$tracking" == "false" && \
+    "$api_type" == "NSPrivacyAccessedAPICategoryFileTimestamp" && \
+    "$api_reason" == "C617.1" ]] || \
+    fail "Lottie privacy manifest is missing its required-reason declaration."
+}
+
+validate_media_sources() {
+  local source_path
+  local -a source_paths=(
+    "$MEDIA_ADAPTER_SCRIPT_SOURCE"
+    "$MEDIA_ADAPTER_LICENSE_SOURCE"
+    "$MEDIA_ANIMATION_SOURCE"
+    "$LOTTIE_LICENSE_SOURCE"
+    "$LOTTIE_PRIVACY_MANIFEST_SOURCE"
+    "$ROOT/THIRD_PARTY_NOTICES.md"
+    "$ROOT/Resources/ThirdParty/Lottie-NOTICE.txt"
+    "$ROOT/Resources/ThirdParty/MediaRemoteAdapter-NOTICE.txt"
+    "$ROOT/Resources/ThirdParty/Astronaut-and-Music-LICENSE.txt"
+    "$ROOT/Resources/ThirdParty/Astronaut-and-Music-NOTICE.txt"
+  )
+  for source_path in "${source_paths[@]}"; do
+    [[ -f "$source_path" && ! -L "$source_path" ]] || \
+      fail "Required Direct Media source is missing or symlinked: $source_path"
+  done
+  validate_lottie_privacy_manifest "$LOTTIE_PRIVACY_MANIFEST_SOURCE"
+}
+
 read_plist_value() {
   local -r plist_path="$1"
   local -r key_path="$2"
@@ -249,8 +304,8 @@ verify_all_macho_binaries_are_universal() {
 }
 
 # Framework bundles legitimately contain versioning symlinks. Every accepted
-# link must be relative, resolve inside Sparkle.framework, and point to an
-# existing object. All links elsewhere in the app are rejected.
+# link must be relative, resolve inside its own approved Sparkle or MediaRemote
+# framework, and point to an existing object. All links elsewhere are rejected.
 validate_bundle_symlinks() {
   local -r bundle_path="$1"
   local bundle_root framework_root link target resolved symlink_manifest
@@ -262,7 +317,12 @@ validate_bundle_symlinks() {
     fail "Could not inspect app-bundle symlinks: $bundle_path"
   while IFS= read -r -d '' link; do
     case "$link" in
-      "$bundle_path"/Contents/Frameworks/Sparkle.framework/*) ;;
+      "$bundle_path"/Contents/Frameworks/Sparkle.framework/*)
+        framework_root="$bundle_root/Contents/Frameworks/Sparkle.framework"
+        ;;
+      "$bundle_path"/Contents/Frameworks/MediaRemoteAdapter.framework/*)
+        framework_root="$bundle_root/Contents/Frameworks/MediaRemoteAdapter.framework"
+        ;;
       *) fail "Refusing to package an unexpected symlink: $link" ;;
     esac
 
@@ -285,6 +345,13 @@ validate_app_structure() {
   local -r main_binary="$bundle_path/Contents/MacOS/$APP_EXECUTABLE"
   local -r helper_binary="$bundle_path/Contents/Helpers/$HELPER_EXECUTABLE"
   local -r sparkle_binary="$bundle_path/$SPARKLE_BINARY_RELATIVE_PATH"
+  local -r media_remote_framework="$bundle_path/$MEDIA_REMOTE_FRAMEWORK_RELATIVE_PATH"
+  local -r media_remote_binary="$bundle_path/$MEDIA_REMOTE_BINARY_RELATIVE_PATH"
+  local -r media_adapter_script="$bundle_path/$MEDIA_ADAPTER_SCRIPT_RELATIVE_PATH"
+  local -r media_animation="$bundle_path/$MEDIA_ANIMATION_RELATIVE_PATH"
+  local -r notices="$bundle_path/$THIRD_PARTY_NOTICE_RELATIVE_PATH"
+  local -r privacy_manifest="$bundle_path/$LOTTIE_PRIVACY_MANIFEST_RELATIVE_PATH"
+  local -r third_party="$bundle_path/Contents/Resources/ThirdParty"
   local path bundle_name bundle_identifier bundle_executable package_type
   local -a checked_paths=(
     "$bundle_path"
@@ -296,6 +363,20 @@ validate_app_structure() {
     "$helper_binary"
     "$bundle_path/Contents/Frameworks"
     "$bundle_path/Contents/Frameworks/Sparkle.framework"
+    "$media_remote_framework"
+    "$bundle_path/Contents/Resources"
+    "$bundle_path/Contents/Resources/Animations"
+    "$third_party"
+    "$media_adapter_script"
+    "$media_animation"
+    "$notices"
+    "$privacy_manifest"
+    "$third_party/Lottie-LICENSE.txt"
+    "$third_party/Lottie-NOTICE.txt"
+    "$third_party/MediaRemoteAdapter-LICENSE.txt"
+    "$third_party/MediaRemoteAdapter-NOTICE.txt"
+    "$third_party/Astronaut-and-Music-LICENSE.txt"
+    "$third_party/Astronaut-and-Music-NOTICE.txt"
   )
 
   [[ -d "$bundle_path" ]] || fail "App bundle does not exist: $bundle_path"
@@ -306,6 +387,46 @@ validate_app_structure() {
   [[ -f "$main_binary" ]] || fail "App bundle is missing its executable: $main_binary"
   [[ -f "$helper_binary" ]] || fail "App bundle is missing its hook helper: $helper_binary"
   [[ -f "$sparkle_binary" ]] || fail "App bundle is missing the Sparkle binary: $sparkle_binary"
+  [[ -f "$media_remote_binary" ]] || \
+    fail "App bundle is missing the MediaRemote adapter binary: $media_remote_binary"
+  for path in \
+    "$media_adapter_script" \
+    "$media_animation" \
+    "$notices" \
+    "$privacy_manifest" \
+    "$third_party/Lottie-LICENSE.txt" \
+    "$third_party/Lottie-NOTICE.txt" \
+    "$third_party/MediaRemoteAdapter-LICENSE.txt" \
+    "$third_party/MediaRemoteAdapter-NOTICE.txt" \
+    "$third_party/Astronaut-and-Music-LICENSE.txt" \
+    "$third_party/Astronaut-and-Music-NOTICE.txt"; do
+    [[ -f "$path" ]] || fail "App bundle is missing a Media resource: $path"
+  done
+  cmp -s "$MEDIA_ADAPTER_SCRIPT_SOURCE" "$media_adapter_script" || \
+    fail "Bundled MediaRemote adapter script differs from the vendored source."
+  cmp -s "$MEDIA_ANIMATION_SOURCE" "$media_animation" || \
+    fail "Bundled Media artwork differs from the repository source."
+  cmp -s "$ROOT/THIRD_PARTY_NOTICES.md" "$notices" || \
+    fail "Bundled third-party notices differ from the V1 source."
+  cmp -s "$LOTTIE_LICENSE_SOURCE" "$third_party/Lottie-LICENSE.txt" || \
+    fail "Bundled Lottie Apache-2.0 license differs from the pinned source license."
+  cmp -s "$LOTTIE_PRIVACY_MANIFEST_SOURCE" "$privacy_manifest" || \
+    fail "Bundled Lottie privacy manifest differs from the pinned source manifest."
+  validate_lottie_privacy_manifest "$privacy_manifest"
+  cmp -s "$ROOT/Resources/ThirdParty/Lottie-NOTICE.txt" \
+    "$third_party/Lottie-NOTICE.txt" || fail "Bundled Lottie notice is invalid."
+  cmp -s "$MEDIA_ADAPTER_LICENSE_SOURCE" \
+    "$third_party/MediaRemoteAdapter-LICENSE.txt" || \
+    fail "Bundled MediaRemote adapter license differs from the vendored license."
+  cmp -s "$ROOT/Resources/ThirdParty/MediaRemoteAdapter-NOTICE.txt" \
+    "$third_party/MediaRemoteAdapter-NOTICE.txt" || \
+    fail "Bundled MediaRemote adapter notice is invalid."
+  cmp -s "$ROOT/Resources/ThirdParty/Astronaut-and-Music-LICENSE.txt" \
+    "$third_party/Astronaut-and-Music-LICENSE.txt" || \
+    fail "Bundled Media artwork license is invalid."
+  cmp -s "$ROOT/Resources/ThirdParty/Astronaut-and-Music-NOTICE.txt" \
+    "$third_party/Astronaut-and-Music-NOTICE.txt" || \
+    fail "Bundled Media artwork notice is invalid."
 
   bundle_name="$(read_plist_value "$plist_path" CFBundleName)"
   bundle_identifier="$(read_plist_value "$plist_path" CFBundleIdentifier)"
@@ -325,11 +446,14 @@ validate_app_structure() {
 verify_expected_signer() {
   local -r bundle_path="$1"
   local -r helper_path="$bundle_path/Contents/Helpers/$HELPER_EXECUTABLE"
-  local signing_details helper_signing_details app_entitlements helper_entitlements
-  local app_signing_identifier helper_signing_identifier
+  local -r media_remote_framework="$bundle_path/$MEDIA_REMOTE_FRAMEWORK_RELATIVE_PATH"
+  local signing_details helper_signing_details media_remote_signing_details
+  local app_entitlements helper_entitlements entitlement_file
+  local app_signing_identifier helper_signing_identifier automation_group keychain_group key_count
 
   signing_details="$(codesign -dvvv "$bundle_path" 2>&1)"
   helper_signing_details="$(codesign -dvvv "$helper_path" 2>&1)"
+  media_remote_signing_details="$(codesign -dvvv "$media_remote_framework" 2>&1)"
   app_signing_identifier="$(awk -F= '/^Identifier=/ {
     print substr($0, index($0, "=") + 1)
     exit
@@ -345,10 +469,14 @@ verify_expected_signer() {
       fail "Unsigned preview mode requires an ad-hoc app signature."
     grep -F 'Signature=adhoc' <<<"$helper_signing_details" >/dev/null || \
       fail "Unsigned preview mode requires an ad-hoc hook-helper signature."
+    grep -F 'Signature=adhoc' <<<"$media_remote_signing_details" >/dev/null || \
+      fail "Unsigned preview mode requires an ad-hoc MediaRemote adapter signature."
     grep -F 'TeamIdentifier=not set' <<<"$signing_details" >/dev/null || \
       fail "Ad-hoc preview app unexpectedly carries an Apple Team ID."
     grep -F 'TeamIdentifier=not set' <<<"$helper_signing_details" >/dev/null || \
       fail "Ad-hoc preview hook helper unexpectedly carries an Apple Team ID."
+    grep -F 'TeamIdentifier=not set' <<<"$media_remote_signing_details" >/dev/null || \
+      fail "Ad-hoc preview MediaRemote adapter unexpectedly carries an Apple Team ID."
     app_entitlements="$(codesign -d --entitlements :- "$bundle_path" 2>/dev/null)" || \
       fail "Could not inspect ad-hoc app entitlements."
     helper_entitlements="$(codesign -d --entitlements :- "$helper_path" 2>/dev/null)" || \
@@ -357,6 +485,15 @@ verify_expected_signer() {
       grep -F 'keychain-access-groups' <<<"$helper_entitlements" >/dev/null; then
       fail "Ad-hoc preview must not carry shared keychain-group entitlements."
     fi
+    entitlement_file="$(mktemp "$WORK_DIR/app-entitlements.XXXXXX")"
+    printf '%s\n' "$app_entitlements" >"$entitlement_file"
+    automation_group="$(read_plist_value "$entitlement_file" \
+      'com.apple.security.automation.apple-events' 2>/dev/null || true)"
+    keychain_group="$(read_plist_value "$entitlement_file" \
+      'keychain-access-groups:0' 2>/dev/null || true)"
+    key_count="$(grep -c '<key>' "$entitlement_file" || true)"
+    [[ "$automation_group" == "true" && -z "$keychain_group" && "$key_count" == "1" ]] || \
+      fail "Ad-hoc preview app must contain only the Apple Events automation entitlement."
     return 0
   fi
 
@@ -366,20 +503,27 @@ verify_expected_signer() {
     fail "App was not signed by the requested Developer ID identity."
   grep -F "Authority=$SIGNING_IDENTITY" <<<"$helper_signing_details" >/dev/null || \
     fail "Hook helper was not signed by the requested Developer ID identity."
+  grep -F "Authority=$SIGNING_IDENTITY" <<<"$media_remote_signing_details" >/dev/null || \
+    fail "MediaRemote adapter was not signed by the requested Developer ID identity."
   grep -F "TeamIdentifier=$EXPECTED_TEAM_IDENTIFIER" <<<"$signing_details" >/dev/null || \
     fail "App signature has an unexpected Apple Team ID."
   grep -F "TeamIdentifier=$EXPECTED_TEAM_IDENTIFIER" <<<"$helper_signing_details" >/dev/null || \
     fail "Hook-helper signature has an unexpected Apple Team ID."
+  grep -F "TeamIdentifier=$EXPECTED_TEAM_IDENTIFIER" <<<"$media_remote_signing_details" >/dev/null || \
+    fail "MediaRemote adapter signature has an unexpected Apple Team ID."
   grep -E '^CodeDirectory .*flags=.*\(runtime\)' <<<"$signing_details" >/dev/null || \
     fail "Developer ID app signature does not enable the hardened runtime."
   grep -E '^CodeDirectory .*flags=.*\(runtime\)' <<<"$helper_signing_details" >/dev/null || \
     fail "Developer ID hook-helper signature does not enable the hardened runtime."
+  grep -E '^CodeDirectory .*flags=.*\(runtime\)' <<<"$media_remote_signing_details" >/dev/null || \
+    fail "Developer ID MediaRemote adapter signature does not enable the hardened runtime."
 }
 
 verify_keychain_entitlements() {
   local -r bundle_path="$1"
   local -r helper_path="$bundle_path/Contents/Helpers/$HELPER_EXECUTABLE"
   local entitlement_dir app_entitlements helper_entitlements expected_group app_group helper_group
+  local app_automation helper_automation
 
   [[ -n "$SIGNING_IDENTITY" ]] || return 0
   expected_group="$EXPECTED_TEAM_IDENTIFIER.com.notchhub.v1.bridge"
@@ -393,10 +537,18 @@ verify_keychain_entitlements() {
 
   app_group="$(read_plist_value "$app_entitlements" 'keychain-access-groups:0' 2>/dev/null || true)"
   helper_group="$(read_plist_value "$helper_entitlements" 'keychain-access-groups:0' 2>/dev/null || true)"
+  app_automation="$(read_plist_value "$app_entitlements" \
+    'com.apple.security.automation.apple-events' 2>/dev/null || true)"
+  helper_automation="$(read_plist_value "$helper_entitlements" \
+    'com.apple.security.automation.apple-events' 2>/dev/null || true)"
   [[ "$app_group" == "$expected_group" ]] || \
     fail "App keychain group does not match the Developer ID Team ID."
   [[ "$helper_group" == "$expected_group" ]] || \
     fail "Hook-helper keychain group does not match the Developer ID Team ID."
+  [[ "$app_automation" == "true" ]] || \
+    fail "Developer ID app is missing the Apple Events automation entitlement."
+  [[ -z "$helper_automation" ]] || \
+    fail "Hook helper must not inherit the app's Apple Events automation entitlement."
 }
 
 verify_app_bundle() {
@@ -410,6 +562,8 @@ verify_app_bundle() {
   codesign --verify --strict --verbose=2 "$helper_binary"
   codesign --verify --deep --strict --verbose=2 \
     "$bundle_path/Contents/Frameworks/Sparkle.framework"
+  codesign --verify --deep --strict --verbose=2 \
+    "$bundle_path/$MEDIA_REMOTE_FRAMEWORK_RELATIVE_PATH"
   verify_expected_signer "$bundle_path"
   verify_keychain_entitlements "$bundle_path"
 
@@ -418,6 +572,9 @@ verify_app_bundle() {
   main_linkage="$(otool -L "$main_binary")"
   grep -F '@rpath/Sparkle.framework/' <<<"$main_linkage" >/dev/null || \
     fail "V1 executable does not link the packaged Sparkle framework."
+  if grep -E 'MediaRemote(Adapter)?\.framework' <<<"$main_linkage" >/dev/null; then
+    fail "V1 executable must invoke, never link, the MediaRemote adapter."
+  fi
   main_load_commands="$(otool -l "$main_binary")"
   grep -F '@executable_path/../Frameworks' <<<"$main_load_commands" >/dev/null || \
     fail "V1 executable is missing its packaged-framework runtime path."
@@ -628,6 +785,7 @@ main() {
   require_command mktemp
   require_command nm
   require_command otool
+  require_command plutil
   require_command readlink
   require_command realpath
   require_command shasum
@@ -636,6 +794,7 @@ main() {
   [[ -x "$PLIST_BUDDY" ]] || fail "Required tool is unavailable: $PLIST_BUDDY"
   [[ -x "$BUILD_SCRIPT" ]] || fail "App build script is not executable: $BUILD_SCRIPT"
   validate_license_source
+  validate_media_sources
 
   WORK_DIR="$(mktemp -d /tmp/notchhub-v1-dmg.XXXXXX)"
   build_or_select_app

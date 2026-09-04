@@ -35,9 +35,10 @@ Create the universal Direct preview DMG and its SHA-256 sidecar with:
 The default artifacts are written to `dist/` as
 `NotchHub-V1-Preview-<version>-universal.dmg` and the matching `.dmg.sha256`
 file. The builder checks the app signature, arm64 and x86_64 slices, Sparkle
-linkage, hook-helper isolation, the mounted payload, the `/Applications`
-shortcut, and the repository's Apache-2.0 `LICENSE` before publishing either
-file.
+linkage, hook-helper isolation, the bundled MediaRemote adapter, Media artwork
+and notices, the mounted payload, the `/Applications` shortcut, and the
+repository's Apache-2.0 `LICENSE` before publishing either file. The adapter is
+packaged as separately signed code and is never linked into the app executable.
 
 Without a Developer ID identity, the builder requires a clean ad-hoc app and
 helper signature with no Team ID or shared keychain entitlement. This local
@@ -80,13 +81,19 @@ model output, complete commands, or transcript contents.
 
 ## Preview Status
 
-The ad-hoc `0.8.0` preview includes Codex usage plus the Dashboard, opt-in
-Clipboard, and Focus features in the shallow overlay pattern from NotchHub
-0.5-0.7. Its terminal-session, approval, and Claude status-line bridge is
-unavailable because this build has no Developer ID identity or provisioned
-shared Keychain group. Media, guided onboarding, and a Sparkle update feed are
-not included in this preview. CodexBar is not integrated or bundled; no
-CodexBar source, binary, or runtime is included.
+The ad-hoc `0.8.1` preview includes Codex usage plus the Dashboard, opt-in
+Clipboard, Focus, and the compact Media bar from NotchHub 0.6.0 in the shallow
+overlay pattern from NotchHub 0.5-0.7. Its terminal-session, approval, and
+Claude status-line bridge is unavailable because this build has no Developer
+ID identity or provisioned shared Keychain group. Guided onboarding and a
+Sparkle update feed are not included in this preview. CodexBar is not integrated
+or bundled; no CodexBar source, binary, or runtime is included.
+
+The Direct edition requests Apple Events automation only after the user opens
+Media, to read and control Music and Spotify. Ad-hoc builds retain that single
+entitlement and omit the shared Keychain group; Developer ID builds retain both
+Apple Events automation and the Team-scoped bridge Keychain group. Store Lite
+ships without the Media adapter, animation, Lottie code, or their notices.
 
 Quit the stable NotchHub app while testing this preview. Both versions own the
 same top-edge location and will overlap if they run together.

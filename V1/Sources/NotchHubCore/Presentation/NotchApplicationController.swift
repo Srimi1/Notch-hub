@@ -1,4 +1,5 @@
 import AppKit
+import NotchHubMedia
 import NotchHubSafeFeatures
 import SwiftUI
 
@@ -84,8 +85,8 @@ public final class NotchHubApplicationController: NSObject, NSApplicationDelegat
     private var isPinned = false
     private var frameGeneration = 0
 
-    public init(edition: ApplicationEdition) {
-        self.model = AppPresentationModel(edition: edition)
+    public init(edition: ApplicationEdition, media: MediaPresentationModel? = nil) {
+        self.model = AppPresentationModel(edition: edition, media: media)
         super.init()
     }
 
@@ -293,6 +294,7 @@ public final class NotchHubApplicationController: NSObject, NSApplicationDelegat
         model.hasAttention
             || model.highestUtilization != nil
             || model.activeSessionCount > 0
+            || model.media?.hasActivity == true
             || model.safeFeatures.focus.state != .idle
     }
 

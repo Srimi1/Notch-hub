@@ -5,7 +5,7 @@ import Testing
 @MainActor
 @Suite("Legacy preference migration")
 struct MigrationTests {
-    @Test("Only supported preferences migrate and Agents remains first")
+    @Test("Supported preferences migrate, including Media")
     func supportedValues() throws {
         try withDefaultsPair { legacy, destination in
             legacy.set(
@@ -20,8 +20,8 @@ struct MigrationTests {
             let result = LegacyPreferencesMigrator.migrate(from: legacy, to: destination)
             let state = try #require(migratedState(result))
 
-            #expect(state.visibleCapabilities == [.agents, .clipboard, .focus])
-            #expect(state.lastActiveCapability == .agents)
+            #expect(state.visibleCapabilities == [.agents, .media, .clipboard, .focus])
+            #expect(state.lastActiveCapability == .media)
             #expect(!state.clipboardHotKeyEnabled)
             #expect(state.clipboardHotKeyID == "command.shift.v")
             #expect(destination.object(forKey: "credit.openai.apiKey") == nil)
@@ -33,7 +33,7 @@ struct MigrationTests {
         try withDefaultsPair { legacy, destination in
             let result = LegacyPreferencesMigrator.migrate(from: legacy, to: destination)
             let state = try #require(migratedState(result))
-            #expect(state.visibleCapabilities == [.agents, .dashboard, .clipboard, .focus])
+            #expect(state.visibleCapabilities == [.agents, .dashboard, .media, .clipboard, .focus])
             #expect(state.lastActiveCapability == .agents)
         }
     }

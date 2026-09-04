@@ -1,0 +1,10 @@
+"Astronaut and music" animation
+
+Source: https://lottiefiles.com/free-animation/astronaut-and-music-LCnjoHn7f0
+Creator: Artemiy (https://lottiefiles.com/artemiy)
+License: Lottie Simple License (FL 9.13.21)
+
+The animation is bundled verbatim as Animations/astronaut-and-music.json. It
+remains subject to the Lottie Simple License reproduced beside this notice as
+Astronaut-and-Music-LICENSE.txt and is not covered by NotchHub's Apache-2.0
+license.

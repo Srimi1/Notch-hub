@@ -1,3 +1,4 @@
+import NotchHubMedia
 import NotchHubSafeFeatures
 import SwiftUI
 
@@ -89,6 +90,8 @@ private struct CompactAgentWings: View {
                 tint: .orange,
                 alignment: .trailing
             )
+        } else if let media = model.media, media.hasActivity {
+            CompactMediaWingView(model: media)
         } else if model.safeFeatures.focus.state != .idle {
             CompactFocusWing(model: model.safeFeatures.focus)
         } else if model.activeSessionCount > 0 {
@@ -279,7 +282,11 @@ private struct DirectNotchRibbon: View {
         case .focus:
             safeFeature(.focus)
         case .media:
-            CompactUnavailableCapability()
+            if let media = model.media {
+                CompactMediaBarView(model: media)
+            } else {
+                CompactUnavailableCapability()
+            }
         }
     }
 

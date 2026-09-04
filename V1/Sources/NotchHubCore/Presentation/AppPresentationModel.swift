@@ -1,4 +1,5 @@
 import Foundation
+import NotchHubMedia
 import NotchHubSafeFeatures
 import Observation
 
@@ -16,6 +17,7 @@ public final class AppPresentationModel {
     ) async throws -> SessionBridgeConnectionPresentation
 
     public let edition: ApplicationEdition
+    public let media: MediaPresentationModel?
     public let safeFeatures: SafeFeatureWorkspace
     public private(set) var tier: NotchPresentationTier
     public private(set) var selectedCapability: AppCapability
@@ -33,9 +35,11 @@ public final class AppPresentationModel {
     public init(
         edition: ApplicationEdition,
         approvalHandler: ApprovalHandler? = nil,
+        media: MediaPresentationModel? = nil,
         safeFeatures: SafeFeatureWorkspace? = nil
     ) {
         self.edition = edition
+        self.media = edition == .direct ? media ?? MediaPresentationModel() : nil
         self.safeFeatures = safeFeatures ?? SafeFeatureWorkspace()
         self.tier = .compact
         self.selectedCapability = edition.defaultCapability
@@ -53,7 +57,9 @@ public final class AppPresentationModel {
     }
 
     public var hasAttention: Bool {
-        pendingApproval != nil || providers.contains { $0.connection.requiresAttention }
+        pendingApproval != nil
+            || providers.contains { $0.connection.requiresAttention }
+            || media?.lastControlIssue != nil
     }
 
     public var activeSessionCount: Int {
@@ -77,6 +83,10 @@ public final class AppPresentationModel {
 
     public func setLayoutChangeHandler(_ handler: (@MainActor () -> Void)?) {
         layoutChangeHandler = handler
+        media?.setActivityChangeHandler { [weak self] in
+            guard self?.tier == .compact else { return }
+            self?.layoutChangeHandler?()
+        }
     }
 
     public func setApprovalHandler(_ handler: ApprovalHandler?) {
@@ -107,6 +117,7 @@ public final class AppPresentationModel {
     public func select(_ capability: AppCapability) {
         guard edition.capabilities.contains(capability) else { return }
         selectedCapability = capability
+        if capability == .media { media?.requestInteractiveAccess() }
         showDetail()
     }
 

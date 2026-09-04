@@ -10,6 +10,7 @@ let package = Package(
     products: [
         .library(name: "NotchHubBridge", targets: ["NotchHubBridge"]),
         .library(name: "NotchHubSafeFeatures", targets: ["NotchHubSafeFeatures"]),
+        .library(name: "NotchHubMedia", targets: ["NotchHubMedia"]),
         .library(name: "NotchHubCore", targets: ["NotchHubCore"]),
         .executable(name: "NotchHubV1", targets: ["NotchHubV1"]),
         .executable(name: "NotchHubLite", targets: ["NotchHubLite"]),
@@ -28,6 +29,10 @@ let package = Package(
             url: "https://github.com/sparkle-project/Sparkle",
             from: "2.9.6"
         ),
+        .package(
+            url: "https://github.com/airbnb/lottie-ios",
+            exact: "4.6.1"
+        ),
     ],
     targets: [
         .target(
@@ -39,8 +44,16 @@ let package = Package(
             path: "Sources/NotchHubSafeFeatures"
         ),
         .target(
+            name: "NotchHubMedia",
+            dependencies: [
+                "NotchHubSafeFeatures",
+                .product(name: "Lottie", package: "lottie-ios"),
+            ],
+            path: "Sources/NotchHubMedia"
+        ),
+        .target(
             name: "NotchHubCore",
-            dependencies: ["NotchHubBridge", "NotchHubSafeFeatures"],
+            dependencies: ["NotchHubBridge", "NotchHubMedia", "NotchHubSafeFeatures"],
             path: "Sources/NotchHubCore"
         ),
         .executableTarget(
@@ -48,6 +61,7 @@ let package = Package(
             dependencies: [
                 "NotchHubBridge",
                 "NotchHubCore",
+                "NotchHubMedia",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/NotchHubV1"
@@ -71,6 +85,11 @@ let package = Package(
             name: "NotchHubSafeFeaturesTests",
             dependencies: ["NotchHubSafeFeatures"],
             path: "Tests/NotchHubSafeFeaturesTests"
+        ),
+        .testTarget(
+            name: "NotchHubMediaTests",
+            dependencies: ["NotchHubMedia", "NotchHubSafeFeatures"],
+            path: "Tests/NotchHubMediaTests"
         ),
     ],
     swiftLanguageModes: [.v6]

@@ -16,7 +16,8 @@ struct PresentationModelTests {
         #expect(model.providers.allSatisfy { $0.quotaWindows.isEmpty })
         #expect(model.highestUtilization == nil)
         #expect(!model.hasAttention)
-        #expect(model.edition.capabilities == [.agents, .dashboard, .clipboard, .focus])
+        #expect(model.media != nil)
+        #expect(model.edition.capabilities == [.agents, .dashboard, .media, .clipboard, .focus])
         #expect(model.panelMetrics == .init(width: 190, height: 32))
 
         model.showDetail()
@@ -26,7 +27,8 @@ struct PresentationModelTests {
         #expect(model.panelMetrics == .init(width: 860, height: 136))
 
         model.select(.media)
-        #expect(model.selectedCapability == .agents)
+        #expect(model.selectedCapability == .media)
+        #expect(model.tier == .detail)
     }
 
     @Test("Direct edition retains the injected sandbox-safe workspace")
@@ -45,8 +47,12 @@ struct PresentationModelTests {
 
         #expect(model.selectedCapability == .dashboard)
         #expect(model.edition.capabilities == [.dashboard, .clipboard, .focus])
+        #expect(!model.edition.capabilities.contains(.media))
+        #expect(model.media == nil)
         #expect(model.providers.isEmpty)
         model.select(.agents)
+        #expect(model.selectedCapability == .dashboard)
+        model.select(.media)
         #expect(model.selectedCapability == .dashboard)
     }
 

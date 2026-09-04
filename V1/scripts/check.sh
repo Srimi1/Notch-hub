@@ -3,6 +3,9 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPOSITORY_ROOT="$(cd "$ROOT/.." && pwd)"
+LOTTIE_PRIVACY_MANIFEST_SOURCE="$ROOT/Resources/ThirdParty/Lottie-PrivacyInfo.xcprivacy"
+LOTTIE_PRIVACY_MANIFEST_SHA256="10da67f217824f019288ec328ababc290ab0399c52e9be77a24d494339137da2"
 cd "$ROOT"
 
 FAIL=0
@@ -57,6 +60,132 @@ release_tooling() {
   "$ROOT/scripts/build-dmg.sh" --help >/dev/null
 }
 
+validate_lottie_privacy_manifest() {
+  local manifest_path="$1"
+  local actual_hash tracking api_type api_reason
+
+  [[ -f "$manifest_path" && ! -L "$manifest_path" ]] || {
+    echo "Lottie privacy manifest is missing or symlinked: $manifest_path" >&2
+    return 1
+  }
+  /usr/bin/plutil -lint "$manifest_path" >/dev/null || return 1
+  actual_hash="$(/usr/bin/shasum -a 256 "$manifest_path" | /usr/bin/awk '{print $1}')" || return 1
+  [[ "$actual_hash" == "$LOTTIE_PRIVACY_MANIFEST_SHA256" ]] || {
+    echo "Lottie privacy manifest does not match the pinned 4.6.1 manifest" >&2
+    return 1
+  }
+  tracking="$(/usr/libexec/PlistBuddy -c \
+    'Print :NSPrivacyTracking' "$manifest_path" 2>/dev/null)" || return 1
+  api_type="$(/usr/libexec/PlistBuddy -c \
+    'Print :NSPrivacyAccessedAPITypes:0:NSPrivacyAccessedAPIType' \
+    "$manifest_path" 2>/dev/null)" || return 1
+  api_reason="$(/usr/libexec/PlistBuddy -c \
+    'Print :NSPrivacyAccessedAPITypes:0:NSPrivacyAccessedAPITypeReasons:0' \
+    "$manifest_path" 2>/dev/null)" || return 1
+  [[ "$tracking" == "false" && \
+    "$api_type" == "NSPrivacyAccessedAPICategoryFileTimestamp" && \
+    "$api_reason" == "C617.1" ]] || {
+    echo "Lottie privacy manifest is missing its required-reason declaration" >&2
+    return 1
+  }
+}
+
+verify_media_bundle_contents() {
+  local bundle="$1"
+  local edition="$2"
+  local framework="$bundle/Contents/Frameworks/MediaRemoteAdapter.framework"
+  local animation="$bundle/Contents/Resources/Animations/astronaut-and-music.json"
+  local adapter_script="$bundle/Contents/Resources/mediaremote-adapter.pl"
+  local notices="$bundle/Contents/Resources/THIRD_PARTY_NOTICES.md"
+  local privacy_manifest="$bundle/Contents/Resources/PrivacyInfo.xcprivacy"
+  local third_party="$bundle/Contents/Resources/ThirdParty"
+  local path
+  local -a media_notice_paths=(
+    "$third_party/Lottie-LICENSE.txt"
+    "$third_party/Lottie-NOTICE.txt"
+    "$third_party/MediaRemoteAdapter-LICENSE.txt"
+    "$third_party/MediaRemoteAdapter-NOTICE.txt"
+    "$third_party/Astronaut-and-Music-LICENSE.txt"
+    "$third_party/Astronaut-and-Music-NOTICE.txt"
+  )
+
+  if [[ "$edition" == "direct" ]]; then
+    [[ -d "$framework" && ! -L "$framework" ]] || {
+      echo "Direct bundle is missing the MediaRemote adapter framework" >&2
+      return 1
+    }
+    for path in "$animation" "$adapter_script" "$notices" "$privacy_manifest" \
+      "${media_notice_paths[@]}"; do
+      [[ -f "$path" && ! -L "$path" ]] || {
+        echo "Direct bundle is missing a regular Media resource: $path" >&2
+        return 1
+      }
+    done
+    codesign --verify --deep --strict --verbose=2 "$framework" || return 1
+    cmp -s "$REPOSITORY_ROOT/Resources/Animations/astronaut-and-music.json" \
+      "$animation" || return 1
+    cmp -s "$REPOSITORY_ROOT/Vendor/mediaremote-adapter/bin/mediaremote-adapter.pl" \
+      "$adapter_script" || return 1
+    cmp -s "$ROOT/THIRD_PARTY_NOTICES.md" "$notices" || return 1
+    cmp -s "$ROOT/Resources/ThirdParty/Lottie-LICENSE.txt" \
+      "$third_party/Lottie-LICENSE.txt" || return 1
+    validate_lottie_privacy_manifest "$LOTTIE_PRIVACY_MANIFEST_SOURCE" || return 1
+    cmp -s "$LOTTIE_PRIVACY_MANIFEST_SOURCE" "$privacy_manifest" || return 1
+    validate_lottie_privacy_manifest "$privacy_manifest" || return 1
+    cmp -s "$ROOT/Resources/ThirdParty/Lottie-NOTICE.txt" \
+      "$third_party/Lottie-NOTICE.txt" || return 1
+    cmp -s "$REPOSITORY_ROOT/Vendor/mediaremote-adapter/LICENSE" \
+      "$third_party/MediaRemoteAdapter-LICENSE.txt" || return 1
+    cmp -s "$ROOT/Resources/ThirdParty/MediaRemoteAdapter-NOTICE.txt" \
+      "$third_party/MediaRemoteAdapter-NOTICE.txt" || return 1
+    cmp -s "$ROOT/Resources/ThirdParty/Astronaut-and-Music-LICENSE.txt" \
+      "$third_party/Astronaut-and-Music-LICENSE.txt" || return 1
+    cmp -s "$ROOT/Resources/ThirdParty/Astronaut-and-Music-NOTICE.txt" \
+      "$third_party/Astronaut-and-Music-NOTICE.txt" || return 1
+    return 0
+  fi
+
+  for path in "$framework" "$animation" "$adapter_script" "$notices" "$privacy_manifest" \
+    "$third_party"; do
+    if [[ -e "$path" || -L "$path" ]]; then
+      echo "Store Lite must not bundle Direct Media material: $path" >&2
+      return 1
+    fi
+  done
+}
+
+verify_direct_entitlements() {
+  local bundle="$1"
+  local entitlement_file team_identifier automation_group keychain_group key_count
+  entitlement_file="$(mktemp /tmp/notchhub-direct-entitlements.XXXXXX)"
+  if ! codesign -d --entitlements :- "$bundle" >"$entitlement_file" 2>/dev/null; then
+    rm -f -- "$entitlement_file"
+    return 1
+  fi
+  team_identifier="$(codesign -dvvv "$bundle" 2>&1 | awk -F= \
+    '/^TeamIdentifier=/ { print $2; exit }')"
+  automation_group="$(/usr/libexec/PlistBuddy -c \
+    'Print :com.apple.security.automation.apple-events' "$entitlement_file" 2>/dev/null || true)"
+  keychain_group="$(/usr/libexec/PlistBuddy -c \
+    'Print :keychain-access-groups:0' "$entitlement_file" 2>/dev/null || true)"
+  key_count="$(grep -c '<key>' "$entitlement_file" || true)"
+  rm -f -- "$entitlement_file"
+
+  if [[ "$automation_group" != "true" ]]; then
+    echo "Direct bundle must retain Apple Events automation permission" >&2
+    return 1
+  fi
+  if [[ "$team_identifier" == "not set" ]]; then
+    if [[ -n "$keychain_group" || "$key_count" != "1" ]]; then
+      echo "Ad-hoc Direct bundle must contain only the automation entitlement" >&2
+      return 1
+    fi
+  elif [[ -z "$keychain_group" ]]; then
+    echo "Developer ID Direct bundle must retain its bridge Keychain group" >&2
+    return 1
+  fi
+}
+
 verify_bundles() {
   local found=0
   local found_direct=0
@@ -80,6 +209,9 @@ verify_bundles() {
         fi
       else
         found_direct=1
+        if ! verify_direct_entitlements "$bundle"; then
+          failed=1
+        fi
       fi
     fi
   done
@@ -102,16 +234,21 @@ verify_bundles() {
 
 verify_bundle_linkage() {
   local bundle="$1"
-  local executable
+  local executable linkage
   executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$bundle/Contents/Info.plist")" || return 1
   local binary="$bundle/Contents/MacOS/$executable"
   [[ -f "$binary" ]] || return 1
+  linkage="$(otool -L "$binary")" || return 1
+  if grep -E 'MediaRemote(Adapter)?\.framework' <<<"$linkage" >/dev/null; then
+    echo "app executables must invoke, never link, the MediaRemote adapter" >&2
+    return 1
+  fi
   if [[ "$executable" == "NotchHubV1" ]]; then
     local helper="$bundle/Contents/Helpers/NotchHubHookBridge"
     local helper_linkage helper_symbols
     [[ -d "$bundle/Contents/Frameworks/Sparkle.framework" ]] || return 1
     [[ -f "$helper" ]] || return 1
-    otool -L "$binary" | grep -F '@rpath/Sparkle.framework/' >/dev/null || return 1
+    grep -F '@rpath/Sparkle.framework/' <<<"$linkage" >/dev/null || return 1
     otool -l "$binary" | grep -F '@executable_path/../Frameworks' >/dev/null || return 1
     helper_linkage="$(otool -L "$helper")" || return 1
     if grep -E '/(AppKit|SwiftUI)\.framework/' <<<"$helper_linkage" >/dev/null; then
@@ -123,13 +260,13 @@ verify_bundle_linkage() {
       echo "bridge helper must not contain application or Store-safe feature code" >&2
       return 1
     fi
+    verify_media_bundle_contents "$bundle" direct || return 1
   else
-    local lite_linkage
-    lite_linkage="$(otool -L "$binary")" || return 1
-    if grep -F 'Sparkle.framework' <<<"$lite_linkage" >/dev/null; then
+    if grep -F 'Sparkle.framework' <<<"$linkage" >/dev/null; then
       echo "Store Lite must not link Sparkle" >&2
       return 1
     fi
+    verify_media_bundle_contents "$bundle" lite || return 1
   fi
 }
 
@@ -175,6 +312,9 @@ fresh_bundle_packaging() {
   if [[ -d "$lite_bundle" ]]; then
     verify_lite_entitlements "$lite_bundle" || failed=1
   fi
+  if [[ -d "$direct_bundle" ]]; then
+    verify_direct_entitlements "$direct_bundle" || failed=1
+  fi
   rm -rf -- "$output_dir"
   return "$failed"
 }
@@ -184,6 +324,7 @@ verify_bridge_keychain_entitlements() {
   local helper="$bundle/Contents/Helpers/NotchHubHookBridge"
   local entitlement_dir app_entitlements helper_entitlements app_group helper_group
   local app_team helper_team app_identifier helper_identifier expected_app_identifier
+  local app_automation helper_automation
   entitlement_dir="$(mktemp -d /tmp/notchhub-entitlements.XXXXXX)"
   app_entitlements="$entitlement_dir/app.plist"
   helper_entitlements="$entitlement_dir/helper.plist"
@@ -194,6 +335,10 @@ verify_bridge_keychain_entitlements() {
   fi
   app_group="$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' "$app_entitlements" 2>/dev/null || true)"
   helper_group="$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups:0' "$helper_entitlements" 2>/dev/null || true)"
+  app_automation="$(/usr/libexec/PlistBuddy -c \
+    'Print :com.apple.security.automation.apple-events' "$app_entitlements" 2>/dev/null || true)"
+  helper_automation="$(/usr/libexec/PlistBuddy -c \
+    'Print :com.apple.security.automation.apple-events' "$helper_entitlements" 2>/dev/null || true)"
   app_team="$(codesign -dvvv "$bundle" 2>&1 | awk -F= '/^TeamIdentifier=/ { print $2 }')"
   helper_team="$(codesign -dvvv "$helper" 2>&1 | awk -F= '/^TeamIdentifier=/ { print $2 }')"
   app_identifier="$(codesign -dvvv "$bundle" 2>&1 | awk -F= '/^Identifier=/ { print $2 }')"
@@ -205,7 +350,8 @@ verify_bridge_keychain_entitlements() {
     "$app_identifier" == "$expected_app_identifier" &&
     "$helper_identifier" == "com.notchhub.v1.bridge.helper" &&
     "$app_group" == "$app_team.com.notchhub.v1.bridge" &&
-    "$helper_group" == "$app_group" ]]
+    "$helper_group" == "$app_group" &&
+    "$app_automation" == "true" && -z "$helper_automation" ]]
 }
 
 run_gate "Debug build" swift build
@@ -224,6 +370,8 @@ run_gate "Available bundle signatures" verify_bundles
 if [[ "${NOTCHHUB_TSAN:-0}" == "1" ]]; then
   run_gate "Thread sanitizer" swift test --sanitize=thread \
     --filter 'Bridge|Provider|Runtime|Integration'
+  run_gate "Media process thread sanitizer" swift test --sanitize=thread \
+    --filter 'AdapterProcessLauncherTests'
 fi
 
 printf '\n'

@@ -1,0 +1,11 @@
+Lottie for iOS
+
+Source: https://github.com/airbnb/lottie-ios (4.6.1)
+Copyright 2018 Airbnb, Inc. and contributors
+License: Apache License, Version 2.0
+
+NotchHub V1 links Lottie statically in the Direct edition to render the
+Bodymovin media artwork. A complete copy of the Apache-2.0 license is bundled
+beside this notice as Lottie-LICENSE.txt. Lottie's pinned privacy manifest is
+bundled at Contents/Resources/PrivacyInfo.xcprivacy because its code is part of
+the Direct app executable.
