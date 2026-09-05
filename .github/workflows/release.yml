@@ -73,7 +73,12 @@ jobs:
           ./scripts/build-dmg.sh release
           DMG_PATH="$(ls dist/NotchHub-*.dmg | head -n1)"
           echo "dmg_path=$DMG_PATH" >> "$GITHUB_OUTPUT"
-          shasum -a 256 "$DMG_PATH" | tee "$DMG_PATH.sha256"
+          # Name the file, not the path it was built at. `shasum -c` resolves the
+          # name in the checksum line relative to the working directory, so a
+          # `dist/` prefix here sends whoever downloads the pair looking for a
+          # directory they do not have, and the check fails on a good file.
+          ( cd "$(dirname "$DMG_PATH")" && shasum -a 256 "$(basename "$DMG_PATH")" ) \
+            | tee "$DMG_PATH.sha256"
 
       - name: Publish GitHub release
         env:
