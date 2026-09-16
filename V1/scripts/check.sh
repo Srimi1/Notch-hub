@@ -51,6 +51,10 @@ dependency_audit() {
     show-dependencies --format json >/dev/null
 }
 
+network_dependency_policy() {
+  swift package describe --type json | python3 "$ROOT/scripts/verify-network-dependencies.py"
+}
+
 release_tooling() {
   [[ -x "$ROOT/scripts/build-dmg.sh" ]] || {
     echo "V1 DMG builder is missing or not executable" >&2
@@ -90,7 +94,7 @@ validate_lottie_privacy_manifest() {
   }
 }
 
-verify_media_bundle_contents() {
+verify_direct_bundle_resources() {
   local bundle="$1"
   local edition="$2"
   local framework="$bundle/Contents/Frameworks/MediaRemoteAdapter.framework"
@@ -100,13 +104,15 @@ verify_media_bundle_contents() {
   local privacy_manifest="$bundle/Contents/Resources/PrivacyInfo.xcprivacy"
   local third_party="$bundle/Contents/Resources/ThirdParty"
   local path
-  local -a media_notice_paths=(
+  local -a direct_notice_paths=(
     "$third_party/Lottie-LICENSE.txt"
     "$third_party/Lottie-NOTICE.txt"
     "$third_party/MediaRemoteAdapter-LICENSE.txt"
     "$third_party/MediaRemoteAdapter-NOTICE.txt"
     "$third_party/Astronaut-and-Music-LICENSE.txt"
     "$third_party/Astronaut-and-Music-NOTICE.txt"
+    "$third_party/InternetSpeedReader-LICENSE.txt"
+    "$third_party/InternetSpeedReader-NOTICE.txt"
   )
 
   if [[ "$edition" == "direct" ]]; then
@@ -115,9 +121,9 @@ verify_media_bundle_contents() {
       return 1
     }
     for path in "$animation" "$adapter_script" "$notices" "$privacy_manifest" \
-      "${media_notice_paths[@]}"; do
+      "${direct_notice_paths[@]}"; do
       [[ -f "$path" && ! -L "$path" ]] || {
-        echo "Direct bundle is missing a regular Media resource: $path" >&2
+        echo "Direct bundle is missing a regular resource: $path" >&2
         return 1
       }
     done
@@ -127,6 +133,10 @@ verify_media_bundle_contents() {
     cmp -s "$REPOSITORY_ROOT/Vendor/mediaremote-adapter/bin/mediaremote-adapter.pl" \
       "$adapter_script" || return 1
     cmp -s "$ROOT/THIRD_PARTY_NOTICES.md" "$notices" || return 1
+    cmp -s "$REPOSITORY_ROOT/Shared/NotchHubNetwork/LICENSE" \
+      "$third_party/InternetSpeedReader-LICENSE.txt" || return 1
+    cmp -s "$REPOSITORY_ROOT/Shared/NotchHubNetwork/NOTICE.md" \
+      "$third_party/InternetSpeedReader-NOTICE.txt" || return 1
     cmp -s "$ROOT/Resources/ThirdParty/Lottie-LICENSE.txt" \
       "$third_party/Lottie-LICENSE.txt" || return 1
     validate_lottie_privacy_manifest "$LOTTIE_PRIVACY_MANIFEST_SOURCE" || return 1
@@ -148,7 +158,7 @@ verify_media_bundle_contents() {
   for path in "$framework" "$animation" "$adapter_script" "$notices" "$privacy_manifest" \
     "$third_party"; do
     if [[ -e "$path" || -L "$path" ]]; then
-      echo "Store Lite must not bundle Direct Media material: $path" >&2
+      echo "Store Lite must not bundle Direct-only resources: $path" >&2
       return 1
     fi
   done
@@ -260,13 +270,13 @@ verify_bundle_linkage() {
       echo "bridge helper must not contain application or Store-safe feature code" >&2
       return 1
     fi
-    verify_media_bundle_contents "$bundle" direct || return 1
+    verify_direct_bundle_resources "$bundle" direct || return 1
   else
     if grep -F 'Sparkle.framework' <<<"$linkage" >/dev/null; then
       echo "Store Lite must not link Sparkle" >&2
       return 1
     fi
-    verify_media_bundle_contents "$bundle" lite || return 1
+    verify_direct_bundle_resources "$bundle" lite || return 1
   fi
 }
 
@@ -354,6 +364,7 @@ verify_bridge_keychain_entitlements() {
     "$app_automation" == "true" && -z "$helper_automation" ]]
 }
 
+run_gate "Shared network module" bash "$REPOSITORY_ROOT/Shared/NotchHubNetwork/scripts/check.sh"
 run_gate "Debug build" swift build
 run_gate "Test compilation" swift build --build-tests
 run_gate "Swift tests" swift test
@@ -363,6 +374,7 @@ run_gate "SwiftLint" swift_lint
 run_gate "Strict concurrency" strict_concurrency
 run_gate "Credential scan" secret_scan
 run_gate "Dependency resolution" dependency_audit
+run_gate "Direct-only network dependency" network_dependency_policy
 run_gate "Release tooling" release_tooling
 run_gate "Fresh app packaging" fresh_bundle_packaging
 run_gate "Available bundle signatures" verify_bundles

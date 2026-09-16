@@ -17,6 +17,7 @@ let package = Package(
         .executable(name: "NotchHubHookBridge", targets: ["NotchHubHookBridge"]),
     ],
     dependencies: [
+        .package(path: "../Shared/NotchHubNetwork"),
         .package(
             url: "https://github.com/SimplyDanny/SwiftLintPlugins",
             from: "0.63.3"
@@ -53,7 +54,10 @@ let package = Package(
         ),
         .target(
             name: "NotchHubCore",
-            dependencies: ["NotchHubBridge", "NotchHubMedia", "NotchHubSafeFeatures"],
+            dependencies: [
+                "NotchHubBridge", "NotchHubMedia", "NotchHubSafeFeatures",
+                .product(name: "NotchHubNetwork", package: "NotchHubNetwork"),
+            ],
             path: "Sources/NotchHubCore"
         ),
         .executableTarget(

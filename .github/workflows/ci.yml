@@ -25,6 +25,9 @@ jobs:
       - name: Swift version
         run: swift --version
 
+      - name: Shared network package quality gate
+        run: ./Shared/NotchHubNetwork/scripts/check.sh
+
       - name: Build (debug)
         run: swift build
 

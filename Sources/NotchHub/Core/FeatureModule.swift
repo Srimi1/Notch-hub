@@ -8,6 +8,7 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
     case pomodoro
     case clipboard
     case focus
+    case network
 
     var id: String { rawValue }
 
@@ -20,6 +21,7 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
         case .pomodoro: "Pomodoro"
         case .clipboard: "Clipboard"
         case .focus: "Focus"
+        case .network: "Network"
         }
     }
 
@@ -32,6 +34,7 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
         case .pomodoro: "timer"
         case .clipboard: "doc.on.clipboard"
         case .focus: "moon.fill"
+        case .network: "arrow.up.arrow.down"
         }
     }
 
@@ -51,6 +54,8 @@ enum FeatureModule: String, CaseIterable, Identifiable, Sendable {
             "Recent clipboard items with one-click restore."
         case .focus:
             "Do Not Disturb status and controls."
+        case .network:
+            "Current network traffic across all apps."
         }
     }
 }

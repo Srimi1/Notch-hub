@@ -24,6 +24,14 @@ SF="swift package --disable-sandbox --allow-writing-to-package-directory swiftfo
 FAIL=0
 hr() { printf '\n\033[1m▸ %s\033[0m\n' "$1"; }
 
+hr "Shared passive network package"
+if "$ROOT/Shared/NotchHubNetwork/scripts/check.sh"; then
+  echo "✓ network package checks passed"
+else
+  echo "✗ network package checks failed"
+  FAIL=1
+fi
+
 # A "full Xcode" toolchain (not bare Command Line Tools) is needed for SourceKit
 # (SwiftLint) and XCTest (swift test).
 DEVDIR="$(xcode-select -p 2>/dev/null || true)"

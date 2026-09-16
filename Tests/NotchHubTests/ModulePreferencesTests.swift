@@ -24,6 +24,7 @@ struct ModulePreferencesTests {
 
         let prefs = ModulePreferences(defaults: defaults)
         #expect(prefs.visibleModules == ModulePreferences.defaultVisibleModules)
+        #expect(prefs.isVisible(.network))
     }
 
     /// The regression this suite exists for. Hiding everything used to read as
@@ -125,5 +126,25 @@ struct ModulePreferencesTests {
 
         let prefs = ModulePreferences(defaults: defaults)
         #expect(prefs.lastActiveModule == .dashboard)
+    }
+
+    @Test
+    func addingNetworkPreservesSavedLayoutsAndExistingShortcutOrder() {
+        guard let (defaults, suite) = isolatedDefaults("network") else {
+            Issue.record("Could not create isolated UserDefaults")
+            return
+        }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(["dashboard", "media", "focus"], forKey: "visibleModules")
+
+        let prefs = ModulePreferences(defaults: defaults)
+        #expect(prefs.visibleModules == [.dashboard, .media, .focus])
+        prefs.setModule(.network, visible: true)
+        #expect(prefs.visibleModules == [.dashboard, .media, .focus, .network])
+        prefs.lastActiveModule = .network
+
+        let restored = ModulePreferences(defaults: defaults)
+        #expect(restored.visibleModules == prefs.visibleModules)
+        #expect(restored.lastActiveModule == .network)
     }
 }

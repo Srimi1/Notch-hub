@@ -167,6 +167,14 @@ struct ExpandedDashboardView: View {
             ) { viewModel.copyWithoutPaste($0) }
         case .focus:
             FocusModuleView(focus: services.focus)
+        case .network:
+            if viewModel.preferences.isVisible(.network) {
+                NetworkModuleView(model: services.network, preferences: services.networkPreferences) { id, shown in
+                    services.setNetworkModulePresented(shown, id: id)
+                }
+            } else {
+                EmptyHint(symbol: "arrow.up.arrow.down", text: "Network is hidden. Enable it in Settings ▸ Modules.")
+            }
         }
     }
 }

@@ -12,7 +12,11 @@ struct NotchHUDView: View {
         Group {
             switch viewModel.hudContent {
             case .clip(let clip):
-                CopyHUDRow(clip: clip, thumbnail: clipboard.thumbnails[clip.id])
+                CopyHUDRow(
+                    clip: clip,
+                    thumbnail: clipboard.thumbnails[clip.id],
+                    fileSize: clipboard.fileSizes[clip.id]
+                )
             case .peek:
                 PeekRow(
                     clips: Array(clipboard.clips.prefix(3)),
@@ -67,9 +71,14 @@ private struct HUDChrome: ViewModifier {
 private struct CopyHUDRow: View {
     let clip: ClipboardService.Clip
     let thumbnail: NSImage?
+    /// Resolved off the main thread at ingest (`ClipboardService.fileSizes`).
+    /// The popup reads it instead of stat-ing the file while rendering, so a
+    /// slow file upgrades the subtitle a beat later rather than hanging the
+    /// notch and starving the pasteboard sampler.
+    let fileSize: Int?
 
     var body: some View {
-        let details = HudClipDetails.make(for: clip)
+        let details = HudClipDetails.make(for: clip, fileSize: { _ in fileSize })
         HStack(spacing: 12) {
             icon
                 .frame(width: 44, height: 44)
@@ -120,13 +129,13 @@ private struct CopyHUDRow: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: NotchTheme.cardRadius))
-        } else if case .file(let url) = clip.kind {
-            // NSWorkspace answers synchronously, so the popup never waits on
-            // the QuickLook thumbnail that will replace this a beat later.
-            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                .resizable()
-                .aspectRatio(contentMode: .fit)
         } else {
+            // The real file icon resolves off the main thread at ingest and
+            // lands in `thumbnails` like the QuickLook preview does; until
+            // then the kind symbol stands in. This branch used to call
+            // `NSWorkspace.icon(forFile:)` inline, and a slow file held the
+            // main runloop — and with it the pasteboard sampler — long enough
+            // to silently miss copies.
             Image(systemName: clip.symbol)
                 .font(.system(size: 24, weight: .medium))
                 .foregroundStyle(.white.opacity(0.8))

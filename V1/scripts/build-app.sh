@@ -183,6 +183,8 @@ cp "$INFO_PLIST" "$TEMP_APP/Contents/Info.plist"
 make_binary "$PRODUCT" "$TEMP_APP/Contents/MacOS/$PRODUCT"
 
 if [[ "$EDITION" == "direct" ]]; then
+  require_regular_source "$REPOSITORY_ROOT/Shared/NotchHubNetwork/LICENSE"
+  require_regular_source "$REPOSITORY_ROOT/Shared/NotchHubNetwork/NOTICE.md"
   require_regular_source "$ASTRONAUT_ANIMATION_SOURCE"
   require_regular_source "$MEDIA_ADAPTER_SCRIPT_SOURCE"
   require_regular_source "$MEDIA_ADAPTER_BUILD_SCRIPT"
@@ -209,6 +211,10 @@ if [[ "$EDITION" == "direct" ]]; then
     "$TEMP_APP/Contents/Resources/Animations" \
     "$TEMP_APP/Contents/Resources/ThirdParty"
   cp "$ROOT/THIRD_PARTY_NOTICES.md" "$TEMP_APP/Contents/Resources/"
+  cp "$REPOSITORY_ROOT/Shared/NotchHubNetwork/LICENSE" \
+    "$TEMP_APP/Contents/Resources/ThirdParty/InternetSpeedReader-LICENSE.txt"
+  cp "$REPOSITORY_ROOT/Shared/NotchHubNetwork/NOTICE.md" \
+    "$TEMP_APP/Contents/Resources/ThirdParty/InternetSpeedReader-NOTICE.txt"
   cp "$ROOT/Resources/ThirdParty/Sparkle-LICENSE.txt" \
     "$ROOT/Resources/ThirdParty/Lottie-NOTICE.txt" \
     "$ROOT/Resources/ThirdParty/MediaRemoteAdapter-NOTICE.txt" \

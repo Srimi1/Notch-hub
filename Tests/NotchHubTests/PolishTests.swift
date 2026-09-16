@@ -162,9 +162,9 @@ struct NavigationAndSettingsTests {
     /// case fails the build — this pins the list so the count can't drift back
     /// up by accident.
     @Test
-    func featureModulesAreExactlyTheSevenThatExist() {
+    func featureModulesIncludeNetworkAfterExistingShortcuts() {
         #expect(FeatureModule.allCases.map(\.rawValue) == [
-            "dashboard", "media", "calendar", "todo", "pomodoro", "clipboard", "focus"
+            "dashboard", "media", "calendar", "todo", "pomodoro", "clipboard", "focus", "network"
         ])
         #expect(Set(FeatureModule.allCases.map(\.id)).count == FeatureModule.allCases.count)
         #expect(ModulePreferences.defaultVisibleModules == FeatureModule.allCases)

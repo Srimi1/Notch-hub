@@ -17,7 +17,8 @@ struct PresentationModelTests {
         #expect(model.highestUtilization == nil)
         #expect(!model.hasAttention)
         #expect(model.media != nil)
-        #expect(model.edition.capabilities == [.agents, .dashboard, .media, .clipboard, .focus])
+        #expect(model.edition.capabilities == [.agents, .dashboard, .media, .clipboard, .focus, .network])
+        #expect(model.network != nil)
         #expect(model.panelMetrics == .init(width: 190, height: 32))
 
         model.showDetail()
@@ -48,11 +49,15 @@ struct PresentationModelTests {
         #expect(model.selectedCapability == .dashboard)
         #expect(model.edition.capabilities == [.dashboard, .clipboard, .focus])
         #expect(!model.edition.capabilities.contains(.media))
+        #expect(!model.edition.capabilities.contains(.network))
+        #expect(model.network == nil)
         #expect(model.media == nil)
         #expect(model.providers.isEmpty)
         model.select(.agents)
         #expect(model.selectedCapability == .dashboard)
         model.select(.media)
+        #expect(model.selectedCapability == .dashboard)
+        model.select(.network)
         #expect(model.selectedCapability == .dashboard)
     }
 

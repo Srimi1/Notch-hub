@@ -81,13 +81,18 @@ model output, complete commands, or transcript contents.
 
 ## Preview Status
 
-The ad-hoc `0.8.1` preview includes Codex usage plus the Dashboard, opt-in
-Clipboard, Focus, and the compact Media bar from NotchHub 0.6.0 in the shallow
-overlay pattern from NotchHub 0.5-0.7. Its terminal-session, approval, and
+The ad-hoc `0.8.2` preview includes Codex usage plus the Dashboard, opt-in
+Clipboard, Focus, the compact Media bar from NotchHub 0.6.0 in the shallow
+overlay pattern from NotchHub 0.5-0.7, and the Network traffic tab. Its terminal-session, approval, and
 Claude status-line bridge is unavailable because this build has no Developer
 ID identity or provisioned shared Keychain group. Guided onboarding and a
 Sparkle update feed are not included in this preview. CodexBar is not integrated
 or bundled; no CodexBar source, binary, or runtime is included.
+
+The current Direct source also includes a [Network tab](docs/NETWORK_TRAFFIC.md)
+for passive download and upload traffic across all apps. It reads counters only
+while that tab is visible in the expanded ribbon. Mbps is the default unit;
+MB/s is available from the tab's picker. Store Lite does not link this module.
 
 The Direct edition requests Apple Events automation only after the user opens
 Media, to read and control Music and Spotify. Ad-hoc builds retain that single

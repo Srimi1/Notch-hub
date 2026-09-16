@@ -72,6 +72,75 @@ struct HotKeyTests {
         #expect(center.lastRegistrationFailed)
     }
 
+    /// Switching the shortcut off clears a failure: a stale refusal must not
+    /// outlive the shortcut, or Settings would warn about a chord that is no
+    /// longer even wanted.
+    @Test
+    func stoppingClearsAFailure() {
+        let log = Log()
+        let center = makeCenter(log: log, succeeds: false)
+        center.start()
+        #expect(center.lastRegistrationFailed)
+
+        center.stop()
+
+        #expect(center.lastRegistrationFailed == false)
+        #expect(center.isRegistered == false)
+    }
+
+    /// The recovery path the Settings warning offers: pick another chord (or
+    /// free this one) and re-register, and the failure clears. Mirrors the app
+    /// flow, where applying the preference sets the chord and then starts.
+    @Test
+    func aSuccessfulRetryAfterFailureClearsTheFlag() {
+        let log = Log()
+        var attempts = 0
+        let registrar = HotKeyCenter.Registrar(
+            register: { spec, handler in
+                attempts += 1
+                guard attempts > 1 else { return nil }
+                log.registered.append(spec)
+                log.handler = handler
+                return "token-\(log.registered.count)"
+            },
+            unregister: { _ in log.unregistered += 1 }
+        )
+        let center = HotKeyCenter(registrar: registrar)
+
+        center.start()
+        #expect(center.lastRegistrationFailed)
+
+        center.setSpec(HotKeyCenter.presets[1])
+        center.start()
+
+        #expect(center.lastRegistrationFailed == false)
+        #expect(center.isRegistered)
+        #expect(center.spec == HotKeyCenter.presets[1])
+    }
+
+    /// The real event system, not a fake: two centers racing for ⌃⌥V, and the
+    /// loser must report the refusal. Uses a chord nothing owns so the first
+    /// registration proves the setup actually took it — if some other app ever
+    /// claims ⌃⌥V globally, the `#require` names the environment, not the code.
+    @Test
+    func aLiveConflictIsReported() throws {
+        let spec = HotKeyCenter.presets[1]
+        let first = HotKeyCenter(spec: spec)
+        let second = HotKeyCenter(spec: spec)
+        defer {
+            first.stop()
+            second.stop()
+        }
+
+        first.start()
+        try #require(first.isRegistered, "Something else already owns \(spec.label) globally.")
+
+        second.start()
+
+        #expect(second.isRegistered == false)
+        #expect(second.lastRegistrationFailed)
+    }
+
     /// Changing the chord releases the old one first, so two never fire.
     @Test
     func changingTheChordReleasesThePreviousOne() {

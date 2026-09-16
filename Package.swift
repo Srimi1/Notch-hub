@@ -28,10 +28,11 @@ let package = Package(
         .macOS(.v14)
     ],
     dependencies: [
+        .package(path: "Shared/NotchHubNetwork"),
         // Prebuilt SwiftLint binary artifact (no SwiftSyntax recompile).
         .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins", from: "0.63.3"),
         .package(url: "https://github.com/nicklockwood/SwiftFormat", from: "0.59.1"),
-        // The only runtime dependency. Lottie is the reference player for
+        // The only external runtime dependency. Lottie is the reference player for
         // Bodymovin JSON; the notch's astronaut is played by it verbatim rather
         // than approximated. SwiftPM links it statically, so the app bundle
         // needs no embedded framework.
@@ -41,6 +42,7 @@ let package = Package(
         .executableTarget(
             name: "NotchHub",
             dependencies: [
+                .product(name: "NotchHubNetwork", package: "NotchHubNetwork"),
                 .product(name: "Lottie", package: "lottie-ios"),
             ],
             path: "Sources/NotchHub",

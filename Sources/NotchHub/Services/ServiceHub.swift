@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import NotchHubNetwork
 import SwiftUI
 
 /// Holds a `NotificationCenter` observer token and unregisters it when the token
@@ -34,6 +35,10 @@ final class ServiceHub: ObservableObject {
 
     let time = TimeService()
     let system = SystemMonitorService()
+    let network = NetworkTrafficModel()
+    let networkPreferences = NetworkModulePreferences()
+    private let networkPresentation = NetworkModulePresentation()
+    private var networkModuleUIEligible = false
     let battery = BatteryService()
     let media = MediaService()
     let calendar = CalendarService()
@@ -117,6 +122,8 @@ final class ServiceHub: ObservableObject {
     private func applyModuleVisibility(_ visible: Set<FeatureModule>) {
         guard started else { return }
 
+        applyNetworkModuleEligibility(moduleVisible: visible.contains(.network))
+
         setRunning(clipboard.start, clipboard.stop, visible.contains(.clipboard))
         setRunning(reminders.start, reminders.stop, visible.contains(.todo))
 
@@ -164,6 +171,31 @@ final class ServiceHub: ObservableObject {
         modulePreferences?.isVisible(module) ?? true
     }
 
+    /// A displayed Network row is the only consumer. View lifetime and current
+    /// selection are tracked independently because SwiftUI can coalesce a quick
+    /// leave-and-return without sending another appearance callback.
+    func setNetworkModulePresented(_ presented: Bool, id: UUID) {
+        networkPresentation.setVisible(
+            presented,
+            id: id,
+            start: network.start,
+            stop: network.stop
+        )
+    }
+
+    func setNetworkModuleEligible(_ eligible: Bool) {
+        networkModuleUIEligible = eligible
+        applyNetworkModuleEligibility()
+    }
+
+    private func applyNetworkModuleEligibility(moduleVisible: Bool? = nil) {
+        networkPresentation.setEligible(
+            networkModuleUIEligible && started && (moduleVisible ?? isVisible(.network)),
+            start: network.start,
+            stop: network.stop
+        )
+    }
+
     /// Lightweight services tick immediately, and so does system-wide media,
     /// which asks macOS for nothing. The permission-gated ones — Calendar, and
     /// the Apple Events half of Media — start on first expand so a brand-new
@@ -171,6 +203,7 @@ final class ServiceHub: ObservableObject {
     func startAmbient() {
         guard !started else { return }
         started = true
+        applyNetworkModuleEligibility()
         time.start()
         system.start()
         battery.start()
@@ -194,6 +227,8 @@ final class ServiceHub: ObservableObject {
     /// exits without terminating it, so a quit would leave a stray
     /// `mediaremote-adapter` behind for every launch.
     func shutDown() {
+        started = false
+        applyNetworkModuleEligibility()
         pendingActivityRefresh?.cancel()
         pendingActivityRefresh = nil
         media.stop()

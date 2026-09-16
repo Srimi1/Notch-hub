@@ -287,6 +287,10 @@ private struct DirectNotchRibbon: View {
             } else {
                 CompactUnavailableCapability()
             }
+        case .network:
+            if let network = model.network {
+                CompactNetworkTrafficView(model: network, visibilityChanged: model.setNetworkContentVisible)
+            }
         }
     }
 
@@ -387,6 +391,7 @@ private extension AppCapability {
         case .media: "Playback controls"
         case .clipboard: "Private, opt-in text history"
         case .focus: "A local focus timer"
+        case .network: "Traffic across all apps"
         }
     }
 }

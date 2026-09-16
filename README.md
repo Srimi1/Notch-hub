@@ -71,7 +71,7 @@ The expanded dashboard is 860 points wide when space permits and automatically s
 
 ## Modules
 
-Seven built-in modules cover the day-to-day information NotchHub can read locally. Module visibility and the last selected module persist between launches.
+Eight built-in modules cover the day-to-day information NotchHub can read locally. Module visibility and the last selected module persist between launches.
 
 | Module | What it shows | What you can do | Important limits |
 | --- | --- | --- | --- |
@@ -82,6 +82,7 @@ Seven built-in modules cover the day-to-day information NotchHub can read locall
 | **Pomodoro** | Persistent 5, 15, 25, and 45 minute presets | Start, pause, resume, or dismiss a timer | Up to eight timer records; the current UI has no custom duration or name |
 | **Clipboard** | Up to 12 recent text, image, and file clips | Restore a clip (pasted straight into the app you were using when Accessibility is granted), open the picker with a global shortcut, clear history, inspect thumbnails, or drag a copied file out of its HUD | Session-only memory; up to four files from one copy event |
 | **Focus** | Do Not Disturb state when it can be read | Toggle Do Not Disturb through Control Center | No named Focus profiles; toggling requires Accessibility permission, and the state reads as unknown until Control Center or Full Disk Access supplies it |
+| **Network** | Current download and upload traffic on the active interface | Choose Mbps or MB/s | Includes traffic across all apps and local-network transfers; does not test connection capacity |
 
 ### Clipboard and power HUDs
 
@@ -148,6 +149,7 @@ The window is a non-activating AppKit panel at status-bar level. It joins all Sp
 | --- | --- | --- | --- |
 | Time | Every second | App launch | No |
 | System CPU and memory | Every 2 seconds | App launch | No |
+| Network traffic | Every second | Only while the expanded Network tab is displayed | Yes |
 | Battery | Every 30 seconds plus immediate power events | App launch | No |
 | Timers | Every second while needed | App launch | No |
 | Clipboard | Checks pasteboard changes every 0.25 seconds | App launch when the module is visible | Yes |
@@ -158,6 +160,8 @@ The window is a non-activating AppKit panel at status-bar level. It joins all Sp
 
 Hiding a sensitive-service module stops Clipboard, Calendar, Reminders, or Media polling. Battery, system, Focus, time, and timer services remain available because they also support the overlay and shared controls.
 
+The Network tab shows current download and upload traffic across all apps on the selected active interface, including local-network traffic. It does not measure your internet connection's maximum speed. Sampling stops when you collapse the notch, switch tabs, hide Network, or quit. New installs include Network; existing saved module layouts are preserved, so enable it in Settings if needed. Its unit picker remembers Mbps or MB/s in this app's preferences.
+
 </details>
 
 ## Privacy and permissions
@@ -167,6 +171,7 @@ NotchHub has no runtime backend, account system, analytics, advertising, remote 
 | Capability | Local data access | Persistence or write behavior | Permission behavior |
 | --- | --- | --- | --- |
 | **System and battery** | Time, CPU counters, virtual-memory counters, battery and power state | No history is stored | No permission required |
+| **Network** | Local interface byte counters and interface name | No traffic history is stored; only display units persist | No permission required; samples only while the Network tab is displayed |
 | **Clipboard** | Text, image data, and up to four file URLs from a copy event | Maximum 12 entries in process memory; cleared when NotchHub quits | No macOS prompt; hiding Clipboard stops pasteboard reads |
 | **Calendar** | Up to eight events from now through the start of the day two days ahead | Read-only in NotchHub | Full Calendar access is requested only after **Enable Calendar** |
 | **Reminders** | Up to 50 incomplete reminders due through the next two days | Writes only when you choose to complete a reminder | Full Reminders access is requested only after **Enable Reminders** |
@@ -224,7 +229,7 @@ export NOTCHHUB_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)"
 1. Launch NotchHub. It appears in the menu bar and does not add a Dock icon.
 2. Hover over the notch, or open the menu-bar item and choose **Toggle Notch**.
 3. Open Settings with the menu command or <kbd>⌘,</kbd> while the menu is active.
-4. Keep all seven modules, or hide the ones you do not want. Calendar, Reminders, Media, and Clipboard stop their local polling when hidden.
+4. Keep all eight modules, or hide the ones you do not want. Calendar, Reminders, Media, and Clipboard stop their local polling when hidden. Network samples only while its tab is displayed.
 5. Enable Calendar and Reminders from their explicit access controls if you want those modules.
 6. Starting the first timer can request Notifications. Interacting with Media while Music or Spotify is running can request Automation.
 7. The first launch offers a permissions walkthrough, and Settings ▸ Permissions shows the same rows afterwards. Accessibility is what the Focus toggle and automatic pasting need; macOS grants it only by hand.
@@ -240,7 +245,8 @@ The menu also provides **Toggle Notch** with <kbd>⌘T</kbd> and **Quit NotchHub
 
 | Setting | Default |
 | --- | --- |
-| Visible modules | Dashboard, Media, Calendar, Todo, Pomodoro, Clipboard, Focus |
+| Visible modules | Dashboard, Media, Calendar, Todo, Pomodoro, Clipboard, Focus, Network |
+| Network units | Mbps |
 | Next Up activity types | Calendar, Reminders, Timers, Battery, Media, Focus |
 | Calendar lead time | 15 minutes, configurable from 5 to 60 |
 | Reminder lead time | 30 minutes, configurable from 5 to 240 |
@@ -252,7 +258,7 @@ The menu also provides **Toggle Notch** with <kbd>⌘T</kbd> and **Quit NotchHub
 | Move the screenshot file to the Trash after copying | Disabled |
 | Launch at Login | Registration is attempted once on first run, then remains user-controlled |
 
-Preferences include module visibility, the last selected module, activity types and thresholds, popup choices, screenshot copying and the folders you have allowed for it, and launch-at-login state. Timer records also persist in `UserDefaults`. Clipboard content, media metadata, events, and reminder lists are not persisted by NotchHub.
+Preferences include module visibility, the last selected module, network display units, activity types and thresholds, popup choices, screenshot copying and the folders you have allowed for it, and launch-at-login state. Timer records also persist in `UserDefaults`. Network traffic, clipboard content, media metadata, events, and reminder lists are not persisted by NotchHub.
 
 ## Build, test, and package
 
@@ -267,6 +273,8 @@ swift test
 ```
 
 The full check builds the app and test targets, checks SwiftFormat, and reports strict-concurrency findings. With full Xcode selected, it also runs SwiftLint and the test suite; those two steps are skipped in a command-line-tools-only environment. Continuous integration repeats build, test compilation, formatting, linting, and tests on `macos-latest`.
+
+The local `Shared/NotchHubNetwork` package has its own tests, strict-concurrency build, and static safety checks, run by `./scripts/check.sh` before the app checks. Attribution and the upstream license ship in the app bundle; see [Third-party notices](THIRD_PARTY_NOTICES.md).
 
 Format the Swift sources:
 

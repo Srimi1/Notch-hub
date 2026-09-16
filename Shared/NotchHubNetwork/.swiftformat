@@ -1,0 +1,8 @@
+--swiftversion 6.0
+--indent 4
+--maxwidth 120
+--commas inline
+--trimwhitespace always
+--semicolons never
+--importgrouping testable-bottom
+--rules blankLinesAtEndOfScope,blankLinesBetweenScopes,consecutiveBlankLines,consecutiveSpaces,duplicateImports,emptyBraces,indent,linebreakAtEndOfFile,linebreaks,redundantParens,redundantReturn,sortImports,spaceAroundBraces,spaceAroundBrackets,spaceAroundComments,spaceAroundOperators,spaceInsideBraces,spaceInsideBrackets,spaceInsideParens,trailingSpace

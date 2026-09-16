@@ -1,5 +1,6 @@
 import Foundation
 import NotchHubMedia
+import NotchHubNetwork
 import NotchHubSafeFeatures
 import Observation
 
@@ -18,6 +19,7 @@ public final class AppPresentationModel {
 
     public let edition: ApplicationEdition
     public let media: MediaPresentationModel?
+    public let network: NetworkTrafficModel?
     public let safeFeatures: SafeFeatureWorkspace
     public private(set) var tier: NotchPresentationTier
     public private(set) var selectedCapability: AppCapability
@@ -31,15 +33,22 @@ public final class AppPresentationModel {
     @ObservationIgnored private var approvalHandler: ApprovalHandler?
     @ObservationIgnored private var sessionBridgeHandler: SessionBridgeHandler?
     @ObservationIgnored private var layoutChangeHandler: (@MainActor () -> Void)?
+    @ObservationIgnored let networkVisibility: NetworkTrafficVisibility
 
     public init(
         edition: ApplicationEdition,
         approvalHandler: ApprovalHandler? = nil,
         media: MediaPresentationModel? = nil,
-        safeFeatures: SafeFeatureWorkspace? = nil
+        safeFeatures: SafeFeatureWorkspace? = nil,
+        network: NetworkTrafficModel? = nil
     ) {
         self.edition = edition
         self.media = edition == .direct ? media ?? MediaPresentationModel() : nil
+        let networkModel = edition == .direct ? network ?? NetworkTrafficModel() : nil
+        self.network = networkModel
+        self.networkVisibility = NetworkTrafficVisibility(
+            start: { networkModel?.start() }, stop: { networkModel?.stop() }
+        )
         self.safeFeatures = safeFeatures ?? SafeFeatureWorkspace()
         self.tier = .compact
         self.selectedCapability = edition.defaultCapability
@@ -105,12 +114,14 @@ public final class AppPresentationModel {
     public func showCompact() {
         guard tier != .compact else { return }
         tier = .compact
+        updateNetworkVisibility()
         layoutChangeHandler?()
     }
 
     public func showDetail() {
         guard tier != .detail else { return }
         tier = .detail
+        updateNetworkVisibility()
         layoutChangeHandler?()
     }
 
@@ -119,6 +130,7 @@ public final class AppPresentationModel {
         selectedCapability = capability
         if capability == .media { media?.requestInteractiveAccess() }
         showDetail()
+        updateNetworkVisibility()
     }
 
     public func replaceProviders(_ values: [ProviderCardPresentation]) {
@@ -166,6 +178,7 @@ public final class AppPresentationModel {
         approvalSubmission = .idle
         selectedCapability = .agents
         tier = .detail
+        updateNetworkVisibility()
         layoutChangeHandler?()
     }
 

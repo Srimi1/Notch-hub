@@ -25,7 +25,10 @@ final class NotchViewModel: ObservableObject {
     // setters are used from `NotchViewModel+HUD.swift`. Plain `var` already
     // limits external writes to this module (SwiftUI views are read-only via
     // `@ObservedObject`), so an explicit `internal(set)` here would be inert.
-    @Published var isExpanded = false
+    @Published var isExpanded = false {
+        didSet { updateNetworkModuleEligibility() }
+    }
+
     /// The middle presentation tier: bigger than the collapsed pill, far
     /// smaller than the dashboard. `isExpanded` always wins over it.
     ///
@@ -38,8 +41,14 @@ final class NotchViewModel: ObservableObject {
         didSet { applyMonitorPolicy() }
     }
 
-    @Published var activeModule: FeatureModule = .dashboard
-    @Published private(set) var presentedActivityID: String?
+    @Published var activeModule: FeatureModule = .dashboard {
+        didSet { updateNetworkModuleEligibility() }
+    }
+
+    @Published private(set) var presentedActivityID: String? {
+        didSet { updateNetworkModuleEligibility() }
+    }
+
     @Published private(set) var actionError: String?
 
     /// Persisted dashboard layout (which modules are shown, last active module).
@@ -254,6 +263,12 @@ final class NotchViewModel: ObservableObject {
         guard !startedInteractive else { return }
         startedInteractive = true
         services.startInteractive()
+    }
+
+    private func updateNetworkModuleEligibility() {
+        services.setNetworkModuleEligible(
+            isExpanded && activeModule == .network && presentedActivity == nil
+        )
     }
 
     func select(_ module: FeatureModule) {

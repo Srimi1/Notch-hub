@@ -70,6 +70,10 @@ final class ClipboardService: ObservableObject {
     @Published private(set) var clips: [Clip] = []
     /// Lazily-generated thumbnails for image/file clips, keyed by clip id.
     @Published private(set) var thumbnails: [UUID: NSImage] = [:]
+    /// Lazily-resolved file sizes for file clips, keyed by clip id. Resolved
+    /// off the main thread at ingest, like the thumbnails, so the popup reads
+    /// a value instead of stat-ing the file while it renders.
+    @Published private(set) var fileSizes: [UUID: Int] = [:]
 
     private let pasteboard: NSPasteboard
     private var timer: Timer?
@@ -180,6 +184,7 @@ final class ClipboardService: ObservableObject {
     func clear() {
         clips.removeAll()
         thumbnails.removeAll()
+        fileSizes.removeAll()
     }
 
     // MARK: - Sampling
@@ -298,16 +303,22 @@ final class ClipboardService: ObservableObject {
         if let newest = clips.first { onCopy?(newest) }
     }
 
-    /// Drops clips and their thumbnails together — a clip removed without its
-    /// thumbnail leaks an entry keyed by an id nothing renders any more.
+    /// Drops clips with their thumbnails and sizes together — a clip removed
+    /// without them leaks entries keyed by an id nothing renders any more.
     private func removeClips(where shouldRemove: (Clip) -> Bool) {
-        for clip in clips where shouldRemove(clip) { thumbnails[clip.id] = nil }
+        for clip in clips where shouldRemove(clip) {
+            thumbnails[clip.id] = nil
+            fileSizes[clip.id] = nil
+        }
         clips.removeAll(where: shouldRemove)
     }
 
     private func trim() {
         guard clips.count > historyLimit else { return }
-        for clip in clips[historyLimit...] { thumbnails[clip.id] = nil }
+        for clip in clips[historyLimit...] {
+            thumbnails[clip.id] = nil
+            fileSizes[clip.id] = nil
+        }
         clips = Array(clips.prefix(historyLimit))
     }
 
@@ -320,12 +331,19 @@ final class ClipboardService: ObservableObject {
     /// protected locations are the ones worth stepping around — the user's
     /// Desktop, Documents, Downloads, and iCloud Drive. Anywhere else (a temp
     /// directory, an external volume, the app's own container) reads freely.
-    private func isReadableWithoutPrompting(_ url: URL) -> Bool {
-        guard !FullDiskAccess.isGranted() else { return true }
+    ///
+    /// The environment is injected (like `FullDiskAccess.isGranted`) so the
+    /// boundary rule is unit-testable without the real home folder or grant.
+    nonisolated static func isReadableWithoutPrompting(
+        _ url: URL,
+        fullDiskAccessGranted: Bool = FullDiskAccess.isGranted(),
+        home: String = NSHomeDirectory()
+    ) -> Bool {
+        guard !fullDiskAccessGranted else { return true }
 
-        let home = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path
+        let homePath = URL(fileURLWithPath: home).standardizedFileURL.path
         let guarded = ["Desktop", "Documents", "Downloads", "Library/Mobile Documents"]
-            .map { home + "/" + $0 }
+            .map { homePath + "/" + $0 }
         let path = url.standardizedFileURL.path
         return !guarded.contains { path == $0 || path.hasPrefix($0 + "/") }
     }
@@ -368,15 +386,58 @@ final class ClipboardService: ObservableObject {
         return NSImage(cgImage: scaled, size: NSSize(width: scaled.width, height: scaled.height))
     }
 
+    /// Serial queue for file-presentation reads (icon, size). Off the main
+    /// actor, so a slow file stalls this queue instead of the notch.
+    nonisolated static let filePresentationQueue = DispatchQueue(
+        label: "com.notchhub.clipboard-file-presentation",
+        qos: .userInitiated
+    )
+
+    /// Resolves what the popup shows for a file clip — its icon and its size —
+    /// without ever blocking the thread that announced the copy.
+    ///
+    /// Both answers are stored under the clip's id when they land. The icon
+    /// only fills an empty thumbnail slot, so a QuickLook preview that already
+    /// arrived (or arrives later) always wins; the size lands in `fileSizes`,
+    /// which the popup reads instead of stat-ing the file itself. Either
+    /// answer is dropped if the clip left history first, exactly like the
+    /// QuickLook callback below.
+    private func resolveFilePresentation(_ url: URL, id: UUID) {
+        // Decided here, on the main actor, before anything is dispatched: the
+        // guard is path strings and a cached probe, never file data.
+        let allowSize = Self.isReadableWithoutPrompting(url)
+        Self.filePresentationQueue.async { [weak self] in
+            let icon = NSWorkspace.shared.icon(forFile: url.path)
+            let size = allowSize ? Self.measureFileSize(url) : nil
+            Task { @MainActor [weak self] in
+                guard let self, self.clips.contains(where: { $0.id == id }) else { return }
+                if self.thumbnails[id] == nil { self.thumbnails[id] = icon }
+                if let size { self.fileSizes[id] = size }
+            }
+        }
+    }
+
+    /// A file's size in bytes, or nil when it cannot be read. Blocking file
+    /// I/O — call only off the main actor (see `resolveFilePresentation`).
+    private nonisolated static func measureFileSize(_ url: URL) -> Int? {
+        (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+    }
+
     private func generateFileThumbnail(_ url: URL, id: UUID) {
+        // The popup's icon and size resolve here too, off the main thread (see
+        // `resolveFilePresentation`). They used to be read synchronously while
+        // the popup rendered, and a slow file held the main runloop — and with
+        // it the pasteboard sampler — long enough to silently miss copies.
+        resolveFilePresentation(url, id: id)
+
         // QuickLook reads the file, which is exactly what makes macOS put up a
         // "NotchHub would like to access files in your Desktop folder" dialog —
         // once per protected folder, unprompted, just because something was
         // copied. If the file sits somewhere protected and the app has not been
         // granted Full Disk Access, skip the thumbnail rather than trigger that:
-        // the popup already has the file's icon, and a thumbnail is not worth
-        // interrupting the user to ask for.
-        guard isReadableWithoutPrompting(url) else { return }
+        // the file's icon still resolves separately, and a thumbnail is not
+        // worth interrupting the user to ask for.
+        guard Self.isReadableWithoutPrompting(url) else { return }
 
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         let request = QLThumbnailGenerator.Request(

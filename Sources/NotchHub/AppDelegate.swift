@@ -206,6 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 launchAtLogin: launchAtLogin,
                 permissions: permissions,
                 hotKeys: hotKeyPreferences,
+                hotKeyCenter: hotKeys,
                 services: services
             ) { [weak self] in
                 self?.applyHotKeyPreference()

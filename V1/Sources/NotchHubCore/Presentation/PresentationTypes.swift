@@ -7,6 +7,7 @@ public enum AppCapability: String, CaseIterable, Identifiable, Sendable {
     case media
     case clipboard
     case focus
+    case network
 
     public var id: String {
         rawValue
@@ -19,6 +20,7 @@ public enum AppCapability: String, CaseIterable, Identifiable, Sendable {
         case .media: "Media"
         case .clipboard: "Clipboard"
         case .focus: "Focus"
+        case .network: "Network"
         }
     }
 
@@ -29,6 +31,7 @@ public enum AppCapability: String, CaseIterable, Identifiable, Sendable {
         case .media: "play.circle"
         case .clipboard: "clipboard"
         case .focus: "timer"
+        case .network: "arrow.up.arrow.down"
         }
     }
 }
@@ -48,7 +51,7 @@ public enum ApplicationEdition: String, Sendable {
 
     public var capabilities: [AppCapability] {
         switch self {
-        case .direct: [.agents, .dashboard, .media, .clipboard, .focus]
+        case .direct: [.agents, .dashboard, .media, .clipboard, .focus, .network]
         case .lite: [.dashboard, .clipboard, .focus]
         }
     }

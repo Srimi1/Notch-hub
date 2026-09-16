@@ -96,6 +96,12 @@ mkdir -p "$TMP_APP/Contents/MacOS"
 mkdir -p "$TMP_APP/Contents/Resources"
 cp "$BIN" "$TMP_APP/Contents/MacOS/NotchHub"
 cp "$ROOT/Resources/Info.plist" "$TMP_APP/Contents/Info.plist"
+mkdir -p "$TMP_APP/Contents/Resources/ThirdParty"
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$TMP_APP/Contents/Resources/THIRD_PARTY_NOTICES.md"
+cp "$ROOT/Shared/NotchHubNetwork/LICENSE" \
+  "$TMP_APP/Contents/Resources/ThirdParty/InternetSpeedReader-LICENSE.txt"
+cp "$ROOT/Shared/NotchHubNetwork/NOTICE.md" \
+  "$TMP_APP/Contents/Resources/ThirdParty/InternetSpeedReader-NOTICE.txt"
 if [[ -f "$ROOT/Resources/AppIcon.icns" ]]; then
   cp "$ROOT/Resources/AppIcon.icns" "$TMP_APP/Contents/Resources/AppIcon.icns"
 fi

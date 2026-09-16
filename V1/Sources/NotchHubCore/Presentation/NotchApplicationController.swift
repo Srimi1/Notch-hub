@@ -114,6 +114,7 @@ public final class NotchHubApplicationController: NSObject, NSApplicationDelegat
         expandTask?.cancel()
         collapseTask?.cancel()
         model.safeFeatures.stop()
+        model.stopNetworkMonitoring()
     }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

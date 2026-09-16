@@ -12,6 +12,9 @@ struct SettingsRootView: View {
     @Bindable var launchAtLogin: LaunchAtLoginController
     @Bindable var permissions: PermissionCenter
     @Bindable var hotKeys: HotKeyPreferences
+    /// The live registration, so the shortcut section can say when macOS
+    /// refused the chord instead of letting it fail silently.
+    @Bindable var hotKeyCenter: HotKeyCenter
     let services: ServiceHub
     /// Re-registers the chord with macOS after a change here.
     let onHotKeyChange: () -> Void
@@ -19,7 +22,12 @@ struct SettingsRootView: View {
     var body: some View {
         Form {
             ModuleVisibilitySection(preferences: preferences)
-            ShortcutSection(hotKeys: hotKeys, permissions: permissions, onChange: onHotKeyChange)
+            ShortcutSection(
+                hotKeys: hotKeys,
+                center: hotKeyCenter,
+                permissions: permissions,
+                onChange: onHotKeyChange
+            )
             PopupSection(preferences: services.hudPreferences)
             ScreenshotSection(
                 preferences: services.screenshotPreferences,
@@ -124,6 +132,7 @@ private struct ModuleVisibilitySection: View {
             Text("Modules")
         } footer: {
             Text("Hiding Clipboard, Calendar, Todo, or Media stops its local service. "
+                + "Network samples only while its tab is open. "
                 + "Shared time, system, battery, Focus, and timer services remain active.")
         }
     }
@@ -148,8 +157,27 @@ private struct ModuleVisibilitySection: View {
 /// taken and then wonder why nothing happens.
 private struct ShortcutSection: View {
     @Bindable var hotKeys: HotKeyPreferences
+    @Bindable var center: HotKeyCenter
     @Bindable var permissions: PermissionCenter
     let onChange: () -> Void
+
+    /// The chord macOS refused stays refused until something re-registers it,
+    /// so this names the chord, says what to do, and retries on the spot —
+    /// without it the toggle sits on and the shortcut silently does nothing.
+    @ViewBuilder
+    private var registrationFailureNote: some View {
+        if hotKeys.clipPickerEnabled, center.lastRegistrationFailed {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("macOS refused the \(center.spec.label) shortcut — another app "
+                    + "already owns it, so pressing it does nothing.")
+                    .foregroundStyle(.red)
+                Text("Pick a different shortcut above, or free the chord in the "
+                    + "other app and try again.")
+                    .foregroundStyle(.secondary)
+                Button("Try again") { onChange() }
+            }
+        }
+    }
 
     /// The chord is a Carbon hot key and needs no permission; the double tap is
     /// a global key monitor and cannot see a keystroke without Accessibility.
@@ -179,6 +207,7 @@ private struct ShortcutSection: View {
             }
             .onChange(of: hotKeys.clipPickerSpecID) { _, _ in onChange() }
             .disabled(!hotKeys.clipPickerEnabled)
+            registrationFailureNote
             Toggle("Also open by tapping N twice", isOn: $hotKeys.clipPickerDoubleTapN)
                 .onChange(of: hotKeys.clipPickerDoubleTapN) { _, _ in onChange() }
             doubleTapAccessNote

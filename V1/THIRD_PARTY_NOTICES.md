@@ -1,5 +1,16 @@
 # Third-Party Notices
 
+## Internet Speed Reader
+
+The Direct edition includes the local `NotchHubNetwork` package, adapted from
+the passive traffic counter and interface-selection code in Internet Speed
+Reader at commit `c5e0f6276186aff6c298732358d11b9fffd54495`.
+Copyright 2026 Srimi; licensed under Apache License 2.0.
+The Direct bundle includes `ThirdParty/InternetSpeedReader-LICENSE.txt` and
+`ThirdParty/InternetSpeedReader-NOTICE.txt`, including the source pin and local
+modifications. The Lite edition does not link this package or include its notices.
+Source: https://github.com/Srimi1/Internet-speed-reader
+
 ## CodexBar
 
 CodexBar is used as a public behavioral and performance reference. No CodexBar

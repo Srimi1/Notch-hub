@@ -1,0 +1,54 @@
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+
+strict: true
+
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - first_where
+  - force_unwrapping
+  - implicitly_unwrapped_optional
+  - overridden_super_call
+  - prohibited_super_call
+  - redundant_nil_coalescing
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+  - vertical_whitespace_closing_braces
+
+disabled_rules:
+  - todo
+  - trailing_comma
+
+nesting:
+  type_level: 2
+  function_level: 5
+
+line_length:
+  warning: 120
+  error: 160
+  ignores_comments: true
+
+file_length:
+  warning: 500
+  error: 700
+
+type_body_length:
+  warning: 300
+  error: 450
+
+function_body_length:
+  warning: 60
+  error: 120
+
+identifier_name:
+  min_length:
+    warning: 2
+  excluded:
+    - id
+
+reporter: xcode

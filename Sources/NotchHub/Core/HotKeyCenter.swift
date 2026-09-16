@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import Observation
 
 /// A system-wide key combination.
 ///
@@ -22,6 +23,7 @@ struct HotKeySpec: Equatable, Sendable, Identifiable {
 /// the app underneath never also receives it. The API is ancient but has no
 /// modern replacement and is not deprecated.
 @MainActor
+@Observable
 final class HotKeyCenter {
 
     /// Called when the chord is pressed.
@@ -76,7 +78,9 @@ final class HotKeyCenter {
     private var token: Any?
     private let registrar: Registrar
     /// Set when macOS refused the chord — almost always because another app
-    /// already owns it. Surfaced so the shortcut never fails silently.
+    /// already owns it. Surfaced in Settings so the shortcut never fails
+    /// silently, and cleared by a successful registration and by `stop()`, so
+    /// it only ever describes the shortcut as it stands now.
     private(set) var lastRegistrationFailed = false
 
     /// Both parameters resolve inside the body rather than as default argument
@@ -103,6 +107,9 @@ final class HotKeyCenter {
     func stop() {
         if let token { registrar.unregister(token) }
         token = nil
+        // Off means nothing is failing: a stale refusal must not outlive the
+        // shortcut being switched off.
+        lastRegistrationFailed = false
     }
 
     /// Swap the chord, releasing the old one first so the two never both fire.
